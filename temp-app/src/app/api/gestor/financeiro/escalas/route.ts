@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     console.log('Buscando lista de escalas no Bubble...');
