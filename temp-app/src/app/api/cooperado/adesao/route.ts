@@ -3,6 +3,8 @@ import { bubbleApi } from '@/lib/bubble';
 import { zapsignApi } from '@/lib/zapsign';
 import { jsPDF } from 'jspdf';
 
+export const runtime = 'edge';
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();

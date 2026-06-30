@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 
+export const runtime = 'edge';
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
