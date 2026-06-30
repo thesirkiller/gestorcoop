@@ -11,12 +11,10 @@ import {
   Clock,
   Check,
   Search,
-  Eye,
   FileText,
   CreditCard,
   X,
   Loader2,
-  RefreshCw,
   Edit2,
   Save,
   ArrowLeft,
@@ -91,7 +89,6 @@ export default function FinanceiroPage() {
   const [showEscalaDropdown, setShowEscalaDropdown] = useState(false);
   const [startDate, setStartDate] = useState<string>(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState<string>(getLastDayOfMonth());
-  const [filterByDate, setFilterByDate] = useState(true);
   
   // Selection & Modal State
   const [selectedServicos, setSelectedServicos] = useState<string[]>([]);
@@ -102,16 +99,14 @@ export default function FinanceiroPage() {
   const [editingValue, setEditingValue] = useState<string>('');
   
   // Loading and action state
-  const [loadingCooperados, setLoadingCooperados] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [cooperadoSearch, setCooperadoSearch] = useState('');
-
+ 
   // 1. Fetch Approved/Active Cooperados and Escalas on Load
   useEffect(() => {
     const init = async () => {
       try {
-        setLoadingCooperados(true);
         // Fetch all cooperados
         const coopRes = await axios.get('/api/gestor/cooperados');
         if (coopRes.data.success) {
@@ -126,8 +121,6 @@ export default function FinanceiroPage() {
         }
       } catch (err) {
         console.error('Error initializing data:', err);
-      } finally {
-        setLoadingCooperados(false);
       }
     };
     init();
@@ -189,7 +182,7 @@ export default function FinanceiroPage() {
     }
 
     // Date Filter
-    if (filterByDate && serv.date_fixa_entrada) {
+    if (serv.date_fixa_entrada) {
       const servDate = new Date(serv.date_fixa_entrada).getTime();
       if (startDate) {
         const start = new Date(startDate + 'T00:00:00').getTime();
