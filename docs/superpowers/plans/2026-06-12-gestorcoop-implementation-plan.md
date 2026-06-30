@@ -17,18 +17,18 @@
 - Create: `tailwind.config.ts` (via next-app)
 - Create: `.env.local`
 
-- [ ] **Step 1: Scaffold Next.js project**
+- [x] **Step 1: Scaffold Next.js project**
 ```bash
 npx -y create-next-app@14 . --typescript --eslint --tailwind --app --src-dir --import-alias "@/*" --use-npm
 ```
 
-- [ ] **Step 2: Install required dependencies**
+- [x] **Step 2: Install required dependencies**
 ```bash
 npm install axios react-dropzone framer-motion lucide-react
 npm install -D @types/node @types/react
 ```
 
-- [ ] **Step 3: Setup environment variables**
+- [x] **Step 3: Setup environment variables**
 ```bash
 cat << 'EOF' > .env.local
 BUBBLE_API_URL=https://gestorcoop.app/version-test/api/1.1
@@ -38,7 +38,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 EOF
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 ```bash
 git add .
 git commit -m "chore: initialize Next.js with Tailwind and dependencies"
@@ -49,7 +49,7 @@ git commit -m "chore: initialize Next.js with Tailwind and dependencies"
 **Files:**
 - Create: `src/lib/bubble.ts`
 
-- [ ] **Step 1: Create the Bubble API client**
+- [x] **Step 1: Create the Bubble API client**
 
 ```typescript
 import axios from 'axios';
@@ -86,7 +86,7 @@ export const bubbleApi = {
 };
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/lib/bubble.ts
 git commit -m "feat: create Bubble API client"
@@ -98,8 +98,7 @@ git commit -m "feat: create Bubble API client"
 - Create: `src/app/api/cooperados/route.ts`
 - Create: `src/app/api/upload/route.ts`
 
-- [ ] **Step 1: Create Cooperados API Route**
-
+- [x] **Step 1: Refactor Homepage**
 ```typescript
 import { NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
@@ -129,7 +128,7 @@ export async function POST(request: Request) {
 }
 ```
 
-- [ ] **Step 2: Create File Upload API Route**
+- [x] **Step 2: Create File Upload API Route**
 
 ```typescript
 import { NextResponse } from 'next/server';
@@ -155,7 +154,7 @@ export async function POST(request: Request) {
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 ```bash
 git add src/app/api/cooperados/route.ts src/app/api/upload/route.ts
 git commit -m "feat: setup API routes for cooperados and uploads"
@@ -166,8 +165,7 @@ git commit -m "feat: setup API routes for cooperados and uploads"
 **Files:**
 - Create: `src/components/FileUploader.tsx`
 
-- [ ] **Step 1: Create the Drag and Drop Uploader**
-
+- [x] **Step 1: Create the Gestor Dashboard**
 ```tsx
 'use client';
 
@@ -230,7 +228,7 @@ export default function FileUploader({ onFilesSelected }: FileUploaderProps) {
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 ```bash
 git add src/components/FileUploader.tsx
 git commit -m "feat: add drag and drop file uploader component"
