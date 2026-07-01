@@ -181,14 +181,14 @@ export const bubbleApi = {
     if (startDate) {
       constraints.push({
         key: 'date_fixa_entrada',
-        constraint_type: 'greater_than',
+        constraint_type: 'greater than',
         value: `${startDate}T00:00:00.000Z`,
       });
     }
     if (endDate) {
       constraints.push({
         key: 'date_fixa_entrada',
-        constraint_type: 'less_than',
+        constraint_type: 'less than',
         value: `${endDate}T23:59:59.999Z`,
       });
     }
