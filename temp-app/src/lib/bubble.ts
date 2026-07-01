@@ -52,6 +52,13 @@ export interface CreateContaInput {
   fk_cooperado: string;
 }
 
+export interface BubblePageResponse<T = unknown> {
+  results: T[];
+  remaining: number;
+  count: number;
+}
+
+
 // Helper to fetch all results in parallel using Bubble API cursor pagination
 async function getAllResults<T>(endpoint: string, constraints?: unknown[]): Promise<T[]> {
   const limit = 100;
@@ -116,7 +123,16 @@ export const bubbleApi = {
     return response.data.response;
   },
 
-  async getCooperados() {
+  async getCooperados(cursor?: number, limit?: number): Promise<unknown[] | BubblePageResponse> {
+    if (cursor !== undefined || limit !== undefined) {
+      const response = await bubbleClient.get('/obj/socioscooperados', {
+        params: {
+          cursor: cursor ?? 0,
+          limit: limit ?? 100,
+        },
+      });
+      return response.data.response;
+    }
     return getAllResults('/obj/socioscooperados');
   },
 
@@ -179,7 +195,16 @@ export const bubbleApi = {
     return getAllResults('/obj/servicos', constraints);
   },
 
-  async getEscalas() {
+  async getEscalas(cursor?: number, limit?: number): Promise<unknown[] | BubblePageResponse> {
+    if (cursor !== undefined || limit !== undefined) {
+      const response = await bubbleClient.get('/obj/escalas', {
+        params: {
+          cursor: cursor ?? 0,
+          limit: limit ?? 100,
+        },
+      });
+      return response.data.response;
+    }
     return getAllResults('/obj/escalas');
   },
 

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Link from 'next/link';
+import { fetchFullDataset } from '@/lib/client-fetch';
 import {
   Users,
   Clock,
@@ -60,13 +61,12 @@ export default function GestorDashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/api/gestor/cooperados');
-      if (res.data.success) {
-        setCooperados(res.data.data);
-      }
+      await fetchFullDataset<Cooperado>('/api/gestor/cooperados', (data) => {
+        setCooperados(data);
+        setLoading(false);
+      });
     } catch (err) {
       console.error('Error fetching cooperados:', err);
-    } finally {
       setLoading(false);
     }
   };

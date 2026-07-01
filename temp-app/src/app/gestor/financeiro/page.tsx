@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import Link from 'next/link';
+import { fetchFullDataset } from '@/lib/client-fetch';
 import {
   Users,
   Calendar,
@@ -107,18 +108,13 @@ export default function FinanceiroPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        // Fetch all cooperados
-        const coopRes = await axios.get('/api/gestor/cooperados');
-        if (coopRes.data.success) {
-          // Filter only approved ones or show all, let's show all cooperados in system
-          setCooperados(coopRes.data.data);
-        }
+        // Fetch cooperados in background
+        fetchFullDataset<Cooperado>('/api/gestor/cooperados', setCooperados)
+          .catch(err => console.error('Error loading cooperados:', err));
         
-        // Fetch scales
-        const scalesRes = await axios.get('/api/gestor/financeiro/escalas');
-        if (scalesRes.data.success) {
-          setEscalas(scalesRes.data.data);
-        }
+        // Fetch scales in background
+        fetchFullDataset<Escala>('/api/gestor/financeiro/escalas', setEscalas)
+          .catch(err => console.error('Error loading escalas:', err));
       } catch (err) {
         console.error('Error initializing data:', err);
       }

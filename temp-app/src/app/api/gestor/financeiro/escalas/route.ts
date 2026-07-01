@@ -1,12 +1,24 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    console.log('Buscando lista de escalas no Bubble...');
+    const { searchParams } = new URL(request.url);
+    const cursorStr = searchParams.get('cursor');
+    const limitStr = searchParams.get('limit');
+
+    if (cursorStr !== null || limitStr !== null) {
+      const cursor = cursorStr ? parseInt(cursorStr, 10) : 0;
+      const limit = limitStr ? parseInt(limitStr, 10) : 100;
+      console.log(`Buscando página de escalas no Bubble... cursor: ${cursor}, limit: ${limit}`);
+      const pageData = await bubbleApi.getEscalas(cursor, limit);
+      return NextResponse.json({ success: true, data: pageData });
+    }
+
+    console.log('Buscando lista completa de escalas no Bubble...');
     const list = await bubbleApi.getEscalas();
     return NextResponse.json({ success: true, data: list });
   } catch (error) {
@@ -15,3 +27,4 @@ export async function GET() {
     return NextResponse.json({ error: err.message || 'Erro ao buscar escalas.' }, { status: 500 });
   }
 }
+
