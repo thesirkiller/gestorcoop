@@ -52,6 +52,49 @@ export interface CreateContaInput {
   fk_cooperado: string;
 }
 
+// Helper to fetch all results in parallel using Bubble API cursor pagination
+async function getAllResults<T>(endpoint: string, constraints?: unknown[]): Promise<T[]> {
+  const limit = 100;
+  const params: Record<string, unknown> = { limit, cursor: 0 };
+  if (constraints) {
+    params.constraints = JSON.stringify(constraints);
+  }
+
+  // Fetch the first page
+  const response = await bubbleClient.get(endpoint, { params });
+  const firstPageResults = response.data.response.results || [];
+  const remaining = response.data.response.remaining || 0;
+
+  if (remaining === 0) {
+    return firstPageResults;
+  }
+
+  // Calculate other pages and fetch them in parallel
+  const totalPages = Math.ceil(remaining / limit);
+  const promises = [];
+
+  for (let i = 1; i <= totalPages; i++) {
+    const nextCursor = i * limit;
+    promises.push(
+      bubbleClient.get(endpoint, {
+        params: {
+          ...params,
+          cursor: nextCursor,
+        },
+      })
+    );
+  }
+
+  const responses = await Promise.all(promises);
+  let allResults = [...firstPageResults];
+  for (const resp of responses) {
+    const results = resp.data.response.results || [];
+    allResults = allResults.concat(results);
+  }
+
+  return allResults;
+}
+
 export const bubbleApi = {
   async createCooperado(data: CreateCooperadoInput) {
     const response = await bubbleClient.post('/obj/socioscooperados', data);
@@ -74,8 +117,7 @@ export const bubbleApi = {
   },
 
   async getCooperados() {
-    const response = await bubbleClient.get('/obj/socioscooperados');
-    return response.data.response.results || [];
+    return getAllResults('/obj/socioscooperados');
   },
 
   async updateCooperado(id: string, data: Record<string, unknown>) {
@@ -134,13 +176,11 @@ export const bubbleApi = {
         value: `${endDate}T23:59:59.999Z`,
       });
     }
-    const response = await bubbleClient.get(`/obj/servicos?constraints=${JSON.stringify(constraints)}`);
-    return response.data.response.results || [];
+    return getAllResults('/obj/servicos', constraints);
   },
 
   async getEscalas() {
-    const response = await bubbleClient.get('/obj/escalas');
-    return response.data.response.results || [];
+    return getAllResults('/obj/escalas');
   },
 
   async getContasBancariasByCooperado(cooperadoId: string) {
@@ -151,8 +191,7 @@ export const bubbleApi = {
         value: cooperadoId,
       },
     ];
-    const response = await bubbleClient.get(`/obj/conta_cooperado?constraints=${JSON.stringify(constraints)}`);
-    return response.data.response.results || [];
+    return getAllResults('/obj/conta_cooperado', constraints);
   },
 
   async updateServico(servicoId: string, data: Record<string, unknown>) {
