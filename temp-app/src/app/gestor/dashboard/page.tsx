@@ -70,6 +70,15 @@ export default function GestorDashboard() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({});
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  // Reset pagination when search query or filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedProfession, selectedStatus]);
+
   // Fetch data
   const fetchData = async () => {
     setLoading(true);
@@ -125,6 +134,12 @@ export default function GestorDashboard() {
 
     return true;
   });
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredCooperados.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedCooperados = filteredCooperados.slice(startIndex, endIndex);
 
   // Calculate metrics (Global values, independent of local filters)
   const totalSubmissions = cooperados.length;
@@ -431,7 +446,7 @@ export default function GestorDashboard() {
                   </td>
                 </tr>
               ) : (
-                filteredCooperados.map((coop) => {
+                paginatedCooperados.map((coop) => {
                   const isApproved = !!coop.fk_usuario;
                   const isSigned = coop.txt_termo_status === 'Assinado';
                   const isWaiting = coop.txt_termo_status === 'Aguardando Assinatura';
@@ -596,6 +611,63 @@ export default function GestorDashboard() {
             </tbody>
           </table>
         </div>
+
+        {/* Controles de Paginação */}
+        {totalPages > 1 && (
+          <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="text-xs text-slate-500 font-medium">
+              Exibindo <span className="font-bold text-slate-800">{Math.min(startIndex + 1, filteredCooperados.length)}</span> a{' '}
+              <span className="font-bold text-slate-800">{Math.min(endIndex, filteredCooperados.length)}</span> de{' '}
+              <span className="font-bold text-slate-800">{filteredCooperados.length}</span> cooperados
+            </div>
+            
+            <div className="flex items-center gap-1.5">
+              {/* Botão Anterior */}
+              <button
+                onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:hover:bg-white transition-all"
+              >
+                Anterior
+              </button>
+
+              {/* Números das Páginas */}
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((page) => {
+                  return page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1;
+                })
+                .map((page, index, array) => {
+                  const showEllipsisBefore = index > 0 && page - array[index - 1] > 1;
+                  return (
+                    <React.Fragment key={page}>
+                      {showEllipsisBefore && (
+                        <span className="px-2 text-xs text-slate-450">...</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(page)}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
+                          currentPage === page
+                            ? 'bg-indigo-650 text-white shadow-sm'
+                            : 'bg-white border border-slate-200 text-slate-650 hover:bg-slate-50'
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+
+              {/* Botão Próximo */}
+              <button
+                onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                disabled={currentPage === totalPages}
+                className="px-3 py-1.5 text-xs font-bold bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 disabled:opacity-50 disabled:hover:bg-white transition-all"
+              >
+                Próximo
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}
