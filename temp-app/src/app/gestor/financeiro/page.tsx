@@ -84,26 +84,26 @@ export default function FinanceiroPage() {
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [servicos, setServicos] = useState<Servico[]>([]);
   const [escalas, setEscalas] = useState<Escala[]>([]);
-  
+
   // Filters State
   const [selectedEscalas, setSelectedEscalas] = useState<string[]>([]);
   const [showEscalaDropdown, setShowEscalaDropdown] = useState(false);
   const [startDate, setStartDate] = useState<string>(getFirstDayOfMonth());
   const [endDate, setEndDate] = useState<string>(getLastDayOfMonth());
-  
+
   // Selection & Modal State
   const [selectedServicos, setSelectedServicos] = useState<string[]>([]);
   const [showRpaModal, setShowRpaModal] = useState(false);
-  
+
   // Inline editing state
   const [editingServicoId, setEditingServicoId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState<string>('');
-  
+
   // Loading and action state
   const [loadingData, setLoadingData] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [cooperadoSearch, setCooperadoSearch] = useState('');
- 
+
   // 1. Fetch Approved/Active Cooperados and Escalas on Load
   useEffect(() => {
     const init = async () => {
@@ -111,7 +111,7 @@ export default function FinanceiroPage() {
         // Fetch cooperados in background
         fetchFullDataset<Cooperado>('/api/gestor/cooperados', setCooperados)
           .catch(err => console.error('Error loading cooperados:', err));
-        
+
         // Fetch scales in background
         fetchFullDataset<Escala>('/api/gestor/financeiro/escalas', setEscalas)
           .catch(err => console.error('Error loading escalas:', err));
@@ -195,7 +195,7 @@ export default function FinanceiroPage() {
 
   // Calculate Metrics
   const metricTotalServicos = filteredServicos.length;
-  
+
   const metricProntos = filteredServicos
     .filter(s => s.bool_confirmacao_finalizado && !s.bool_pago)
     .reduce((sum, s) => sum + (s.num_valor_cooperado || 0), 0);
@@ -215,7 +215,7 @@ export default function FinanceiroPage() {
 
   // Handle row selection
   const handleSelectRow = (id: string) => {
-    setSelectedServicos(prev => 
+    setSelectedServicos(prev =>
       prev.includes(id) ? prev.filter(rowId => rowId !== id) : [...prev, id]
     );
   };
@@ -246,7 +246,7 @@ export default function FinanceiroPage() {
     try {
       // Process updates sequentially or concurrently
       await Promise.all(
-        selectedServicos.map(servicoId => 
+        selectedServicos.map(servicoId =>
           axios.patch('/api/gestor/financeiro/servicos', {
             servicoId,
             bool_pago: true
@@ -255,7 +255,7 @@ export default function FinanceiroPage() {
       );
 
       // Refresh services local state
-      setServicos(prev => prev.map(s => 
+      setServicos(prev => prev.map(s =>
         selectedServicos.includes(s._id) ? { ...s, bool_pago: true } : s
       ));
       setSelectedServicos([]);
@@ -284,7 +284,7 @@ export default function FinanceiroPage() {
       });
 
       // Update local state
-      setServicos(prev => prev.map(s => 
+      setServicos(prev => prev.map(s =>
         s._id === servicoId ? { ...s, num_valor_cooperado: valNum } : s
       ));
       setEditingServicoId(null);
@@ -314,14 +314,14 @@ export default function FinanceiroPage() {
   };
 
   // Filter cooperados by search input
-  const filteredCooperadosList = cooperados.filter(c => 
+  const filteredCooperadosList = cooperados.filter(c =>
     (c.txt_nomeCompleto || '').toLowerCase().includes(cooperadoSearch.toLowerCase()) ||
     (c.txt_CPF || '').includes(cooperadoSearch)
   );
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10 font-sans">
-      
+
       {/* Print styles override (only prints print-area when printing) */}
       <style jsx global>{`
         @media print {
@@ -344,12 +344,17 @@ export default function FinanceiroPage() {
       `}</style>
 
       <div className="max-w-7xl mx-auto">
-        
+
         {/* Navigation Link back */}
-        <div className="mb-6">
+        <div className="mb-6 flex items-center gap-4">
           <Link href="/gestor/dashboard" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
             <ArrowLeft className="w-4 h-4" />
             Voltar para Adesões
+          </Link>
+          <span className="text-slate-300">|</span>
+          <Link href="/gestor/termos" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
+            <FileText className="w-4 h-4 text-slate-500" />
+            Gerenciar Termos
           </Link>
         </div>
 
@@ -367,7 +372,7 @@ export default function FinanceiroPage() {
         {/* Step 1 & 2: Filters and Cooperado Selection */}
         <div className="bg-white border border-slate-200 p-6 rounded-xl shadow-sm mb-8">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            
+
             {/* Passo 1: Período de Repasse */}
             <div className="space-y-2">
               <h3 className="text-sm font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -414,7 +419,7 @@ export default function FinanceiroPage() {
                   onChange={(e) => setCooperadoSearch(e.target.value)}
                 />
               </div>
-              
+
               {/* Cooperado Search Results List */}
               {cooperadoSearch && (
                 <div className="mt-2 border border-slate-100 bg-white rounded-lg shadow-lg max-h-48 overflow-y-auto absolute z-20 w-full">
@@ -446,8 +451,8 @@ export default function FinanceiroPage() {
                     <h4 className="text-base font-bold text-slate-900 mt-0.5">{activeCooperado.txt_nomeCompleto}</h4>
                     <p className="text-xs text-slate-500">CPF: {activeCooperado.txt_CPF} | E-mail: {activeCooperado.txt_email}</p>
                   </div>
-                  <button 
-                    onClick={() => setSelectedCooperadoId('')} 
+                  <button
+                    onClick={() => setSelectedCooperadoId('')}
                     className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 p-1.5 rounded-lg border border-slate-200 transition-all"
                   >
                     <X className="w-3.5 h-3.5" />
@@ -464,11 +469,11 @@ export default function FinanceiroPage() {
           <>
             {/* Sub-Filters and Bank Account Row */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-              
+
               {/* Multi Scale Filter */}
               <div className="bg-white border border-slate-200 p-5 rounded-xl shadow-sm lg:col-span-2 relative">
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Filtrar por Escalas ({selectedEscalas.length} selecionadas)</label>
-                <div 
+                <div
                   onClick={() => setShowEscalaDropdown(!showEscalaDropdown)}
                   className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg bg-slate-50 hover:bg-white transition-all cursor-pointer text-sm"
                 >
@@ -479,7 +484,7 @@ export default function FinanceiroPage() {
                       selectedEscalas.map(id => (
                         <span key={id} className="bg-indigo-100 text-indigo-700 font-semibold text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1">
                           {getScaleLabel(id)}
-                          <button 
+                          <button
                             type="button"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -512,7 +517,7 @@ export default function FinanceiroPage() {
                               type="checkbox"
                               checked={isChecked}
                               onChange={() => {
-                                setSelectedEscalas(prev => 
+                                setSelectedEscalas(prev =>
                                   isChecked ? prev.filter(id => id !== esc._id) : [...prev, esc._id]
                                 );
                               }}
@@ -564,7 +569,7 @@ export default function FinanceiroPage() {
             ) : (
               <>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-                  
+
                   {/* Total Services */}
                   <div className="bg-white border border-slate-200 p-5 rounded-xl flex items-center justify-between gap-4 shadow-sm border-l-4 border-l-indigo-600">
                     <div>
@@ -621,7 +626,7 @@ export default function FinanceiroPage() {
                     <div className="text-2xl md:text-3xl font-black text-right pr-4 font-mono">
                       {formatCurrency(selectedSum)}
                     </div>
-                    
+
                     {/* Emit RPA Action */}
                     <button
                       onClick={() => setShowRpaModal(true)}
@@ -687,13 +692,12 @@ export default function FinanceiroPage() {
                           filteredServicos.map(serv => {
                             const isChecked = selectedServicos.includes(serv._id);
                             const isEditing = editingServicoId === serv._id;
-                            
+
                             return (
-                              <tr 
-                                key={serv._id} 
-                                className={`hover:bg-slate-50/70 transition-all ${
-                                  serv.bool_pago ? 'opacity-70 bg-slate-50/30' : isChecked ? 'bg-indigo-50/20' : ''
-                                }`}
+                              <tr
+                                key={serv._id}
+                                className={`hover:bg-slate-50/70 transition-all ${serv.bool_pago ? 'opacity-70 bg-slate-50/30' : isChecked ? 'bg-indigo-50/20' : ''
+                                  }`}
                               >
                                 {/* Checkbox column */}
                                 <td className="py-3 px-4 text-center">
@@ -771,22 +775,20 @@ export default function FinanceiroPage() {
 
                                 {/* Confirmation status */}
                                 <td className="py-3 px-4 text-center">
-                                  <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                    serv.bool_confirmacao_finalizado
+                                  <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${serv.bool_confirmacao_finalizado
                                       ? 'bg-emerald-100 text-emerald-800 border border-emerald-250'
                                       : 'bg-amber-100 text-amber-800 border border-amber-250'
-                                  }`}>
+                                    }`}>
                                     {serv.bool_confirmacao_finalizado ? 'Confirmado' : 'Aguardando'}
                                   </span>
                                 </td>
 
                                 {/* Payment status */}
                                 <td className="py-3 px-4 text-center">
-                                  <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                    serv.bool_pago
+                                  <span className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${serv.bool_pago
                                       ? 'bg-indigo-100 text-indigo-800 border border-indigo-250'
                                       : 'bg-rose-100 text-rose-800 border border-rose-250'
-                                  }`}>
+                                    }`}>
                                     {serv.bool_pago ? 'Pago' : 'Pendente'}
                                   </span>
                                 </td>
@@ -811,7 +813,7 @@ export default function FinanceiroPage() {
       {showRpaModal && activeCooperado && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-center items-start overflow-y-auto p-4 md:p-8">
           <div className="bg-white border border-slate-300 rounded-xl max-w-3xl w-full shadow-2xl relative my-8">
-            
+
             {/* Modal Header Controls (Not Printed) */}
             <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl print:hidden">
               <span className="font-bold text-slate-700 text-sm flex items-center gap-1.5">

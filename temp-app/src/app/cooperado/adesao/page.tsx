@@ -349,7 +349,7 @@ export default function AdesaoPage() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between py-10 px-4 md:px-8 font-sans">
       <div className="max-w-5xl w-full mx-auto bg-white border border-slate-200 rounded-2xl shadow-lg overflow-hidden flex flex-col">
-        
+
         {/* Header */}
         <div className="bg-gradient-to-r from-indigo-50/30 via-slate-50/80 to-indigo-50/30 px-8 py-6 border-b border-slate-200">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -366,7 +366,7 @@ export default function AdesaoPage() {
           {/* Stepper Progress */}
           <div className="mt-8 flex justify-between items-center relative">
             <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 -translate-y-1/2 z-0" />
-            <div 
+            <div
               className="absolute top-1/2 left-0 h-0.5 bg-indigo-600 -translate-y-1/2 z-0 transition-all duration-300"
               style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
             />
@@ -377,20 +377,18 @@ export default function AdesaoPage() {
 
               return (
                 <div key={st.num} className="flex flex-col items-center z-10">
-                  <div 
-                    className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center border transition-all duration-300 ${
-                      isCompleted 
-                        ? 'bg-indigo-600 border-indigo-650 text-white' 
-                        : isActive 
-                        ? 'bg-indigo-50 border-indigo-550 text-indigo-700 ring-4 ring-indigo-550/10' 
-                        : 'bg-slate-100 border-slate-200 text-slate-550'
-                    }`}
+                  <div
+                    className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center border transition-all duration-300 ${isCompleted
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : isActive
+                          ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-4 ring-indigo-500/10'
+                          : 'bg-slate-100 border-slate-200 text-slate-500'
+                      }`}
                   >
                     {isCompleted ? <Check className="w-4 h-4 md:w-5 md:h-5" /> : <Icon className="w-4 h-4 md:w-5 md:h-5" />}
                   </div>
-                  <span className={`text-[10px] font-bold mt-2 hidden sm:block uppercase tracking-wider ${
-                    isActive ? 'text-indigo-600' : isCompleted ? 'text-slate-650' : 'text-slate-550'
-                  }`}>
+                  <span className={`text-[10px] font-bold mt-2 hidden sm:block uppercase tracking-wider ${isActive ? 'text-indigo-600' : isCompleted ? 'text-slate-600' : 'text-slate-500'
+                    }`}>
                     {st.label}
                   </span>
                 </div>
@@ -416,7 +414,7 @@ export default function AdesaoPage() {
               exit={{ x: -30, opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              
+
               {/* STEP 1: Personal Data */}
               {currentStep === 1 && (
                 <div>
@@ -427,87 +425,87 @@ export default function AdesaoPage() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="md:col-span-2">
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Nome Completo *</label>
-                      <input 
-                        type="text" 
-                        name="nomeCompleto" 
-                        value={personalData.nomeCompleto} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="nomeCompleto"
+                        value={personalData.nomeCompleto}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Nome completo do cooperado" 
+                        placeholder="Nome completo do cooperado"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">CPF *</label>
-                      <input 
-                        type="text" 
-                        name="cpf" 
-                        value={personalData.cpf} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="cpf"
+                        value={personalData.cpf}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="000.000.000-00" 
+                        placeholder="000.000.000-00"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">E-mail *</label>
-                      <input 
-                        type="email" 
-                        name="email" 
-                        value={personalData.email} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="email"
+                        name="email"
+                        value={personalData.email}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="seuemail@exemplo.com" 
+                        placeholder="seuemail@exemplo.com"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">WhatsApp / Celular *</label>
-                      <input 
-                        type="text" 
-                        name="whatsapp" 
-                        value={personalData.whatsapp} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="whatsapp"
+                        value={personalData.whatsapp}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="(00) 00000-0000" 
+                        placeholder="(00) 00000-0000"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Telefone Alternativo</label>
-                      <input 
-                        type="text" 
-                        name="telefoneReserva" 
-                        value={personalData.telefoneReserva} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="telefoneReserva"
+                        value={personalData.telefoneReserva}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="(00) 00000-0000" 
+                        placeholder="(00) 00000-0000"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">RG</label>
-                      <input 
-                        type="text" 
-                        name="rg" 
-                        value={personalData.rg} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="rg"
+                        value={personalData.rg}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Apenas números" 
+                        placeholder="Apenas números"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Órgão Emissor / UF</label>
                       <div className="flex gap-2">
-                        <input 
-                          type="text" 
-                          name="orgaoEmissor" 
-                          value={personalData.orgaoEmissor} 
-                          onChange={handlePersonalChange} 
+                        <input
+                          type="text"
+                          name="orgaoEmissor"
+                          value={personalData.orgaoEmissor}
+                          onChange={handlePersonalChange}
                           className="flex-1 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                          placeholder="Ex: SSP" 
+                          placeholder="Ex: SSP"
                         />
-                        <select 
-                          name="orgaoUF" 
-                          value={personalData.orgaoUF} 
-                          onChange={handlePersonalChange} 
+                        <select
+                          name="orgaoUF"
+                          value={personalData.orgaoUF}
+                          onChange={handlePersonalChange}
                           className="w-24 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-3 py-3 text-slate-800 focus:outline-none shadow-sm"
                         >
                           {['GO', 'DF', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC', 'TO', 'MT', 'MS'].map(uf => (
@@ -518,31 +516,31 @@ export default function AdesaoPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Data de Expedição RG</label>
-                      <input 
-                        type="date" 
-                        name="dataExpedicaoRG" 
-                        value={personalData.dataExpedicaoRG} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="date"
+                        name="dataExpedicaoRG"
+                        value={personalData.dataExpedicaoRG}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Data de Nascimento</label>
-                      <input 
-                        type="date" 
-                        name="dataNascimento" 
-                        value={personalData.dataNascimento} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="date"
+                        name="dataNascimento"
+                        value={personalData.dataNascimento}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Sexo</label>
-                      <select 
-                        name="sexo" 
-                        value={personalData.sexo} 
-                        onChange={handlePersonalChange} 
+                      <select
+                        name="sexo"
+                        value={personalData.sexo}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
                       >
                         <option value="Feminino">Feminino</option>
@@ -552,10 +550,10 @@ export default function AdesaoPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Estado Civil</label>
-                      <select 
-                        name="estadoCivil" 
-                        value={personalData.estadoCivil} 
-                        onChange={handlePersonalChange} 
+                      <select
+                        name="estadoCivil"
+                        value={personalData.estadoCivil}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
                       >
                         <option value="Solteiro(a)">Solteiro(a)</option>
@@ -568,33 +566,33 @@ export default function AdesaoPage() {
 
                     <div className="md:col-span-2">
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Nome da Mãe *</label>
-                      <input 
-                        type="text" 
-                        name="nomeMae" 
-                        value={personalData.nomeMae} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="nomeMae"
+                        value={personalData.nomeMae}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Nome completo da mãe" 
+                        placeholder="Nome completo da mãe"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Nome do Pai</label>
-                      <input 
-                        type="text" 
-                        name="nomePai" 
-                        value={personalData.nomePai} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="nomePai"
+                        value={personalData.nomePai}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Nome completo do pai (opcional)" 
+                        placeholder="Nome completo do pai (opcional)"
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Grau de Escolaridade</label>
-                      <select 
-                        name="grauEscolaridade" 
-                        value={personalData.grauEscolaridade} 
-                        onChange={handlePersonalChange} 
+                      <select
+                        name="grauEscolaridade"
+                        value={personalData.grauEscolaridade}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
                       >
                         <option value="Ensino Médio">Ensino Médio</option>
@@ -607,10 +605,10 @@ export default function AdesaoPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Raça / Cor</label>
-                      <select 
-                        name="racaCor" 
-                        value={personalData.racaCor} 
-                        onChange={handlePersonalChange} 
+                      <select
+                        name="racaCor"
+                        value={personalData.racaCor}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
                       >
                         <option value="Branca">Branca</option>
@@ -622,13 +620,13 @@ export default function AdesaoPage() {
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">PIS (Com Máscara) *</label>
-                      <input 
-                        type="text" 
-                        name="pis" 
-                        value={personalData.pis} 
-                        onChange={handlePersonalChange} 
+                      <input
+                        type="text"
+                        name="pis"
+                        value={personalData.pis}
+                        onChange={handlePersonalChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="000.00000.00-0" 
+                        placeholder="000.00000.00-0"
                       />
                     </div>
                   </div>
@@ -646,13 +644,13 @@ export default function AdesaoPage() {
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">CEP *</label>
                       <div className="relative">
-                        <input 
-                          type="text" 
-                          name="cep" 
-                          value={addressData.cep} 
-                          onChange={handleAddressChange} 
+                        <input
+                          type="text"
+                          name="cep"
+                          value={addressData.cep}
+                          onChange={handleAddressChange}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
-                          placeholder="00000-000" 
+                          placeholder="00000-000"
                         />
                         {loading && (
                           <Loader2 className="w-4 h-4 animate-spin text-indigo-600 absolute right-3 top-1/2 -translate-y-1/2" />
@@ -661,67 +659,67 @@ export default function AdesaoPage() {
                     </div>
                     <div className="md:col-span-3">
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Logradouro / Rua *</label>
-                      <input 
-                        type="text" 
-                        name="rua" 
-                        value={addressData.rua} 
-                        onChange={handleAddressChange} 
+                      <input
+                        type="text"
+                        name="rua"
+                        value={addressData.rua}
+                        onChange={handleAddressChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Avenida, Rua, Travessa..." 
+                        placeholder="Avenida, Rua, Travessa..."
                       />
                     </div>
 
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Número *</label>
-                      <input 
-                        type="text" 
-                        name="numero" 
-                        value={addressData.numero} 
-                        onChange={handleAddressChange} 
+                      <input
+                        type="text"
+                        name="numero"
+                        value={addressData.numero}
+                        onChange={handleAddressChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Ex: 120" 
+                        placeholder="Ex: 120"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Complemento</label>
-                      <input 
-                        type="text" 
-                        name="complemento" 
-                        value={addressData.complemento} 
-                        onChange={handleAddressChange} 
+                      <input
+                        type="text"
+                        name="complemento"
+                        value={addressData.complemento}
+                        onChange={handleAddressChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Apto, Sala, Quadra..." 
+                        placeholder="Apto, Sala, Quadra..."
                       />
                     </div>
                     <div className="md:col-span-2">
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Bairro *</label>
-                      <input 
-                        type="text" 
-                        name="bairro" 
-                        value={addressData.bairro} 
-                        onChange={handleAddressChange} 
+                      <input
+                        type="text"
+                        name="bairro"
+                        value={addressData.bairro}
+                        onChange={handleAddressChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Bairro" 
+                        placeholder="Bairro"
                       />
                     </div>
 
                     <div className="md:col-span-3">
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Cidade *</label>
-                      <input 
-                        type="text" 
-                        name="cidade" 
-                        value={addressData.cidade} 
-                        onChange={handleAddressChange} 
+                      <input
+                        type="text"
+                        name="cidade"
+                        value={addressData.cidade}
+                        onChange={handleAddressChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
-                        placeholder="Cidade" 
+                        placeholder="Cidade"
                       />
                     </div>
                     <div>
                       <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Estado (UF)</label>
-                      <select 
-                        name="estado" 
-                        value={addressData.estado} 
-                        onChange={handleAddressChange} 
+                      <select
+                        name="estado"
+                        value={addressData.estado}
+                        onChange={handleAddressChange}
                         className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
                       >
                         {['GO', 'DF', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC', 'TO', 'MT', 'MS', 'PE', 'CE'].map(uf => (
@@ -743,15 +741,15 @@ export default function AdesaoPage() {
                   <p className="text-sm text-slate-550 mb-6">Cadastre uma ou mais profissões pelas quais atuará na cooperativa. Indique qual é a principal.</p>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    
+
                     {/* Left: Input Form */}
                     <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
                       <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Profissão</h3>
 
                       <div>
                         <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Profissão</label>
-                        <select 
-                          value={currentProf.name} 
+                        <select
+                          value={currentProf.name}
                           onChange={(e) => setCurrentProf(prev => ({ ...prev, name: e.target.value }))}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
                         >
@@ -768,31 +766,31 @@ export default function AdesaoPage() {
 
                       <div>
                         <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Conselho de Classe (Ex: COREN, CRM)</label>
-                        <input 
-                          type="text" 
-                          value={currentProf.council} 
+                        <input
+                          type="text"
+                          value={currentProf.council}
                           onChange={(e) => setCurrentProf(prev => ({ ...prev, council: e.target.value.toUpperCase() }))}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                          placeholder="Ex: COREN" 
+                          placeholder="Ex: COREN"
                         />
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Nº Registro</label>
-                          <input 
-                            type="text" 
-                            value={currentProf.registration} 
+                          <input
+                            type="text"
+                            value={currentProf.registration}
                             onChange={(e) => setCurrentProf(prev => ({ ...prev, registration: e.target.value }))}
                             className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="123456" 
+                            placeholder="123456"
                           />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Data Emissão</label>
-                          <input 
-                            type="date" 
-                            value={currentProf.emissionDate} 
+                          <input
+                            type="date"
+                            value={currentProf.emissionDate}
                             onChange={(e) => setCurrentProf(prev => ({ ...prev, emissionDate: e.target.value }))}
                             className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none font-mono shadow-sm"
                           />
@@ -800,18 +798,18 @@ export default function AdesaoPage() {
                       </div>
 
                       <div className="flex items-center gap-2 my-2">
-                        <input 
-                          type="checkbox" 
+                        <input
+                          type="checkbox"
                           id="prof_principal"
-                          checked={currentProf.isPrincipal} 
+                          checked={currentProf.isPrincipal}
                           onChange={(e) => setCurrentProf(prev => ({ ...prev, isPrincipal: e.target.checked }))}
-                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-50 border-slate-200" 
+                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-50 border-slate-200"
                         />
                         <label htmlFor="prof_principal" className="text-xs font-semibold text-slate-700">Profissão Principal</label>
                       </div>
 
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={addProfession}
                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-slate-800 font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-1 transition-all"
                       >
@@ -846,13 +844,13 @@ export default function AdesaoPage() {
                                     )}
                                   </div>
                                   <p className="text-xs text-slate-550 mt-1">
-                                    Conselho: {prof.council} • Registro: {prof.registration} 
+                                    Conselho: {prof.council} • Registro: {prof.registration}
                                     {prof.emissionDate && ` • Emissão: ${new Date(prof.emissionDate).toLocaleDateString('pt-BR')}`}
                                   </p>
                                 </div>
                               </div>
-                              <button 
-                                type="button" 
+                              <button
+                                type="button"
                                 onClick={() => removeProfession(idx)}
                                 className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
                               >
@@ -878,15 +876,15 @@ export default function AdesaoPage() {
                   <p className="text-sm text-slate-550 mb-6">Cadastre as contas bancárias para recebimento de repasses. Você pode adicionar mais de uma.</p>
 
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    
+
                     {/* Left: Input Form */}
                     <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
                       <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Conta</h3>
 
                       <div>
                         <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Banco</label>
-                        <select 
-                          value={currentBank.bank} 
+                        <select
+                          value={currentBank.bank}
                           onChange={(e) => setCurrentBank(prev => ({ ...prev, bank: e.target.value }))}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
                         >
@@ -903,30 +901,30 @@ export default function AdesaoPage() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Agência</label>
-                          <input 
-                            type="text" 
-                            value={currentBank.agency} 
+                          <input
+                            type="text"
+                            value={currentBank.agency}
                             onChange={(e) => setCurrentBank(prev => ({ ...prev, agency: e.target.value }))}
                             className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="1234-5" 
+                            placeholder="1234-5"
                           />
                         </div>
                         <div>
                           <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Conta & Dígito</label>
-                          <input 
-                            type="text" 
-                            value={currentBank.account} 
+                          <input
+                            type="text"
+                            value={currentBank.account}
                             onChange={(e) => setCurrentBank(prev => ({ ...prev, account: e.target.value }))}
                             className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="123456-7" 
+                            placeholder="123456-7"
                           />
                         </div>
                       </div>
 
                       <div>
                         <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Tipo de Conta</label>
-                        <select 
-                          value={currentBank.type} 
+                        <select
+                          value={currentBank.type}
                           onChange={(e) => setCurrentBank(prev => ({ ...prev, type: e.target.value }))}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
                         >
@@ -935,8 +933,8 @@ export default function AdesaoPage() {
                         </select>
                       </div>
 
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={addBankAccount}
                         className="w-full bg-indigo-600 hover:bg-indigo-700 text-slate-800 font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-1 transition-all mt-2"
                       >
@@ -968,8 +966,8 @@ export default function AdesaoPage() {
                                   </p>
                                 </div>
                               </div>
-                              <button 
-                                type="button" 
+                              <button
+                                type="button"
                                 onClick={() => removeBankAccount(idx)}
                                 className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
                               >
@@ -995,15 +993,14 @@ export default function AdesaoPage() {
                   <p className="text-sm text-slate-550 mb-6">Por favor, envie uma foto nítida do seu documento de identificação (RG ou CNH) e um Comprovante de Residência recente.</p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    
+
                     {/* Drag and drop field */}
-                    <div 
-                      {...getRootProps()} 
-                      className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${
-                        isDragActive 
-                          ? 'border-indigo-400 bg-indigo-950/20' 
+                    <div
+                      {...getRootProps()}
+                      className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${isDragActive
+                          ? 'border-indigo-400 bg-indigo-950/20'
                           : 'border-slate-200 bg-slate-50 hover:border-slate-350 hover:bg-slate-100/50'
-                      }`}
+                        }`}
                     >
                       <input {...getInputProps()} />
                       {uploading ? (
@@ -1040,8 +1037,8 @@ export default function AdesaoPage() {
                                 </div>
                                 <span className="text-xs text-slate-800 truncate font-mono max-w-[200px] md:max-w-xs">{file.name}</span>
                               </div>
-                              <button 
-                                type="button" 
+                              <button
+                                type="button"
                                 onClick={() => removeFile(idx)}
                                 className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
                               >
@@ -1070,10 +1067,10 @@ export default function AdesaoPage() {
 
                   <div className="w-full bg-slate-50 rounded-xl border border-slate-200 overflow-hidden shadow-inner">
                     {signUrl ? (
-                      <iframe 
-                        src={signUrl} 
-                        className="w-full h-[650px] border-0" 
-                        allow="geolocation; camera" 
+                      <iframe
+                        src={signUrl}
+                        className="w-full h-[650px] border-0"
+                        allow="geolocation; camera"
                       />
                     ) : (
                       <div className="h-[400px] flex flex-col items-center justify-center gap-3">
@@ -1095,11 +1092,10 @@ export default function AdesaoPage() {
             <button
               onClick={prevStep}
               disabled={currentStep === 1 || submitting}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                currentStep === 1 || submitting
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${currentStep === 1 || submitting
                   ? 'text-slate-600 cursor-not-allowed'
                   : 'text-slate-700 hover:text-white hover:bg-slate-800'
-              }`}
+                }`}
             >
               <ChevronLeft className="w-4 h-4" /> Voltar
             </button>

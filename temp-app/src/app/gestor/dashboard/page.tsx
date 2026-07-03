@@ -161,7 +161,7 @@ export default function GestorDashboard() {
       if (res.data.success && res.data.signUrl) {
         // Store generated ZapSign signature link
         setGeneratedLinks((prev) => ({ ...prev, [id]: res.data.signUrl }));
-        
+
         // Update local list state
         setCooperados((prev) =>
           prev.map((c) =>
@@ -240,6 +240,13 @@ export default function GestorDashboard() {
           >
             <DollarSign className="w-4 h-4" />
             Painel Financeiro
+          </Link>
+          <Link
+            href="/gestor/termos"
+            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
+          >
+            <FileText className="w-4 h-4 text-slate-500" />
+            Gerenciar Termos
           </Link>
           <button
             onClick={fetchData}
@@ -434,7 +441,7 @@ export default function GestorDashboard() {
                 <tr>
                   <td colSpan={5} className="text-center py-16">
                     <div className="flex flex-col items-center justify-center gap-2">
-                      <Loader2 className="w-6 h-6 text-indigo-650 animate-spin" />
+                      <Loader2 className="w-6 h-6 text-indigo-600 animate-spin" />
                       <span className="text-xs text-slate-450">Buscando cadastros no Bubble...</span>
                     </div>
                   </td>
@@ -458,9 +465,8 @@ export default function GestorDashboard() {
                   return (
                     <tr
                       key={coop._id}
-                      className={`hover:bg-slate-50/50 transition-colors ${
-                        isApproved ? 'opacity-80' : ''
-                      }`}
+                      className={`hover:bg-slate-50/50 transition-colors ${isApproved ? 'opacity-80' : ''
+                        }`}
                     >
                       {/* Name & CPF */}
                       <td className="py-4 px-6">
@@ -560,11 +566,10 @@ export default function GestorDashboard() {
                                       activeLink || `https://sandbox.zapsign.com.br/sign/mock` // fallback se já estivesse aguardando assinatura anteriormente
                                     )
                                   }
-                                  className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border ${
-                                    copiedId === coop._id
+                                  className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border ${copiedId === coop._id
                                       ? 'bg-green-600 hover:bg-green-700 text-white border-green-700'
                                       : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                                  }`}
+                                    }`}
                                   title={
                                     !activeLink && isWaiting
                                       ? 'Copia link simulado. Clique em Regerar Termo para obter um link real da ZapSign.'
@@ -620,7 +625,7 @@ export default function GestorDashboard() {
               <span className="font-bold text-slate-800">{Math.min(endIndex, filteredCooperados.length)}</span> de{' '}
               <span className="font-bold text-slate-800">{filteredCooperados.length}</span> cooperados
             </div>
-            
+
             <div className="flex items-center gap-1.5">
               {/* Botão Anterior */}
               <button
@@ -645,11 +650,10 @@ export default function GestorDashboard() {
                       )}
                       <button
                         onClick={() => setCurrentPage(page)}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                          currentPage === page
-                            ? 'bg-indigo-650 text-white shadow-sm'
+                        className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${currentPage === page
+                            ? 'bg-indigo-600 text-white shadow-sm'
                             : 'bg-white border border-slate-200 text-slate-650 hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         {page}
                       </button>
@@ -677,7 +681,7 @@ export default function GestorDashboard() {
             {/* Modal Header */}
             <div className="flex justify-between items-start p-6 border-b border-slate-100">
               <div>
-                <span className="text-indigo-650 text-xs font-bold uppercase tracking-wider">
+                <span className="text-indigo-600 text-xs font-bold uppercase tracking-wider">
                   Ficha de Inscrição Detalhada
                 </span>
                 <h2 className="text-2xl font-extrabold text-slate-950 mt-1">
@@ -832,11 +836,10 @@ export default function GestorDashboard() {
                       <div className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg flex items-center justify-between text-xs mb-1">
                         <span className="text-slate-700 font-semibold font-sans">Status do Termo:</span>
                         <span
-                          className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full ${
-                            selectedCooperado.txt_termo_status === 'Assinado'
+                          className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full ${selectedCooperado.txt_termo_status === 'Assinado'
                               ? 'bg-green-100 text-green-700 border border-green-200'
                               : 'bg-amber-100 text-amber-700 border border-amber-200'
-                          }`}
+                            }`}
                         >
                           {selectedCooperado.txt_termo_status}
                         </span>
@@ -868,11 +871,10 @@ export default function GestorDashboard() {
                             generatedLinks[selectedCooperado._id]
                           )
                         }
-                        className={`p-2.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-between border w-full ${
-                          copiedId === selectedCooperado._id
+                        className={`p-2.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-between border w-full ${copiedId === selectedCooperado._id
                             ? 'bg-green-600 text-white border-green-700'
                             : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
+                          }`}
                       >
                         <span className="flex items-center gap-1.5">
                           <Copy className="w-3.5 h-3.5" /> Link de Assinatura ZapSign
@@ -894,15 +896,14 @@ export default function GestorDashboard() {
                             rel="noopener noreferrer"
                             className="bg-slate-50 border border-slate-200 hover:bg-slate-100 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors"
                           >
-                            <span className="text-indigo-650 truncate max-w-[250px] font-mono">
+                            <span className="text-indigo-600 truncate max-w-[250px] font-mono">
                               {url.split('/').pop()}
                             </span>
                             <span
-                              className={`px-2 py-0.5 text-[9px] font-bold rounded ${
-                                isSignedPdf
-                                  ? 'bg-green-55 text-green-800 border border-green-200'
-                                  : 'bg-slate-200 text-slate-600 border border-slate-350'
-                              }`}
+                              className={`px-2 py-0.5 text-[9px] font-bold rounded ${isSignedPdf
+                                  ? 'bg-green-100 text-green-800 border border-green-200'
+                                  : 'bg-slate-200 text-slate-600 border border-slate-300'
+                                }`}
                             >
                               {isSignedPdf ? 'Termo Assinado' : 'Documento Anexo'}
                             </span>

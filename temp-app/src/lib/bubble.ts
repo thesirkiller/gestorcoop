@@ -52,6 +52,15 @@ export interface CreateContaInput {
   fk_cooperado: string;
 }
 
+export interface Termo {
+  _id?: string;
+  txt_titulo: string;
+  txt_conteudo: string;
+  txt_profissao: string;
+  num_versao: number;
+  bool_ativo: boolean;
+}
+
 export interface BubblePageResponse<T = unknown> {
   results: T[];
   remaining: number;
@@ -221,6 +230,20 @@ export const bubbleApi = {
 
   async updateServico(servicoId: string, data: Record<string, unknown>) {
     const response = await bubbleClient.patch(`/obj/servicos/${servicoId}`, data);
+    return response.data;
+  },
+
+  async createTermo(data: Omit<Termo, '_id'>) {
+    const response = await bubbleClient.post('/obj/termos', data);
+    return response.data;
+  },
+
+  async getTermos(): Promise<Termo[]> {
+    return getAllResults<Termo>('/obj/termos');
+  },
+
+  async updateTermo(id: string, data: Partial<Termo>) {
+    const response = await bubbleClient.patch(`/obj/termos/${id}`, data);
     return response.data;
   },
 };
