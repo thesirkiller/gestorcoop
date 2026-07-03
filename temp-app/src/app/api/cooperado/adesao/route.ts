@@ -152,7 +152,9 @@ Goiânia - GO, ${currentDate}.
       console.error('Erro na integração com a ZapSign:', err?.response?.data || err.message);
       // Fallback para simulação em ambiente de desenvolvimento caso as credenciais falhem
       docToken = `mock-token-${Date.now()}`;
-      signUrl = `https://sandbox.zapsign.com.br/sign/${docToken}`;
+      const isProduction = process.env.ZAPSIGN_BASE_URL?.includes('api.zapsign.com.br') && !process.env.ZAPSIGN_BASE_URL?.includes('sandbox');
+      const baseSignUrl = isProduction ? 'https://zapsign.com.br' : 'https://sandbox.zapsign.com.br';
+      signUrl = `${baseSignUrl}/sign/${docToken}`;
     }
 
     // Save the ZapSign document token in the cooperado record for callback tracking
