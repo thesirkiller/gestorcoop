@@ -19,6 +19,10 @@ import {
   Loader2,
   RefreshCw,
   DollarSign,
+  Copy,
+  Check,
+  ChevronDown,
+  ExternalLink,
 } from 'lucide-react';
 
 interface Cooperado {
@@ -57,6 +61,15 @@ export default function GestorDashboard() {
   const [modalOpen, setModalOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
 
+  // New states for filters, links and loading feedback
+  const [selectedProfession, setSelectedProfession] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [showProfessionDropdown, setShowProfessionDropdown] = useState(false);
+  const [showStatusDropdown, setShowStatusDropdown] = useState(false);
+  const [generatingTermId, setGeneratingTermId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({});
+
   // Fetch data
   const fetchData = async () => {
     setLoading(true);
@@ -75,57 +88,93 @@ export default function GestorDashboard() {
     fetchData();
   }, []);
 
-  // Filter cooperados
-  const filteredCooperados = cooperados.filter(c => 
-    c.txt_nomeCompleto?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.txt_CPF?.includes(searchQuery) ||
-    c.txt_email?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Dynamic filter for unique professions present in the cooperados list
+  const uniqueProfessions = Array.from(
+    new Set(cooperados.flatMap((c) => c.fks_profissoes || []))
+  ).sort();
 
-  // Classify into columns
-  const getColumnData = (status: 'waiting' | 'analysis' | 'approved') => {
-    return filteredCooperados.filter(c => {
+  // Filter cooperados client-side based on search query, profession and status
+  const filteredCooperados = cooperados.filter((c) => {
+    // 1. Search Query
+    const searchLower = searchQuery.toLowerCase();
+    const matchesSearch =
+      (c.txt_nomeCompleto || '').toLowerCase().includes(searchLower) ||
+      (c.txt_CPF || '').includes(searchQuery) ||
+      (c.txt_email || '').toLowerCase().includes(searchLower);
+
+    if (!matchesSearch) return false;
+
+    // 2. Profession Filter
+    if (selectedProfession) {
+      const hasProf = (c.fks_profissoes || []).includes(selectedProfession);
+      if (!hasProf) return false;
+    }
+
+    // 3. Status Filter
+    if (selectedStatus) {
       const isApproved = !!c.fk_usuario;
       const isSigned = c.txt_termo_status === 'Assinado';
+      const isWaiting = c.txt_termo_status === 'Aguardando Assinatura';
+      const hasNoTerm = !c.txt_termo_status;
 
-      if (status === 'waiting') {
-        return !isSigned && !isApproved;
-      }
-      if (status === 'analysis') {
-        return isSigned && !isApproved;
-      }
-      if (status === 'approved') {
-        return isApproved;
-      }
-      return false;
-    });
-  };
+      if (selectedStatus === 'sem_termo' && !hasNoTerm) return false;
+      if (selectedStatus === 'aguardando_assinatura' && !isWaiting) return false;
+      if (selectedStatus === 'em_analise' && (!isSigned || isApproved)) return false;
+      if (selectedStatus === 'aprovados' && !isApproved) return false;
+    }
 
-  const columns = {
-    waiting: {
-      title: 'Aguardando Assinatura',
-      color: 'border-amber-200 text-amber-700 bg-amber-50',
-      badge: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-      items: getColumnData('waiting'),
-    },
-    analysis: {
-      title: 'Em Análise',
-      color: 'border-blue-200 text-blue-700 bg-blue-50',
-      badge: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-      items: getColumnData('analysis'),
-    },
-    approved: {
-      title: 'Aprovados',
-      color: 'border-green-200 text-green-700 bg-green-50',
-      badge: 'bg-green-500/10 text-green-400 border-green-500/20',
-      items: getColumnData('approved'),
-    },
-  };
+    return true;
+  });
+
+  // Calculate metrics (Global values, independent of local filters)
+  const totalSubmissions = cooperados.length;
+  const waitingSignatureCount = cooperados.filter((c) => c.txt_termo_status === 'Aguardando Assinatura' && !c.fk_usuario).length;
+  const underAnalysisCount = cooperados.filter((c) => c.txt_termo_status === 'Assinado' && !c.fk_usuario).length;
+  const approvedCount = cooperados.filter((c) => !!c.fk_usuario).length;
 
   // Open detail modal
   const openDetails = (c: Cooperado) => {
     setSelectedCooperado(c);
     setModalOpen(true);
+  };
+
+  // Generate Termo de Adesão API call
+  const handleGerarTermo = async (id: string) => {
+    setGeneratingTermId(id);
+    try {
+      const res = await axios.post('/api/gestor/cooperados/gerar-termo', { id });
+      if (res.data.success && res.data.signUrl) {
+        // Store generated ZapSign signature link
+        setGeneratedLinks((prev) => ({ ...prev, [id]: res.data.signUrl }));
+        
+        // Update local list state
+        setCooperados((prev) =>
+          prev.map((c) =>
+            c._id === id ? { ...c, txt_termo_status: 'Aguardando Assinatura' } : c
+          )
+        );
+
+        // Update currently selected modal item
+        if (selectedCooperado && selectedCooperado._id === id) {
+          setSelectedCooperado((prev) =>
+            prev ? { ...prev, txt_termo_status: 'Aguardando Assinatura' } : null
+          );
+        }
+      }
+    } catch (err) {
+      console.error('Error generating term:', err);
+      alert('Falha ao gerar termo de adesão.');
+    } finally {
+      setGeneratingTermId(null);
+    }
+  };
+
+  // Copy ZapSign link to clipboard helper
+  const handleCopyLink = (id: string, link: string) => {
+    if (!link) return;
+    navigator.clipboard.writeText(link);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   // Approve cooperado
@@ -135,12 +184,16 @@ export default function GestorDashboard() {
       const res = await axios.post('/api/gestor/cooperados/aprovar', { id });
       if (res.data.success) {
         // Update local list
-        setCooperados(prev => prev.map(c => 
-          c._id === id ? { ...c, fk_usuario: 'approved-user-id' } : c
-        ));
+        setCooperados((prev) =>
+          prev.map((c) =>
+            c._id === id ? { ...c, fk_usuario: 'approved-user-id' } : c
+          )
+        );
         // Update currently selected modal item
         if (selectedCooperado && selectedCooperado._id === id) {
-          setSelectedCooperado(prev => prev ? { ...prev, fk_usuario: 'approved-user-id' } : null);
+          setSelectedCooperado((prev) =>
+            prev ? { ...prev, fk_usuario: 'approved-user-id' } : null
+          );
         }
       }
     } catch (err) {
@@ -153,7 +206,6 @@ export default function GestorDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10 font-sans">
-      
       {/* Header */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
         <div>
@@ -161,7 +213,9 @@ export default function GestorDashboard() {
             <Users className="w-8 h-8 text-indigo-600" />
             Painel do Gestor
           </h1>
-          <p className="text-slate-550 text-sm mt-1">Monitore, analise e aprove a adesão dos novos sócios cooperados.</p>
+          <p className="text-slate-500 text-sm mt-1">
+            Monitore, analise e aprove a adesão dos novos sócios cooperados.
+          </p>
         </div>
 
         <div className="flex items-center gap-4">
@@ -172,17 +226,7 @@ export default function GestorDashboard() {
             <DollarSign className="w-4 h-4" />
             Painel Financeiro
           </Link>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-            <input 
-              type="text" 
-              placeholder="Buscar por nome, CPF..." 
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-slate-200 focus:border-indigo-500 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all w-64 shadow-sm"
-            />
-          </div>
-          <button 
+          <button
             onClick={fetchData}
             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm"
             title="Atualizar dados"
@@ -195,14 +239,37 @@ export default function GestorDashboard() {
       {/* Metrics Row */}
       <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
         {[
-          { label: 'Total Inscrições', val: cooperados.length, icon: Users, color: 'text-indigo-600 bg-indigo-500/10 border-indigo-500/20' },
-          { label: 'Aguardando Assinatura', val: getColumnData('waiting').length, icon: Clock, color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
-          { label: 'Em Análise', val: getColumnData('analysis').length, icon: FileText, color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
-          { label: 'Aprovados', val: getColumnData('approved').length, icon: CheckCircle, color: 'text-green-400 bg-green-500/10 border-green-500/20' },
+          {
+            label: 'Total Inscrições',
+            val: totalSubmissions,
+            icon: Users,
+            color: 'text-indigo-600 bg-indigo-500/10 border-indigo-500/20',
+          },
+          {
+            label: 'Aguardando Assinatura',
+            val: waitingSignatureCount,
+            icon: Clock,
+            color: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
+          },
+          {
+            label: 'Em Análise',
+            val: underAnalysisCount,
+            icon: FileText,
+            color: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
+          },
+          {
+            label: 'Aprovados',
+            val: approvedCount,
+            icon: CheckCircle,
+            color: 'text-green-600 bg-green-500/10 border-green-500/20',
+          },
         ].map((item, idx) => {
           const Icon = item.icon;
           return (
-            <div key={idx} className="bg-white border border-slate-200 p-5 rounded-xl flex items-center justify-between gap-4 shadow-sm">
+            <div
+              key={idx}
+              className="bg-white border border-slate-200 p-5 rounded-xl flex items-center justify-between gap-4 shadow-sm"
+            >
               <div>
                 <span className="text-xs text-slate-400 font-semibold">{item.label}</span>
                 <p className="text-2xl font-black text-slate-900 mt-1">{item.val}</p>
@@ -215,83 +282,337 @@ export default function GestorDashboard() {
         })}
       </div>
 
-      {/* Kanban Board */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
-        
-        {Object.entries(columns).map(([key, col]) => (
-          <div key={key} className="flex flex-col bg-slate-100/50 border border-slate-200/80 rounded-xl p-4 shadow-sm min-h-[500px]">
-            
-            {/* Column Header */}
-            <div className={`flex items-center justify-between border-b pb-3 mb-4 ${col.color}`}>
-              <h2 className="font-bold text-sm uppercase tracking-wider">{col.title}</h2>
-              <span className={`text-xs font-bold border px-2.5 py-0.5 rounded-full ${col.badge}`}>
-                {col.items.length}
+      {/* Filters (Style matching Financeiro Page) */}
+      <div className="max-w-7xl mx-auto bg-white border border-slate-200 p-6 rounded-xl shadow-sm mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          {/* Search Box */}
+          <div className="relative">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Busca Rápida
+            </label>
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-450" />
+              <input
+                type="text"
+                placeholder="Nome, CPF ou e-mail..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg pl-10 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white transition-all shadow-sm"
+              />
+            </div>
+          </div>
+
+          {/* Profession Filter */}
+          <div className="relative">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Filtrar por Profissão
+            </label>
+            <div
+              onClick={() => {
+                setShowProfessionDropdown(!showProfessionDropdown);
+                setShowStatusDropdown(false);
+              }}
+              className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg bg-slate-50 hover:bg-white transition-all cursor-pointer text-sm"
+            >
+              <span className="truncate pr-2">
+                {selectedProfession || 'Todas as Profissões'}
               </span>
+              <ChevronDown className="w-4 h-4 text-slate-500" />
             </div>
 
-            {/* Column Items */}
-            {loading ? (
-              <div className="flex-1 flex items-center justify-center py-10">
-                <Loader2 className="w-6 h-6 text-slate-700 animate-spin" />
-              </div>
-            ) : col.items.length === 0 ? (
-              <div className="flex-1 border border-dashed border-slate-200 rounded-xl p-8 text-center text-slate-400 flex items-center justify-center text-xs">
-                Nenhum cooperado nesta etapa
-              </div>
-            ) : (
-              <div className="flex flex-col gap-4 overflow-y-auto max-h-[600px] pr-1">
-                {col.items.map((coop) => (
-                  <div 
-                    key={coop._id}
-                    className="bg-white border border-slate-200 hover:border-slate-350 hover:shadow rounded-xl p-4 shadow-sm transition-all cursor-pointer group"
-                    onClick={() => openDetails(coop)}
+            {showProfessionDropdown && (
+              <div className="absolute z-30 w-full mt-1 border border-slate-200 bg-white rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                <button
+                  onClick={() => {
+                    setSelectedProfession('');
+                    setShowProfessionDropdown(false);
+                  }}
+                  className="w-full text-left p-2.5 hover:bg-slate-50 transition-all border-b border-slate-100 text-xs text-slate-700"
+                >
+                  Todas as Profissões
+                </button>
+                {uniqueProfessions.map((prof) => (
+                  <button
+                    key={prof}
+                    onClick={() => {
+                      setSelectedProfession(prof);
+                      setShowProfessionDropdown(false);
+                    }}
+                    className="w-full text-left p-2.5 hover:bg-slate-50 transition-all border-b border-slate-100 text-xs text-slate-700 font-semibold"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <h3 className="font-bold text-sm text-slate-800 group-hover:text-indigo-600 transition-colors">
-                          {coop.txt_nomeCompleto}
-                        </h3>
-                        <p className="text-xs text-slate-500 mt-1">CPF: {coop.txt_CPF}</p>
-                      </div>
-                      <div className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-100 p-1.5 rounded-lg">
-                        <Eye className="w-3.5 h-3.5 text-slate-600" />
-                      </div>
-                    </div>
-
-                    <div className="flex flex-wrap gap-1.5 mt-3">
-                      {coop.fks_profissoes && coop.fks_profissoes.map((prof, i) => (
-                        <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-medium px-2 py-0.5 rounded">
-                          {prof}
-                        </span>
-                      ))}
-                    </div>
-
-                    <div className="flex items-center justify-between border-t border-slate-100 mt-4 pt-3 text-[10px] text-slate-500">
-                      <span>{coop.txt_email}</span>
-                      <span className="font-semibold">{coop.txt_whatsapp}</span>
-                    </div>
-                  </div>
+                    {prof}
+                  </button>
                 ))}
               </div>
             )}
-
           </div>
-        ))}
 
+          {/* Status Filter */}
+          <div className="relative">
+            <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Filtrar por Status
+            </label>
+            <div
+              onClick={() => {
+                setShowStatusDropdown(!showStatusDropdown);
+                setShowProfessionDropdown(false);
+              }}
+              className="flex items-center justify-between p-2.5 border border-slate-200 rounded-lg bg-slate-50 hover:bg-white transition-all cursor-pointer text-sm"
+            >
+              <span>
+                {selectedStatus === '' && 'Todos os Status'}
+                {selectedStatus === 'sem_termo' && 'Sem Termo'}
+                {selectedStatus === 'aguardando_assinatura' && 'Aguardando Assinatura'}
+                {selectedStatus === 'em_analise' && 'Em Análise'}
+                {selectedStatus === 'aprovados' && 'Aprovados'}
+              </span>
+              <ChevronDown className="w-4 h-4 text-slate-500" />
+            </div>
+
+            {showStatusDropdown && (
+              <div className="absolute z-30 w-full mt-1 border border-slate-200 bg-white rounded-lg shadow-lg">
+                {[
+                  { value: '', label: 'Todos os Status' },
+                  { value: 'sem_termo', label: 'Sem Termo' },
+                  { value: 'aguardando_assinatura', label: 'Aguardando Assinatura' },
+                  { value: 'em_analise', label: 'Em Análise (Assinado)' },
+                  { value: 'aprovados', label: 'Aprovados' },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setSelectedStatus(opt.value);
+                      setShowStatusDropdown(false);
+                    }}
+                    className="w-full text-left p-2.5 hover:bg-slate-50 transition-all border-b border-slate-100 text-xs text-slate-700"
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Tabela de Cooperados */}
+      <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden mb-12">
+        <div className="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h4 className="text-sm font-bold text-slate-800">Detalhamento das Adesões</h4>
+          <span className="text-xs bg-indigo-50 px-3 py-1 rounded-full text-indigo-700 font-semibold border border-indigo-150">
+            Exibindo {filteredCooperados.length} cooperados
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-100 text-xs uppercase">
+                <th className="py-3.5 px-6">Cooperado / Documentos</th>
+                <th className="py-3.5 px-6">Contato</th>
+                <th className="py-3.5 px-6">Profissões</th>
+                <th className="py-3.5 px-6">Status do Termo</th>
+                <th className="py-3.5 px-6 text-center">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-16">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <Loader2 className="w-6 h-6 text-indigo-650 animate-spin" />
+                      <span className="text-xs text-slate-450">Buscando cadastros no Bubble...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : filteredCooperados.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="text-center py-12 text-slate-400 text-sm">
+                    Nenhum cooperado encontrado com os filtros aplicados.
+                  </td>
+                </tr>
+              ) : (
+                filteredCooperados.map((coop) => {
+                  const isApproved = !!coop.fk_usuario;
+                  const isSigned = coop.txt_termo_status === 'Assinado';
+                  const isWaiting = coop.txt_termo_status === 'Aguardando Assinatura';
+                  const hasNoTerm = !coop.txt_termo_status;
+
+                  // Get active ZapSign link if generated in this session
+                  const activeLink = generatedLinks[coop._id];
+
+                  return (
+                    <tr
+                      key={coop._id}
+                      className={`hover:bg-slate-50/50 transition-colors ${
+                        isApproved ? 'opacity-80' : ''
+                      }`}
+                    >
+                      {/* Name & CPF */}
+                      <td className="py-4 px-6">
+                        <p className="font-bold text-slate-800">{coop.txt_nomeCompleto}</p>
+                        <p className="text-[11px] text-slate-400 font-mono mt-0.5">CPF: {coop.txt_CPF}</p>
+                        <p className="text-xs text-slate-500 mt-0.5">{coop.txt_email}</p>
+                      </td>
+
+                      {/* WhatsApp / Telefone */}
+                      <td className="py-4 px-6 text-xs text-slate-700">
+                        <p className="font-semibold font-mono">{coop.txt_whatsapp}</p>
+                        {coop.txt_telefone && (
+                          <p className="text-slate-400 font-mono mt-0.5">Reserva: {coop.txt_telefone}</p>
+                        )}
+                      </td>
+
+                      {/* Professions Badges */}
+                      <td className="py-4 px-6">
+                        <div className="flex flex-wrap gap-1.5 max-w-[250px]">
+                          {coop.fks_profissoes && coop.fks_profissoes.length > 0 ? (
+                            coop.fks_profissoes.map((prof, i) => (
+                              <span
+                                key={i}
+                                className="bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-semibold px-2 py-0.5 rounded"
+                              >
+                                {prof}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-slate-400 text-xs">-</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Term Status Badge */}
+                      <td className="py-4 px-6">
+                        {isApproved ? (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-green-50 text-green-700 border border-green-200">
+                            Aprovado
+                          </span>
+                        ) : isSigned ? (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                            Em Análise (Assinado)
+                          </span>
+                        ) : isWaiting ? (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-50 text-amber-700 border border-amber-200">
+                            Aguardando Assinatura
+                          </span>
+                        ) : (
+                          <span className="inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-500 border border-slate-200">
+                            Sem Termo
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-4 px-6">
+                        <div className="flex items-center justify-center gap-2">
+                          {/* Visualizar detalhes */}
+                          <button
+                            onClick={() => openDetails(coop)}
+                            className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm"
+                            title="Visualizar Cadastro Completo"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+
+                          {/* Geração e Cópia do Termo */}
+                          {!isApproved && (
+                            <>
+                              {/* Gerar / Regerar Termo */}
+                              {(hasNoTerm || isWaiting || activeLink) && (
+                                <button
+                                  onClick={() => handleGerarTermo(coop._id)}
+                                  disabled={generatingTermId === coop._id}
+                                  className="bg-indigo-50 border border-indigo-200 hover:bg-indigo-100/50 text-indigo-700 px-3 py-2 rounded-lg text-xs font-bold transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-sm"
+                                >
+                                  {generatingTermId === coop._id ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      Gerando...
+                                    </>
+                                  ) : activeLink || isWaiting ? (
+                                    'Regerar Termo'
+                                  ) : (
+                                    'Gerar Termo'
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Copiar Link */}
+                              {(isWaiting || activeLink) && (
+                                <button
+                                  onClick={() =>
+                                    handleCopyLink(
+                                      coop._id,
+                                      activeLink || `https://sandbox.zapsign.com.br/sign/mock` // fallback se já estivesse aguardando assinatura anteriormente
+                                    )
+                                  }
+                                  className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border ${
+                                    copiedId === coop._id
+                                      ? 'bg-green-600 hover:bg-green-700 text-white border-green-700'
+                                      : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                                  }`}
+                                  title={
+                                    !activeLink && isWaiting
+                                      ? 'Copia link simulado. Clique em Regerar Termo para obter um link real da ZapSign.'
+                                      : 'Copiar link da ZapSign'
+                                  }
+                                >
+                                  {copiedId === coop._id ? (
+                                    <>
+                                      <Check className="w-3.5 h-3.5" />
+                                      Copiado!
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3.5 h-3.5" />
+                                      Copiar Link
+                                    </>
+                                  )}
+                                </button>
+                              )}
+
+                              {/* Aprovar */}
+                              {isSigned && (
+                                <button
+                                  onClick={() => approveCooperado(coop._id)}
+                                  disabled={approvingId === coop._id}
+                                  className="bg-green-600 hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-bold shadow flex items-center gap-1 transition-all disabled:opacity-50"
+                                >
+                                  {approvingId === coop._id ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  ) : (
+                                    <CheckCircle className="w-3.5 h-3.5" />
+                                  )}
+                                  Aprovar
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Detail Modal */}
       {modalOpen && selectedCooperado && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-250 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-            
+          <div className="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
             {/* Modal Header */}
             <div className="flex justify-between items-start p-6 border-b border-slate-100">
               <div>
-                <span className="text-indigo-600 text-xs font-bold uppercase tracking-wider">Ficha de Inscrição Detalhada</span>
-                <h2 className="text-2xl font-extrabold text-slate-900 mt-1">{selectedCooperado.txt_nomeCompleto}</h2>
+                <span className="text-indigo-650 text-xs font-bold uppercase tracking-wider">
+                  Ficha de Inscrição Detalhada
+                </span>
+                <h2 className="text-2xl font-extrabold text-slate-950 mt-1">
+                  {selectedCooperado.txt_nomeCompleto}
+                </h2>
               </div>
-              <button 
+              <button
                 onClick={() => setModalOpen(false)}
                 className="text-slate-500 hover:text-slate-800 p-2 hover:bg-slate-100 rounded-lg transition-all"
               >
@@ -300,82 +621,111 @@ export default function GestorDashboard() {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-              
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8 text-slate-800">
               {/* Left Column: Personal info */}
               <div className="flex flex-col gap-6">
                 <div>
-                  <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                  <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
                     <User className="w-4 h-4 text-indigo-600" /> Dados Pessoais
                   </h3>
                   <div className="grid grid-cols-2 gap-y-3 gap-x-4 text-xs">
                     <div>
-                      <span className="text-slate-500">CPF</span>
-                      <p className="text-white font-mono mt-0.5">{selectedCooperado.txt_CPF}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">PIS</span>
-                      <p className="text-white font-mono mt-0.5">{selectedCooperado.txt_pis || '-'}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">E-mail</span>
-                      <p className="text-slate-850 mt-0.5">{selectedCooperado.txt_email}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">WhatsApp</span>
-                      <p className="text-white font-mono mt-0.5">{selectedCooperado.txt_whatsapp}</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">RG / Emissor</span>
-                      <p className="text-slate-850 mt-0.5">{selectedCooperado.txt_rg} ({selectedCooperado.txt_orgaoEmissor}/{selectedCooperado.txt_orgaoUF})</p>
-                    </div>
-                    <div>
-                      <span className="text-slate-500">Data Nascimento</span>
-                      <p className="text-slate-850 mt-0.5">
-                        {selectedCooperado.date_dataNascimento ? new Date(selectedCooperado.date_dataNascimento).toLocaleDateString('pt-BR') : '-'}
+                      <span className="text-slate-400 font-medium">CPF</span>
+                      <p className="text-slate-900 font-semibold font-mono mt-0.5">
+                        {selectedCooperado.txt_CPF}
                       </p>
                     </div>
                     <div>
-                      <span className="text-slate-500">Estado Civil</span>
-                      <p className="text-slate-850 mt-0.5">{selectedCooperado.txt_estadoCivil || '-'}</p>
+                      <span className="text-slate-400 font-medium">PIS</span>
+                      <p className="text-slate-900 font-semibold font-mono mt-0.5">
+                        {selectedCooperado.txt_pis || '-'}
+                      </p>
                     </div>
                     <div>
-                      <span className="text-slate-500">Escolaridade</span>
-                      <p className="text-slate-850 mt-0.5">{selectedCooperado.txt_grauEscolaridade || '-'}</p>
+                      <span className="text-slate-400 font-medium">E-mail</span>
+                      <p className="text-slate-800 font-medium mt-0.5">
+                        {selectedCooperado.txt_email}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-medium">WhatsApp</span>
+                      <p className="text-slate-900 font-semibold font-mono mt-0.5">
+                        {selectedCooperado.txt_whatsapp}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-medium">RG / Emissor</span>
+                      <p className="text-slate-800 font-semibold mt-0.5">
+                        {selectedCooperado.txt_rg || '-'}{' '}
+                        {selectedCooperado.txt_orgaoEmissor && (
+                          <>
+                            ({selectedCooperado.txt_orgaoEmissor}/{selectedCooperado.txt_orgaoUF})
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-medium">Data Nascimento</span>
+                      <p className="text-slate-800 font-semibold mt-0.5">
+                        {selectedCooperado.date_dataNascimento
+                          ? new Date(selectedCooperado.date_dataNascimento).toLocaleDateString('pt-BR')
+                          : '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-medium">Estado Civil</span>
+                      <p className="text-slate-800 font-semibold mt-0.5">
+                        {selectedCooperado.txt_estadoCivil || '-'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-medium">Escolaridade</span>
+                      <p className="text-slate-800 font-semibold mt-0.5">
+                        {selectedCooperado.txt_grauEscolaridade || '-'}
+                      </p>
                     </div>
                     <div className="col-span-2">
-                      <span className="text-slate-500">Nome da Mãe</span>
-                      <p className="text-slate-850 mt-0.5">{selectedCooperado.txt_nomeMae || '-'}</p>
+                      <span className="text-slate-400 font-medium">Nome da Mãe</span>
+                      <p className="text-slate-800 font-semibold mt-0.5">
+                        {selectedCooperado.txt_nomeMae || '-'}
+                      </p>
                     </div>
                     {selectedCooperado.txt_nomePai && (
                       <div className="col-span-2">
-                        <span className="text-slate-500">Nome do Pai</span>
-                        <p className="text-slate-850 mt-0.5">{selectedCooperado.txt_nomePai}</p>
+                        <span className="text-slate-400 font-medium">Nome do Pai</span>
+                        <p className="text-slate-800 font-semibold mt-0.5">
+                          {selectedCooperado.txt_nomePai}
+                        </p>
                       </div>
                     )}
                   </div>
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                  <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
                     <MapPin className="w-4 h-4 text-indigo-600" /> Endereço Residencial
                   </h3>
-                  <p className="text-xs text-white leading-relaxed">{selectedCooperado.txt_endereco || 'Não cadastrado'}</p>
+                  <p className="text-xs text-slate-700 leading-relaxed font-semibold">
+                    {selectedCooperado.txt_endereco || 'Não cadastrado'}
+                  </p>
                 </div>
               </div>
 
               {/* Right Column: Professions, Bank Accounts & Docs */}
-              <div className="flex flex-col gap-6">
+              <div className="flex flex-col gap-6 text-slate-800">
                 <div>
-                  <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                  <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
                     <Briefcase className="w-4 h-4 text-indigo-600" /> Profissões Cadastradas
                   </h3>
                   <div className="flex flex-col gap-2">
                     {selectedCooperado.fks_profissoes && selectedCooperado.fks_profissoes.length > 0 ? (
                       selectedCooperado.fks_profissoes.map((prof, i) => (
-                        <div key={i} className="bg-slate-50 border border-slate-150 p-2.5 rounded-lg flex items-center justify-between text-xs">
-                          <span className="font-bold text-white">{prof}</span>
-                          <span className="text-slate-400">Conselho Ativo</span>
+                        <div
+                          key={i}
+                          className="bg-slate-50 border border-slate-200 p-2.5 rounded-lg flex items-center justify-between text-xs"
+                        >
+                          <span className="font-bold text-slate-800">{prof}</span>
+                          <span className="text-slate-400 font-medium">Conselho Ativo</span>
                         </div>
                       ))
                     ) : (
@@ -385,15 +735,18 @@ export default function GestorDashboard() {
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                  <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
                     <CreditCard className="w-4 h-4 text-indigo-600" /> Dados Bancários
                   </h3>
-                  {/* Since accounts are sub-records, we'll list how they are represented or show info */}
-                  <p className="text-xs text-slate-400">Contas vinculadas na base de dados do Bubble.</p>
-                  <div className="bg-slate-50 border border-slate-150 p-3 rounded-lg text-xs mt-2 flex flex-col gap-2">
+                  <p className="text-xs text-slate-400 font-medium">
+                    Contas vinculadas na base de dados do Bubble.
+                  </p>
+                  <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs mt-2 flex flex-col gap-2">
                     <div className="flex justify-between">
                       <span className="text-slate-500">Contas Criadas:</span>
-                      <span className="text-white font-bold font-mono">{(selectedCooperado['fks_ContasBancarias'] || []).length} conta(s)</span>
+                      <span className="text-slate-800 font-bold font-mono">
+                        {(selectedCooperado['fks_ContasBancarias'] || []).length} conta(s)
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -405,49 +758,80 @@ export default function GestorDashboard() {
                   <div className="flex flex-col gap-2">
                     {selectedCooperado.txt_termo_status && (
                       <div className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg flex items-center justify-between text-xs mb-1">
-                        <span className="text-slate-700 font-semibold">Status do Termo:</span>
-                        <span className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full ${
-                          selectedCooperado.txt_termo_status === 'Assinado'
-                            ? 'bg-green-100 text-green-700 border border-green-200'
-                            : 'bg-amber-100 text-amber-700 border border-amber-200'
-                        }`}>
+                        <span className="text-slate-700 font-semibold font-sans">Status do Termo:</span>
+                        <span
+                          className={`px-2.5 py-0.5 text-[10px] font-bold rounded-full ${
+                            selectedCooperado.txt_termo_status === 'Assinado'
+                              ? 'bg-green-100 text-green-700 border border-green-200'
+                              : 'bg-amber-100 text-amber-700 border border-amber-200'
+                          }`}
+                        >
                           {selectedCooperado.txt_termo_status}
                         </span>
                       </div>
                     )}
 
                     {selectedCooperado.file_termo_assinado && (
-                      <a 
-                        href={selectedCooperado.file_termo_assinado} 
-                        target="_blank" 
+                      <a
+                        href={selectedCooperado.file_termo_assinado}
+                        target="_blank"
                         rel="noopener noreferrer"
                         className="bg-green-50 border border-green-100 hover:bg-green-100/50 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors mb-1"
                       >
                         <span className="text-green-800 font-semibold truncate max-w-[250px] flex items-center gap-1.5">
                           <FileText className="w-3.5 h-3.5 text-green-600" /> Termo de Adesão Assinado
                         </span>
-                        <span className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 text-[9px] font-bold rounded transition-colors">
-                          Visualizar
+                        <span className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 text-[9px] font-bold rounded transition-colors flex items-center gap-0.5">
+                          Visualizar <ExternalLink className="w-2.5 h-2.5" />
                         </span>
                       </a>
+                    )}
+
+                    {/* Exibe botão de cópia dentro da modal caso tenha link ativo na sessão */}
+                    {generatedLinks[selectedCooperado._id] && (
+                      <button
+                        onClick={() =>
+                          handleCopyLink(
+                            selectedCooperado._id,
+                            generatedLinks[selectedCooperado._id]
+                          )
+                        }
+                        className={`p-2.5 rounded-lg text-xs font-bold transition-colors flex items-center justify-between border w-full ${
+                          copiedId === selectedCooperado._id
+                            ? 'bg-green-600 text-white border-green-700'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Copy className="w-3.5 h-3.5" /> Link de Assinatura ZapSign
+                        </span>
+                        <span>{copiedId === selectedCooperado._id ? 'Copiado!' : 'Copiar'}</span>
+                      </button>
                     )}
 
                     {selectedCooperado.fks_pasta && selectedCooperado.fks_pasta.length > 0 ? (
                       selectedCooperado.fks_pasta.map((url, i) => {
                         if (url === selectedCooperado.file_termo_assinado) return null;
-                        const isSignedPdf = url.includes('zapsign') || url.includes('signed') || url.endsWith('.pdf');
+                        const isSignedPdf =
+                          url.includes('zapsign') || url.includes('signed') || url.endsWith('.pdf');
                         return (
-                          <a 
-                            key={i} 
-                            href={url} 
-                            target="_blank" 
+                          <a
+                            key={i}
+                            href={url}
+                            target="_blank"
                             rel="noopener noreferrer"
-                            className="bg-slate-50 border border-slate-150 hover:bg-slate-100 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors"
+                            className="bg-slate-50 border border-slate-200 hover:bg-slate-100 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors"
                           >
-                            <span className="text-indigo-650 truncate max-w-[250px] font-mono">{url.split('/').pop()}</span>
-                            <span className={`px-2 py-0.5 text-[9px] font-bold rounded ${
-                              isSignedPdf ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-slate-200 text-slate-600 border border-slate-300'
-                            }`}>
+                            <span className="text-indigo-650 truncate max-w-[250px] font-mono">
+                              {url.split('/').pop()}
+                            </span>
+                            <span
+                              className={`px-2 py-0.5 text-[9px] font-bold rounded ${
+                                isSignedPdf
+                                  ? 'bg-green-55 text-green-800 border border-green-200'
+                                  : 'bg-slate-200 text-slate-600 border border-slate-350'
+                              }`}
+                            >
                               {isSignedPdf ? 'Termo Assinado' : 'Documento Anexo'}
                             </span>
                           </a>
@@ -455,30 +839,31 @@ export default function GestorDashboard() {
                       })
                     ) : (
                       !selectedCooperado.file_termo_assinado && (
-                        <p className="text-xs text-slate-500">Aguardando anexos de documentos ou assinatura.</p>
+                        <p className="text-xs text-slate-450 italic mt-1">
+                          Aguardando anexos de documentos ou assinatura.
+                        </p>
                       )
                     )}
                   </div>
                 </div>
               </div>
-
             </div>
 
             {/* Modal Footer (Action approval buttons) */}
-            <div className="bg-slate-50 p-6 border-t border-slate-150 flex justify-between items-center gap-4">
-              <button 
+            <div className="bg-slate-50 p-6 border-t border-slate-200 flex justify-between items-center gap-4">
+              <button
                 onClick={() => setModalOpen(false)}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2 rounded-lg text-sm font-semibold transition-all border border-slate-200"
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2 rounded-lg text-sm font-semibold transition-all border border-slate-255"
               >
                 Fechar
               </button>
 
               {/* Only show Approve button if in Analysis stage (signed, no User login created yet) */}
               {selectedCooperado.txt_termo_status === 'Assinado' && !selectedCooperado.fk_usuario && (
-                <button 
+                <button
                   onClick={() => approveCooperado(selectedCooperado._id)}
                   disabled={!!approvingId}
-                  className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg shadow-green-600/20 flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  className="bg-green-600 hover:bg-green-550 text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg shadow-green-600/20 flex items-center gap-1.5 transition-all disabled:opacity-50"
                 >
                   {approvingId ? (
                     <>
@@ -498,11 +883,9 @@ export default function GestorDashboard() {
                 </span>
               )}
             </div>
-
           </div>
         </div>
       )}
-
     </div>
   );
 }
