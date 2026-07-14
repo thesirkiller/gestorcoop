@@ -15,7 +15,7 @@ export const zapsignApi = {
   async createDocument(name: string, pdfBase64: string, signerName: string, signerEmail: string): Promise<ZapSignDocumentResponse> {
     const rawEnvToken = process.env.ZAPSIGN_API_TOKEN || '';
     const token = rawEnvToken.replace(/^Bearer\s+/i, '').trim();
-    const baseUrl = (process.env.ZAPSIGN_BASE_URL || 'https://sandbox.api.zapsign.com.br/api/v1').replace(/\/$/, '');
+    const baseUrl = (process.env.ZAPSIGN_BASE_URL || 'https://api.zapsign.com.br/api/v1').replace(/\/$/, '');
     
     const url = `${baseUrl}/docs/`;
     

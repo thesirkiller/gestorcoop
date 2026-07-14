@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDropzone } from 'react-dropzone';
 import axios from 'axios';
@@ -100,6 +100,16 @@ export default function AdesaoPage() {
   // Step 5: Document Uploads
   const [uploadedFiles, setUploadedFiles] = useState<{ url: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // Auto-redirect to ZapSign signing page once we reach step 6 with a valid URL
+  useEffect(() => {
+    if (currentStep === 6 && signUrl) {
+      const timer = setTimeout(() => {
+        window.location.href = signUrl;
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [currentStep, signUrl]);
 
   // Mask Formatters
   const formatCPF = (val: string) => {
@@ -1054,31 +1064,41 @@ export default function AdesaoPage() {
                 </div>
               )}
 
-              {/* STEP 6: ZapSign Iframe Signature */}
+              {/* STEP 6: Redirect to ZapSign Signature */}
               {currentStep === 6 && (
-                <div className="flex flex-col items-center">
-                  <div className="w-full text-center mb-6">
-                    <h2 className="text-2xl font-bold text-slate-850 flex items-center justify-center gap-2">
-                      <FileCheck className="w-8 h-8 text-indigo-600" />
-                      Assine seu Termo de Adesão
-                    </h2>
-                    <p className="text-sm text-slate-550 mt-2">Leia e assine o termo eletronicamente utilizando a ZapSign para concluir sua admissão.</p>
-                  </div>
-
-                  <div className="w-full bg-slate-50 rounded-xl border border-slate-200 overflow-hidden shadow-inner">
-                    {signUrl ? (
-                      <iframe
-                        src={signUrl}
-                        className="w-full h-[650px] border-0"
-                        allow="geolocation; camera"
-                      />
-                    ) : (
-                      <div className="h-[400px] flex flex-col items-center justify-center gap-3">
-                        <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-                        <p className="text-sm text-slate-550">Carregando formulário de assinatura...</p>
+                <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+                  {signUrl ? (
+                    <>
+                      <div className="w-20 h-20 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-6">
+                        <CheckCircle className="w-11 h-11 text-emerald-500" />
                       </div>
-                    )}
-                  </div>
+                      <h2 className="text-2xl font-bold text-slate-900 flex items-center justify-center gap-2">
+                        Cadastro realizado com sucesso!
+                      </h2>
+                      <p className="text-sm text-slate-550 mt-3 max-w-md">
+                        Você será redirecionado para assinar seu Termo de Adesão na ZapSign.
+                        Se o redirecionamento não acontecer automaticamente, clique no botão abaixo.
+                      </p>
+
+                      <a
+                        href={signUrl}
+                        className="mt-8 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
+                      >
+                        <FileCheck className="w-5 h-5" />
+                        Assinar Termo de Adesão
+                      </a>
+
+                      <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Redirecionando automaticamente...
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-3">
+                      <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
+                      <p className="text-sm text-slate-550">Gerando seu documento para assinatura...</p>
+                    </div>
+                  )}
                 </div>
               )}
 
