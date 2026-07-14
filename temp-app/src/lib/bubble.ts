@@ -1,5 +1,12 @@
 import axios from 'axios';
 
+if (!process.env.BUBBLE_API_URL) {
+  throw new Error(
+    'BUBBLE_API_URL não está definida. Configure-a no .env.local (ex.: https://gestorcoop.app/version-test/api/1.1). ' +
+    'Sem ela, o axios usa URLs relativas e o Next.js lança "URL is malformed".'
+  );
+}
+
 const bubbleClient = axios.create({
   baseURL: process.env.BUBBLE_API_URL,
   headers: {
