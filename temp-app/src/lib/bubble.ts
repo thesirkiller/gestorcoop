@@ -325,13 +325,13 @@ export const bubbleApi = {
   },
   async createEquipamento(data: Omit<Equipamento, '_id' | 'CreatedDate'>): Promise<Equipamento> {
     const payload = {
-      txt_nome: data.txt_nome,
-      txt_descricao: data.txt_descricao,
-      txt_marca: data.txt_marca,
-      txt_modelo: data.txt_modelo,
-      txt_numero_serie: data.txt_numero_serie,
-      num_preco_padrao: data.num_preco_padrao,
-      OS_status: data.txt_status || 'Disponível'
+      txt_nome_text: data.txt_nome,
+      txt_descricao_text: data.txt_descricao,
+      txt_marca_text: data.txt_marca,
+      txt_modelo_text: data.txt_modelo,
+      txt_numero_serie_text: data.txt_numero_serie,
+      num_preco_padrao_number: data.num_preco_padrao,
+      os_status_os_status_equipamento: data.txt_status || 'Disponível'
     };
     const response = await bubbleClient.post('/obj/equipamento', payload);
     const createdId = response.data.id || response.data.response?.id;
@@ -342,13 +342,13 @@ export const bubbleApi = {
   },
   async updateEquipamento(id: string, data: Partial<Equipamento>): Promise<void> {
     const payload: any = {};
-    if (data.txt_nome !== undefined) payload.txt_nome = data.txt_nome;
-    if (data.txt_descricao !== undefined) payload.txt_descricao = data.txt_descricao;
-    if (data.txt_marca !== undefined) payload.txt_marca = data.txt_marca;
-    if (data.txt_modelo !== undefined) payload.txt_modelo = data.txt_modelo;
-    if (data.txt_numero_serie !== undefined) payload.txt_numero_serie = data.txt_numero_serie;
-    if (data.num_preco_padrao !== undefined) payload.num_preco_padrao = data.num_preco_padrao;
-    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
+    if (data.txt_nome !== undefined) payload.txt_nome_text = data.txt_nome;
+    if (data.txt_descricao !== undefined) payload.txt_descricao_text = data.txt_descricao;
+    if (data.txt_marca !== undefined) payload.txt_marca_text = data.txt_marca;
+    if (data.txt_modelo !== undefined) payload.txt_modelo_text = data.txt_modelo;
+    if (data.txt_numero_serie !== undefined) payload.txt_numero_serie_text = data.txt_numero_serie;
+    if (data.num_preco_padrao !== undefined) payload.num_preco_padrao_number = data.num_preco_padrao;
+    if (data.txt_status !== undefined) payload.os_status_os_status_equipamento = data.txt_status;
     await bubbleClient.patch(`/obj/equipamento/${id}`, payload);
   },
   async deleteEquipamento(id: string): Promise<void> {
@@ -393,9 +393,9 @@ export const bubbleApi = {
   },
   async createPaciente(data: Omit<Paciente, '_id' | 'CreatedDate'>): Promise<Paciente> {
     const payload: any = {
-      txt_nome: data.txt_nome,
-      geo_local: data.txt_endereco,
-      os_tipo: data.txt_tipo || 'Homecare'
+      nome_fantasia_text: data.txt_nome,
+      local_geographic_address: data.txt_endereco,
+      os_tipo_os_tipo_paciente: data.txt_tipo || 'Homecare'
     };
     const response = await bubbleClient.post('/obj/locais_de_trabalho_pacientes', payload);
     const createdId = response.data.id || response.data.response?.id;
@@ -410,11 +410,11 @@ export const bubbleApi = {
   },
   async updatePaciente(id: string, data: Partial<Paciente>): Promise<void> {
     const payload: any = {};
-    if (data.txt_nome !== undefined) payload.txt_nome = data.txt_nome;
-    if (data.txt_endereco !== undefined) payload.geo_local = data.txt_endereco;
-    if (data.txt_tipo !== undefined) payload.os_tipo = data.txt_tipo;
-    if (data.fks_equipamentos !== undefined) payload.fks_equipamentos = data.fks_equipamentos;
-    if (data.fks_locacoes !== undefined) payload.fks_locacoes = data.fks_locacoes;
+    if (data.txt_nome !== undefined) payload.nome_fantasia_text = data.txt_nome;
+    if (data.txt_endereco !== undefined) payload.local_geographic_address = data.txt_endereco;
+    if (data.txt_tipo !== undefined) payload.os_tipo_os_tipo_paciente = data.txt_tipo;
+    if (data.fks_equipamentos !== undefined) payload.fks_equipamentos_list_custom_equipamento = data.fks_equipamentos;
+    if (data.fks_locacoes !== undefined) payload.fks_locacoes_list_custom_locacao_equipamento = data.fks_locacoes;
     await bubbleClient.patch(`/obj/locais_de_trabalho_pacientes/${id}`, payload);
   },
 
@@ -452,13 +452,13 @@ export const bubbleApi = {
   },
   async createLocacao(data: Omit<LocacaoEquipamento, '_id' | 'CreatedDate'>): Promise<LocacaoEquipamento> {
     const payload = {
-      fk_equipamento: data.fk_equipamento,
-      fk_paciente: data.fk_paciente,
-      date_inicio: data.date_inicio,
-      date_fim_previsto: data.date_fim_previsto,
-      num_valor_aluguel: data.num_valor_aluguel,
-      OS_status: data.txt_status || 'Ativo',
-      txt_observacoes: data.txt_observacoes
+      fk_equipamento_custom_equipamento: data.fk_equipamento,
+      fk_paciente_custom_locais_de_trabalho_pacientes: data.fk_paciente,
+      date_inicio_date: data.date_inicio,
+      date_fim_previsto_date: data.date_fim_previsto,
+      num_valor_aluguel_number: data.num_valor_aluguel,
+      os_status_os_status_locacao: data.txt_status || 'Ativo',
+      txt_observacoes_text: data.txt_observacoes
     };
     const response = await bubbleClient.post('/obj/locacao_equipamento', payload);
     const createdId = response.data.id || response.data.response?.id;
@@ -469,14 +469,14 @@ export const bubbleApi = {
   },
   async updateLocacao(id: string, data: Partial<LocacaoEquipamento>): Promise<void> {
     const payload: any = {};
-    if (data.fk_equipamento !== undefined) payload.fk_equipamento = data.fk_equipamento;
-    if (data.fk_paciente !== undefined) payload.fk_paciente = data.fk_paciente;
-    if (data.date_inicio !== undefined) payload.date_inicio = data.date_inicio;
-    if (data.date_fim_previsto !== undefined) payload.date_fim_previsto = data.date_fim_previsto;
-    if (data.date_fim_real !== undefined) payload.date_fim_real = data.date_fim_real;
-    if (data.num_valor_aluguel !== undefined) payload.num_valor_aluguel = data.num_valor_aluguel;
-    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
-    if (data.txt_observacoes !== undefined) payload.txt_observacoes = data.txt_observacoes;
+    if (data.fk_equipamento !== undefined) payload.fk_equipamento_custom_equipamento = data.fk_equipamento;
+    if (data.fk_paciente !== undefined) payload.fk_paciente_custom_locais_de_trabalho_pacientes = data.fk_paciente;
+    if (data.date_inicio !== undefined) payload.date_inicio_date = data.date_inicio;
+    if (data.date_fim_previsto !== undefined) payload.date_fim_previsto_date = data.date_fim_previsto;
+    if (data.date_fim_real !== undefined) payload.date_fim_real_date = data.date_fim_real;
+    if (data.num_valor_aluguel !== undefined) payload.num_valor_aluguel_number = data.num_valor_aluguel;
+    if (data.txt_status !== undefined) payload.os_status_os_status_locacao = data.txt_status;
+    if (data.txt_observacoes !== undefined) payload.txt_observacoes_text = data.txt_observacoes;
     await bubbleClient.patch(`/obj/locacao_equipamento/${id}`, payload);
   },
 
