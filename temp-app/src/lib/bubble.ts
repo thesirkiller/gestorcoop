@@ -479,5 +479,43 @@ export const bubbleApi = {
     if (data.txt_observacoes !== undefined) payload.txt_observacoes_text = data.txt_observacoes;
     await bubbleClient.patch(`/obj/locacao_equipamento/${id}`, payload);
   },
+
+  // Autenticação SSO
+  async findUserBySSOToken(token: string): Promise<any> {
+    let constraints = [
+      {
+        key: 'txt_sso_token_text',
+        constraint_type: 'equals',
+        value: token,
+      },
+    ];
+    let response = await bubbleClient.get(`/obj/user?constraints=${JSON.stringify(constraints)}`);
+    let user = response.data.response.results?.[0];
+    
+    if (!user) {
+      constraints = [
+        {
+          key: 'sso_token_text',
+          constraint_type: 'equals',
+          value: token,
+        },
+      ];
+      response = await bubbleClient.get(`/obj/user?constraints=${JSON.stringify(constraints)}`);
+      user = response.data.response.results?.[0];
+    }
+    return user || null;
+  },
+
+  async clearSSOToken(userId: string): Promise<void> {
+    try {
+      const payload: any = {
+        txt_sso_token_text: null,
+        sso_token_text: null
+      };
+      await bubbleClient.patch(`/obj/user/${userId}`, payload);
+    } catch (e) {
+      console.warn("Failed to clear SSO token fields:", e);
+    }
+  },
 };
 
