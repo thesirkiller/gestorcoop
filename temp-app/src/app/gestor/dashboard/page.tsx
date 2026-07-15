@@ -660,7 +660,7 @@ export default function GestorDashboard() {
                         onClick={() => setCurrentPage(page)}
                         className={`px-3 py-1.5 text-xs font-bold rounded-lg transition-all ${currentPage === page
                             ? 'bg-indigo-600 text-white shadow-sm'
-                            : 'bg-white border border-slate-200 text-slate-650 hover:bg-slate-50'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                           }`}
                       >
                         {page}

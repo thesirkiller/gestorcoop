@@ -299,13 +299,13 @@ export const bubbleApi = {
     const raw = response.data.response;
     return {
       _id: raw._id,
-      txt_nome: raw.txt_nome_text || '',
-      txt_descricao: raw.txt_descricao_text || '',
-      txt_marca: raw.txt_marca_text || '',
-      txt_modelo: raw.txt_modelo_text || '',
-      txt_numero_serie: raw.txt_numero_serie_text || '',
-      num_preco_padrao: raw.num_preco_padrao_number || 0,
-      txt_status: raw.os_status_os_status_equipamento || 'Disponível',
+      txt_nome: raw.txt_nome || '',
+      txt_descricao: raw.txt_descricao || '',
+      txt_marca: raw.txt_marca || '',
+      txt_modelo: raw.txt_modelo || '',
+      txt_numero_serie: raw.txt_numero_serie || '',
+      num_preco_padrao: raw.num_preco_padrao || 0,
+      txt_status: raw.OS_status || 'Disponível',
       CreatedDate: raw['Created Date']
     };
   },
@@ -313,25 +313,25 @@ export const bubbleApi = {
     const rawList = await getAllResults<any>('/obj/equipamento', constraints);
     return rawList.map(raw => ({
       _id: raw._id,
-      txt_nome: raw.txt_nome_text || '',
-      txt_descricao: raw.txt_descricao_text || '',
-      txt_marca: raw.txt_marca_text || '',
-      txt_modelo: raw.txt_modelo_text || '',
-      txt_numero_serie: raw.txt_numero_serie_text || '',
-      num_preco_padrao: raw.num_preco_padrao_number || 0,
-      txt_status: raw.os_status_os_status_equipamento || 'Disponível',
+      txt_nome: raw.txt_nome || '',
+      txt_descricao: raw.txt_descricao || '',
+      txt_marca: raw.txt_marca || '',
+      txt_modelo: raw.txt_modelo || '',
+      txt_numero_serie: raw.txt_numero_serie || '',
+      num_preco_padrao: raw.num_preco_padrao || 0,
+      txt_status: raw.OS_status || 'Disponível',
       CreatedDate: raw['Created Date']
     }));
   },
   async createEquipamento(data: Omit<Equipamento, '_id' | 'CreatedDate'>): Promise<Equipamento> {
     const payload = {
-      txt_nome_text: data.txt_nome,
-      txt_descricao_text: data.txt_descricao,
-      txt_marca_text: data.txt_marca,
-      txt_modelo_text: data.txt_modelo,
-      txt_numero_serie_text: data.txt_numero_serie,
-      num_preco_padrao_number: data.num_preco_padrao,
-      os_status_os_status_equipamento: data.txt_status || 'Disponível'
+      txt_nome: data.txt_nome,
+      txt_descricao: data.txt_descricao,
+      txt_marca: data.txt_marca,
+      txt_modelo: data.txt_modelo,
+      txt_numero_serie: data.txt_numero_serie,
+      num_preco_padrao: data.num_preco_padrao,
+      OS_status: data.txt_status || 'Disponível'
     };
     const response = await bubbleClient.post('/obj/equipamento', payload);
     const createdId = response.data.id || response.data.response?.id;
@@ -342,13 +342,13 @@ export const bubbleApi = {
   },
   async updateEquipamento(id: string, data: Partial<Equipamento>): Promise<void> {
     const payload: any = {};
-    if (data.txt_nome !== undefined) payload.txt_nome_text = data.txt_nome;
-    if (data.txt_descricao !== undefined) payload.txt_descricao_text = data.txt_descricao;
-    if (data.txt_marca !== undefined) payload.txt_marca_text = data.txt_marca;
-    if (data.txt_modelo !== undefined) payload.txt_modelo_text = data.txt_modelo;
-    if (data.txt_numero_serie !== undefined) payload.txt_numero_serie_text = data.txt_numero_serie;
-    if (data.num_preco_padrao !== undefined) payload.num_preco_padrao_number = data.num_preco_padrao;
-    if (data.txt_status !== undefined) payload.os_status_os_status_equipamento = data.txt_status;
+    if (data.txt_nome !== undefined) payload.txt_nome = data.txt_nome;
+    if (data.txt_descricao !== undefined) payload.txt_descricao = data.txt_descricao;
+    if (data.txt_marca !== undefined) payload.txt_marca = data.txt_marca;
+    if (data.txt_modelo !== undefined) payload.txt_modelo = data.txt_modelo;
+    if (data.txt_numero_serie !== undefined) payload.txt_numero_serie = data.txt_numero_serie;
+    if (data.num_preco_padrao !== undefined) payload.num_preco_padrao = data.num_preco_padrao;
+    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
     await bubbleClient.patch(`/obj/equipamento/${id}`, payload);
   },
   async deleteEquipamento(id: string): Promise<void> {
@@ -361,16 +361,16 @@ export const bubbleApi = {
     const raw = response.data.response;
     return {
       _id: raw._id,
-      txt_nome: raw.nome_fantasia_text || '',
+      txt_nome: raw.txt_nome || '',
       txt_cpf: '',
       txt_whatsapp: '',
-      txt_endereco: typeof raw.local_geographic_address === 'string'
-        ? raw.local_geographic_address
-        : (raw.local_geographic_address?.address || ''),
+      txt_endereco: typeof raw.geo_local === 'string'
+        ? raw.geo_local
+        : (raw.geo_local?.address || ''),
       txt_email: '',
-      txt_tipo: raw.os_tipo_os_tipo_paciente || 'Homecare',
-      fks_equipamentos: raw.fks_equipamentos_list_custom_equipamento || [],
-      fks_locacoes: raw.fks_locacoes_list_custom_locacao_equipamento || [],
+      txt_tipo: raw.os_tipo || 'Homecare',
+      fks_equipamentos: raw.fks_equipamentos || [],
+      fks_locacoes: raw.fks_locacoes || [],
       CreatedDate: raw['Created Date']
     };
   },
@@ -378,24 +378,24 @@ export const bubbleApi = {
     const rawList = await getAllResults<any>('/obj/locais_de_trabalho_pacientes', constraints);
     return rawList.map(raw => ({
       _id: raw._id,
-      txt_nome: raw.nome_fantasia_text || '',
+      txt_nome: raw.txt_nome || '',
       txt_cpf: '',
       txt_whatsapp: '',
-      txt_endereco: typeof raw.local_geographic_address === 'string'
-        ? raw.local_geographic_address
-        : (raw.local_geographic_address?.address || ''),
+      txt_endereco: typeof raw.geo_local === 'string'
+        ? raw.geo_local
+        : (raw.geo_local?.address || ''),
       txt_email: '',
-      txt_tipo: raw.os_tipo_os_tipo_paciente || 'Homecare',
-      fks_equipamentos: raw.fks_equipamentos_list_custom_equipamento || [],
-      fks_locacoes: raw.fks_locacoes_list_custom_locacao_equipamento || [],
+      txt_tipo: raw.os_tipo || 'Homecare',
+      fks_equipamentos: raw.fks_equipamentos || [],
+      fks_locacoes: raw.fks_locacoes || [],
       CreatedDate: raw['Created Date']
     }));
   },
   async createPaciente(data: Omit<Paciente, '_id' | 'CreatedDate'>): Promise<Paciente> {
     const payload: any = {
-      nome_fantasia_text: data.txt_nome,
-      local_geographic_address: data.txt_endereco,
-      os_tipo_os_tipo_paciente: data.txt_tipo || 'Homecare'
+      txt_nome: data.txt_nome,
+      geo_local: data.txt_endereco,
+      os_tipo: data.txt_tipo || 'Homecare'
     };
     const response = await bubbleClient.post('/obj/locais_de_trabalho_pacientes', payload);
     const createdId = response.data.id || response.data.response?.id;
@@ -410,11 +410,11 @@ export const bubbleApi = {
   },
   async updatePaciente(id: string, data: Partial<Paciente>): Promise<void> {
     const payload: any = {};
-    if (data.txt_nome !== undefined) payload.nome_fantasia_text = data.txt_nome;
-    if (data.txt_endereco !== undefined) payload.local_geographic_address = data.txt_endereco;
-    if (data.txt_tipo !== undefined) payload.os_tipo_os_tipo_paciente = data.txt_tipo;
-    if (data.fks_equipamentos !== undefined) payload.fks_equipamentos_list_custom_equipamento = data.fks_equipamentos;
-    if (data.fks_locacoes !== undefined) payload.fks_locacoes_list_custom_locacao_equipamento = data.fks_locacoes;
+    if (data.txt_nome !== undefined) payload.txt_nome = data.txt_nome;
+    if (data.txt_endereco !== undefined) payload.geo_local = data.txt_endereco;
+    if (data.txt_tipo !== undefined) payload.os_tipo = data.txt_tipo;
+    if (data.fks_equipamentos !== undefined) payload.fks_equipamentos = data.fks_equipamentos;
+    if (data.fks_locacoes !== undefined) payload.fks_locacoes = data.fks_locacoes;
     await bubbleClient.patch(`/obj/locais_de_trabalho_pacientes/${id}`, payload);
   },
 
@@ -424,14 +424,14 @@ export const bubbleApi = {
     const raw = response.data.response;
     return {
       _id: raw._id,
-      fk_equipamento: raw.fk_equipamento_custom_equipamento || '',
-      fk_paciente: raw.fk_paciente_custom_locais_de_trabalho_pacientes || '',
-      date_inicio: raw.date_inicio_date || '',
-      date_fim_previsto: raw.date_fim_previsto_date || '',
-      date_fim_real: raw.date_fim_real_date || undefined,
-      num_valor_aluguel: raw.num_valor_aluguel_number || 0,
-      txt_status: raw.os_status_os_status_locacao || 'Ativo',
-      txt_observacoes: raw.txt_observacoes_text || '',
+      fk_equipamento: raw.fk_equipamento || '',
+      fk_paciente: raw.fk_paciente || '',
+      date_inicio: raw.date_inicio || '',
+      date_fim_previsto: raw.date_fim_previsto || '',
+      date_fim_real: raw.date_fim_real || undefined,
+      num_valor_aluguel: raw.num_valor_aluguel || 0,
+      txt_status: raw.OS_status || 'Ativo',
+      txt_observacoes: raw.txt_observacoes || '',
       CreatedDate: raw['Created Date']
     };
   },
@@ -439,26 +439,26 @@ export const bubbleApi = {
     const rawList = await getAllResults<any>('/obj/locacao_equipamento', constraints);
     return rawList.map(raw => ({
       _id: raw._id,
-      fk_equipamento: raw.fk_equipamento_custom_equipamento || '',
-      fk_paciente: raw.fk_paciente_custom_locais_de_trabalho_pacientes || '',
-      date_inicio: raw.date_inicio_date || '',
-      date_fim_previsto: raw.date_fim_previsto_date || '',
-      date_fim_real: raw.date_fim_real_date || undefined,
-      num_valor_aluguel: raw.num_valor_aluguel_number || 0,
-      txt_status: raw.os_status_os_status_locacao || 'Ativo',
-      txt_observacoes: raw.txt_observacoes_text || '',
+      fk_equipamento: raw.fk_equipamento || '',
+      fk_paciente: raw.fk_paciente || '',
+      date_inicio: raw.date_inicio || '',
+      date_fim_previsto: raw.date_fim_previsto || '',
+      date_fim_real: raw.date_fim_real || undefined,
+      num_valor_aluguel: raw.num_valor_aluguel || 0,
+      txt_status: raw.OS_status || 'Ativo',
+      txt_observacoes: raw.txt_observacoes || '',
       CreatedDate: raw['Created Date']
     }));
   },
   async createLocacao(data: Omit<LocacaoEquipamento, '_id' | 'CreatedDate'>): Promise<LocacaoEquipamento> {
     const payload = {
-      fk_equipamento_custom_equipamento: data.fk_equipamento,
-      fk_paciente_custom_locais_de_trabalho_pacientes: data.fk_paciente,
-      date_inicio_date: data.date_inicio,
-      date_fim_previsto_date: data.date_fim_previsto,
-      num_valor_aluguel_number: data.num_valor_aluguel,
-      os_status_os_status_locacao: data.txt_status || 'Ativo',
-      txt_observacoes_text: data.txt_observacoes
+      fk_equipamento: data.fk_equipamento,
+      fk_paciente: data.fk_paciente,
+      date_inicio: data.date_inicio,
+      date_fim_previsto: data.date_fim_previsto,
+      num_valor_aluguel: data.num_valor_aluguel,
+      OS_status: data.txt_status || 'Ativo',
+      txt_observacoes: data.txt_observacoes
     };
     const response = await bubbleClient.post('/obj/locacao_equipamento', payload);
     const createdId = response.data.id || response.data.response?.id;
@@ -469,14 +469,14 @@ export const bubbleApi = {
   },
   async updateLocacao(id: string, data: Partial<LocacaoEquipamento>): Promise<void> {
     const payload: any = {};
-    if (data.fk_equipamento !== undefined) payload.fk_equipamento_custom_equipamento = data.fk_equipamento;
-    if (data.fk_paciente !== undefined) payload.fk_paciente_custom_locais_de_trabalho_pacientes = data.fk_paciente;
-    if (data.date_inicio !== undefined) payload.date_inicio_date = data.date_inicio;
-    if (data.date_fim_previsto !== undefined) payload.date_fim_previsto_date = data.date_fim_previsto;
-    if (data.date_fim_real !== undefined) payload.date_fim_real_date = data.date_fim_real;
-    if (data.num_valor_aluguel !== undefined) payload.num_valor_aluguel_number = data.num_valor_aluguel;
-    if (data.txt_status !== undefined) payload.os_status_os_status_locacao = data.txt_status;
-    if (data.txt_observacoes !== undefined) payload.txt_observacoes_text = data.txt_observacoes;
+    if (data.fk_equipamento !== undefined) payload.fk_equipamento = data.fk_equipamento;
+    if (data.fk_paciente !== undefined) payload.fk_paciente = data.fk_paciente;
+    if (data.date_inicio !== undefined) payload.date_inicio = data.date_inicio;
+    if (data.date_fim_previsto !== undefined) payload.date_fim_previsto = data.date_fim_previsto;
+    if (data.date_fim_real !== undefined) payload.date_fim_real = data.date_fim_real;
+    if (data.num_valor_aluguel !== undefined) payload.num_valor_aluguel = data.num_valor_aluguel;
+    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
+    if (data.txt_observacoes !== undefined) payload.txt_observacoes = data.txt_observacoes;
     await bubbleClient.patch(`/obj/locacao_equipamento/${id}`, payload);
   },
 
