@@ -517,5 +517,26 @@ export const bubbleApi = {
       console.warn("Failed to clear SSO token fields:", e);
     }
   },
+
+  // Cooperativas, Integralização e Logs Gerais
+  async getCooperativa(id: string): Promise<any> {
+    const response = await bubbleClient.get(`/obj/cooperativas/${id}`);
+    return response.data.response;
+  },
+
+  async updateCooperativa(id: string, data: Record<string, unknown>): Promise<any> {
+    const response = await bubbleClient.patch(`/obj/cooperativas/${id}`, data);
+    return response.data;
+  },
+
+  async createIntegralizacao(data: Record<string, unknown>): Promise<any> {
+    const response = await bubbleClient.post('/obj/integraliza__o', data);
+    return response.data;
+  },
+
+  async createLogGeral(data: Record<string, unknown>): Promise<any> {
+    const response = await bubbleClient.post('/obj/logs_gerais', data);
+    return response.data;
+  },
 };
 
