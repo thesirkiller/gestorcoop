@@ -3,6 +3,7 @@ import { bubbleApi } from '@/lib/bubble';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   try {

@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 import { bubbleApi, Termo } from '@/lib/bubble';
 
+export const dynamic = 'force-dynamic';
+export const runtime = 'edge';
+
 export async function GET() {
   try {
     console.log('Listando todos os termos do Bubble...');
