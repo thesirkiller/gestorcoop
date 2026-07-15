@@ -20,7 +20,8 @@ import {
   Save,
   ArrowLeft,
   Printer,
-  ChevronDown
+  ChevronDown,
+  Activity
 } from 'lucide-react';
 
 interface Cooperado {
@@ -355,6 +356,11 @@ export default function FinanceiroPage() {
           <Link href="/gestor/termos" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
             <FileText className="w-4 h-4 text-slate-500" />
             Gerenciar Termos
+          </Link>
+          <span className="text-slate-300">|</span>
+          <Link href="/gestor/equipamentos" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
+            <Activity className="w-4 h-4 text-slate-500" />
+            Gestão de Equipamentos
           </Link>
         </div>
 

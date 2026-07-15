@@ -55,12 +55,13 @@ export const zapsignApi = {
 
       const data = await response.json();
       return data as ZapSignDocumentResponse;
-    } catch (err: any) {
-      if (err.response) {
+    } catch (err) {
+      const error = err as { response?: unknown; message?: string };
+      if (error.response) {
         throw err;
       }
       throw {
-        message: err.message || 'Erro de rede ou conexão com ZapSign'
+        message: error.message || 'Erro de rede ou conexão com ZapSign'
       };
     }
   },

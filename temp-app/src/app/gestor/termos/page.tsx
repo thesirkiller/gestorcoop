@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   DollarSign,
   FileText,
+  Activity
 } from 'lucide-react';
 
 interface Termo {
@@ -297,6 +298,11 @@ export default function GestorTermos() {
           <Link href="/gestor/financeiro" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
             <DollarSign className="w-4 h-4" />
             Painel Financeiro
+          </Link>
+          <span className="text-slate-300">|</span>
+          <Link href="/gestor/equipamentos" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
+            <Activity className="w-4 h-4 text-slate-500" />
+            Gestão de Equipamentos
           </Link>
         </div>
 
