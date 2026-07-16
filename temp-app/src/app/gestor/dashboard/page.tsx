@@ -24,6 +24,8 @@ import {
   ChevronDown,
   ExternalLink,
   Activity,
+  Wrench,
+  BarChart3,
 } from 'lucide-react';
 
 interface Cooperado {
@@ -255,6 +257,20 @@ export default function GestorDashboard() {
           >
             <Activity className="w-4 h-4 text-slate-500" />
             Equipamentos
+          </Link>
+          <Link
+            href="/gestor/manutencao"
+            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
+          >
+            <Wrench className="w-4 h-4 text-slate-500" />
+            Manutenção
+          </Link>
+          <Link
+            href="/gestor/equipamentos-relatorios"
+            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
+          >
+            <BarChart3 className="w-4 h-4 text-slate-500" />
+            Relatórios
           </Link>
           <button
             onClick={fetchData}
