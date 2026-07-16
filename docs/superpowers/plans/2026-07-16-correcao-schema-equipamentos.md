@@ -164,18 +164,18 @@ A Task 3 usa esses payloads crus diretamente, contornando o helper bugado
 > canônico da Data API (200 = existe / 404 = missing).
 
 - [x] **Step 1:** Contrato extraído direto do código (bubble.ts, pós-Task 2) cruzado com o overlay — fonte da verdade dos nomes/keys/tipos por campo.
-- [x] **Step 2:** Option sets confirmados já persistidos no servidor (campo `option.<set>` resolve 200). Valores: `os_status_reserva_equipamento` verificado por escrita real ("Ativa" grava/lê ok). Demais valores serão exercitados na Task 4.
+- [x] **Step 2:** Todos os 10 option sets com valores auditados por escrita real (Data API): **100% dos valores exigidos presentes** após criar 22 faltantes (equipamento 18/18, movimentacao 16/16, reserva 4/4, os_status OS 11/11, os_resultado 7/7, baixa status 4/4, baixa motivo 5/5, higienizacao 3/3, alerta tipo 12/12, alerta status 4/4). Os 2 sets de alerta precisaram ser (re)criados no servidor + 2 campos quebrados de alerta deletados (colidiam por display name).
 - [x] **Step 3:** Todos os 107 campos do contrato criados via `bubble_editor_write` cru (lote por tipo; `option.<set>` para option sets; FKs `custom.<tipo>`), incluindo aditivos. Campos `os_*` quebrados eram irrelevantes (nunca persistiram no servidor).
 - [x] **Step 4:** Probe completo da Data API test: **107/107 OK, 0 MISS**. Tabela: movimentacao 16/16, reserva 13/13, ordem_servico 23/23, conferencia 8/8, higienizacao 8/8, baixa 18/18, item_manutencao 8/8, alerta 13/13.
 - [x] **Step 5:** Nenhum deploy para produção feito. Usuário fará "Deploy to Live" ao final (Task 5).
 
 **Descoberta-chave (2026-07-16):** a teoria de "campo quebrado corrompe o tipo" era falsa — nos tipos novos NENHUM campo havia persistido no servidor (o overlay só registra o que o MCP *enviou*; HTTP 200 ≠ persistência). Escritas cruas com `%v` correto persistem na hora. Solução: recriar todos os campos do zero via `bubble_editor_write`.
 
-### Task 4: Homologação ponta a ponta — [Agente D, após Tasks 2 e 3]
+### Task 4: Homologação ponta a ponta — CONCLUÍDA (2026-07-16)
 
-- [ ] **Step 1:** Probe completo do contrato no Data API test (todos os tipos/campos, incluindo aditivos).
-- [ ] **Step 2:** Com `.env.local` (version-test), exercitar via servidor dev local: criar reserva → cancelar; registrar movimentação (validar máquina de estados e idempotência); abrir OS → adicionar item → recalcular custo; solicitar baixa → aprovar → reverter (dupla autorização); gerar alertas (idempotente, 2ª rodada = 0 criados); suspensão + demonstrativo.
-- [ ] **Step 3:** Relatar cada cenário com request/response resumidos e pendências.
+- [x] **Step 1:** Probe completo do contrato: 107/107 campos OK + 10/10 option sets com valores 100%.
+- [x] **Step 2:** Homologação real via `bubbleApi` (script tsx com `.env.local`/version-test, `EQUIPAMENTOS_V2_ENABLED=true`): **27 asserts ✅ / 0 ❌**. Cobriu reserva criar→cancelar (date_cancelamento + txt_motivo_cancelamento); movimentação Disponível→Reservado (máquina de estados valida transição e REJEITA inválida; idempotência por chave retorna a mesma mov); OS→item (recálculo custo 2×30=60)→atualização (os_status/os_resultado); baixa solicitar→aprovar (date_baixa_efetiva)→reverter (dupla autorização); alerta criar + getAlertaPorChave idempotente. Todos os registros de teste removidos ao final.
+- [x] **Step 3:** Único gap: cenário de suspensão pulado por falta de `locacao_equipamento` no version-test (schema de `suspensao_locacao` probado OK — 5/5 campos). Script de homologação e auditor de valores foram removidos do repo (eram descartáveis; podem ser recriados p/ probar o LIVE na Task 5).
 
 ### Task 5: Go-live (manual + assistido)
 
