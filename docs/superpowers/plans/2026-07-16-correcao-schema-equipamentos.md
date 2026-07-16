@@ -177,9 +177,9 @@ A Task 3 usa esses payloads crus diretamente, contornando o helper bugado
 - [x] **Step 2:** Homologação real via `bubbleApi` (script tsx com `.env.local`/version-test, `EQUIPAMENTOS_V2_ENABLED=true`): **27 asserts ✅ / 0 ❌**. Cobriu reserva criar→cancelar (date_cancelamento + txt_motivo_cancelamento); movimentação Disponível→Reservado (máquina de estados valida transição e REJEITA inválida; idempotência por chave retorna a mesma mov); OS→item (recálculo custo 2×30=60)→atualização (os_status/os_resultado); baixa solicitar→aprovar (date_baixa_efetiva)→reverter (dupla autorização); alerta criar + getAlertaPorChave idempotente. Todos os registros de teste removidos ao final.
 - [x] **Step 3:** Único gap: cenário de suspensão pulado por falta de `locacao_equipamento` no version-test (schema de `suspensao_locacao` probado OK — 5/5 campos). Script de homologação e auditor de valores foram removidos do repo (eram descartáveis; podem ser recriados p/ probar o LIVE na Task 5).
 
-### Task 5: Go-live (manual + assistido)
+### Task 5: Go-live (manual + assistido) — CONCLUÍDA (2026-07-16)
 
-- [ ] **Step 1 (usuário):** "Deploy to Live" no editor Bubble após Task 3/4 verdes.
-- [ ] **Step 2:** Probar contrato no Data API LIVE.
-- [ ] **Step 3:** Religar `EQUIPAMENTOS_V2_ENABLED=true` em produção (Cloudflare Pages) + redeploy.
-- [ ] **Step 4:** Rodar os endpoints /api/cron/* em produção e validar 200 com dados.
+- [x] **Step 1 (usuário):** "Deploy to Live" feito no editor Bubble.
+- [x] **Step 2:** Probe do contrato no Data API **LIVE**: **107/107 campos OK** + valores dos option sets 100% (amostra dos sets corrigidos verde).
+- [x] **Step 3:** `EQUIPAMENTOS_V2_ENABLED=true` **já ativo em produção** (Cloudflare Pages `gestorcoop`, git-integrado) — confirmado pelos crons (guard retornaria 503 se off).
+- [x] **Step 4:** `POST /api/cron/alertas-gerar` → 200 `{criados:0,porTipo:{},falhas:[]}`; `POST /api/cron/reservas-expirar` → 200 `{expiradas:0,falhas:[]}`. Jobs leram o schema LIVE sem falhas.
