@@ -1,0 +1,19 @@
+# Worker dedicado ao agendamento (cron) do módulo de equipamentos.
+# Roda separado do app (que está em Cloudflare Pages) e apenas dispara as
+# rotas /api/cron/* do app com o segredo. Fica no plano Free do Workers.
+name = "gestorcoop-cron"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+# Horários em UTC. "0 9 * * *" = 09:00 UTC ≈ 06:00 America/Sao_Paulo, diariamente.
+# Free permite até 5 cron triggers por conta. Ajuste/adicione expressões aqui.
+[triggers]
+crons = ["0 9 * * *"]
+
+[vars]
+# URL pública do app (Pages).
+APP_BASE_URL = "https://gestorcoop.pages.dev"
+
+# CRON_SECRET NÃO fica aqui (é segredo). Defina com:
+#   npx wrangler secret put CRON_SECRET
+# e use exatamente o mesmo valor nas variáveis de ambiente do app (Pages).

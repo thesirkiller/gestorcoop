@@ -20,15 +20,15 @@ export async function POST(request: Request) {
     const cooperativaId = cooperado.fk_Cooperativa || cooperado.cooperativa_custom_cooperativas || '1632239151449x283019207795015680';
 
     console.log(`Buscando configurações da cooperativa: ${cooperativaId}`);
-    let coopData: any = null;
+    let coopData: Record<string, unknown> | null = null;
     try {
       coopData = await bubbleApi.getCooperativa(cooperativaId);
     } catch (e) {
       console.warn('Falha ao obter dados da cooperativa, usando valores default:', e);
     }
 
-    const numQtdParcelas = coopData?.num_qtd_parcelas ?? coopData?.zz_n_deparcelas_number ?? 1;
-    const numValorIntegralizacao = coopData?.num_valor_integralizacao ?? coopData?.zz_valor_total_da_integraliza__o_number ?? 0;
+    const numQtdParcelas = coopData?.['num_qtd_parcelas'] ?? coopData?.['zz_n_deparcelas_number'] ?? 1;
+    const numValorIntegralizacao = coopData?.['num_valor_integralizacao'] ?? coopData?.['zz_valor_total_da_integraliza__o_number'] ?? 0;
 
     // 1. Criar registro de Integralização de Capital Social
     console.log('Criando registro de integralização de capital social...');
@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     // 2. Adicionar o cooperado na lista fks_cooperados da Cooperativa
     if (coopData) {
       try {
-        const currentCooperados = coopData.fks_cooperados || coopData.lista_de_cooperados_list_custom_cooperados || [];
+        const currentCooperados = (coopData['fks_cooperados'] || coopData['lista_de_cooperados_list_custom_cooperados'] || []) as string[];
         if (!currentCooperados.includes(id)) {
           console.log(`Adicionando cooperado à lista de membros da cooperativa...`);
           await bubbleApi.updateCooperativa(cooperativaId, {
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     // 3. Vincular usuário dummy de aprovação e a integralização ao cooperado
     console.log(`Atualizando registro do cooperado ${id}...`);
     const dummyUserId = '1632307664083x948858892871476400'; // valid Bubble User ID
-    const updatePayload: any = {
+    const updatePayload: Record<string, unknown> = {
       fk_usuario: dummyUserId
     };
     if (integralizacaoId) {
