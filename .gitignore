@@ -38,3 +38,6 @@ next-env.d.ts
 
 # MCP local, não vai pro build
 befree-bubble-mcp/
+
+# cache local do wrangler
+.wrangler/
