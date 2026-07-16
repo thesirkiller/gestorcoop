@@ -28,6 +28,9 @@ yarn-error.log*
 # local env files
 .env*.local
 
+# saída transitória dos scripts de homologação de equipamentos
+scripts/_missing_values.json
+
 # vercel
 .vercel
 
