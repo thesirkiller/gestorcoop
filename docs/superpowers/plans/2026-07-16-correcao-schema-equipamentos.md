@@ -152,7 +152,7 @@ A Task 3 usa esses payloads crus diretamente, contornando o helper bugado
 - [x] **Step 2:** Rotas de baixa com fetch cru: migrar para os nomes reais (os_motivo, os_status, txt_laudo_tecnico, date_solicitacao/date_baixa_efetiva, txt_observacoes_decisao) e usar os métodos do bubbleApi onde possível.
 - [x] **Step 3:** Cancelamento de reserva passa a gravar date_cancelamento e txt_motivo_cancelamento.
 - [x] **Step 4:** `npx tsc --noEmit` e `npx next build` limpos.
-- [ ] **Step 5:** Commit.
+- [x] **Step 5:** Commit.
 
 ### Task 3: Reconstruir o schema no Bubble (test) — [Agente C]
 
@@ -163,11 +163,13 @@ A Task 3 usa esses payloads crus diretamente, contornando o helper bugado
 > valores → campos; `%v = "option.<set>"` para option sets). Após CADA lote, rodar o probe
 > canônico da Data API (200 = existe / 404 = missing).
 
-- [ ] **Step 1:** Extrair do overlay a lista completa de campos pretendidos por tipo (caminho: `~/.config/bubble-mcp/contexts/gestorcoop/appgestorcoop-mutation-overlay.json`).
-- [ ] **Step 2:** Garantir todos os option sets e VALORES da seção "Option sets e valores exigidos" (criar faltantes; verificar existentes).
-- [ ] **Step 3:** Recriar/consertar os campos por tipo (formato `option.<set>` para option sets; upsert idempotente), incluindo os ADITIVOS do contrato.
-- [ ] **Step 4:** Probar TODOS os campos do contrato via Data API test (200 = ok); repetir até 100% verde; relatar tabela final tipo×campo.
-- [ ] **Step 5:** NADA de deploy pra produção; anotar que o usuário fará "Deploy to Live" ao final.
+- [x] **Step 1:** Contrato extraído direto do código (bubble.ts, pós-Task 2) cruzado com o overlay — fonte da verdade dos nomes/keys/tipos por campo.
+- [x] **Step 2:** Option sets confirmados já persistidos no servidor (campo `option.<set>` resolve 200). Valores: `os_status_reserva_equipamento` verificado por escrita real ("Ativa" grava/lê ok). Demais valores serão exercitados na Task 4.
+- [x] **Step 3:** Todos os 107 campos do contrato criados via `bubble_editor_write` cru (lote por tipo; `option.<set>` para option sets; FKs `custom.<tipo>`), incluindo aditivos. Campos `os_*` quebrados eram irrelevantes (nunca persistiram no servidor).
+- [x] **Step 4:** Probe completo da Data API test: **107/107 OK, 0 MISS**. Tabela: movimentacao 16/16, reserva 13/13, ordem_servico 23/23, conferencia 8/8, higienizacao 8/8, baixa 18/18, item_manutencao 8/8, alerta 13/13.
+- [x] **Step 5:** Nenhum deploy para produção feito. Usuário fará "Deploy to Live" ao final (Task 5).
+
+**Descoberta-chave (2026-07-16):** a teoria de "campo quebrado corrompe o tipo" era falsa — nos tipos novos NENHUM campo havia persistido no servidor (o overlay só registra o que o MCP *enviou*; HTTP 200 ≠ persistência). Escritas cruas com `%v` correto persistem na hora. Solução: recriar todos os campos do zero via `bubble_editor_write`.
 
 ### Task 4: Homologação ponta a ponta — [Agente D, após Tasks 2 e 3]
 
