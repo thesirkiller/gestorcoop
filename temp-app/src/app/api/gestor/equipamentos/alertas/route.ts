@@ -20,9 +20,9 @@ export async function GET(request: NextRequest) {
     const tipo = searchParams.get('tipo');
 
     const constraints: Array<{ key: string; constraint_type: string; value: string }> = [];
-    if (status) constraints.push({ key: 'OS_status', constraint_type: 'equals', value: status });
+    if (status) constraints.push({ key: 'os_status', constraint_type: 'equals', value: status });
     if (prioridade) constraints.push({ key: 'txt_prioridade', constraint_type: 'equals', value: prioridade });
-    if (tipo) constraints.push({ key: 'os_tipo_alerta', constraint_type: 'equals', value: tipo });
+    if (tipo) constraints.push({ key: 'os_tipo', constraint_type: 'equals', value: tipo });
 
     const data = await bubbleApi.getAlertas(constraints.length > 0 ? constraints : undefined);
     return NextResponse.json({ success: true, data });

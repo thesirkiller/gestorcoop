@@ -22,7 +22,11 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ success: false, error: `A reserva está em "${reserva.txt_status}" e não pode ser cancelada.` }, { status: 409 });
     }
 
-    await bubbleApi.atualizarReservaEquipamento(params.reservaId, { txt_status: 'Cancelada' });
+    await bubbleApi.atualizarReservaEquipamento(params.reservaId, {
+      txt_status: 'Cancelada',
+      date_cancelamento: new Date().toISOString(),
+      txt_motivo_cancelamento: body.txt_motivo,
+    });
 
     const movimentacao = await bubbleApi.registrarMovimentacao({
       fk_equipamento: params.id,

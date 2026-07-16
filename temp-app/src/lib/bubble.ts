@@ -515,12 +515,12 @@ function mapReserva(raw: any): ReservaEquipamento {
     fk_equipamento: raw.fk_equipamento || '',
     fk_paciente: raw.fk_paciente || '',
     fk_domicilio: raw.fk_domicilio || undefined,
-    date_reserva: raw.date_reserva || raw['Created Date'] || '',
-    date_implantacao_prevista: raw.date_implantacao_prevista || '',
+    date_reserva: raw.date_data_reserva ?? raw.date_reserva ?? raw['Created Date'] ?? '',
+    date_implantacao_prevista: raw.date_prevista_implantacao ?? raw.date_implantacao_prevista ?? '',
     date_validade: raw.date_validade || '',
     txt_responsavel: raw.txt_responsavel || undefined,
     txt_observacoes: raw.txt_observacoes || undefined,
-    txt_status: raw.OS_status || 'Ativa',
+    txt_status: raw.os_status ?? raw.OS_status ?? 'Ativa',
     txt_chave_idempotencia: raw.txt_chave_idempotencia || '',
     fk_movimentacao_reserva: raw.fk_movimentacao_reserva || undefined,
     CreatedDate: raw['Created Date'],
@@ -531,17 +531,17 @@ function mapBaixa(raw: any): BaixaEquipamento {
   return {
     _id: raw._id,
     fk_equipamento: raw.fk_equipamento || '',
-    date_baixa: raw.date_baixa || raw['Created Date'] || '',
-    os_motivo_baixa: raw.os_motivo_baixa || '',
-    txt_laudo: raw.txt_laudo || undefined,
+    date_baixa: raw.date_solicitacao ?? raw.date_baixa ?? raw['Created Date'] ?? '',
+    os_motivo_baixa: raw.os_motivo ?? raw.os_motivo_baixa ?? '',
+    txt_laudo: raw.txt_laudo_tecnico ?? raw.txt_laudo ?? undefined,
     num_valor_reparo_estimado: raw.num_valor_reparo_estimado ?? undefined,
     num_valor_residual: raw.num_valor_residual ?? undefined,
     txt_destino_final: raw.txt_destino_final || undefined,
     txt_solicitante: raw.txt_solicitante || undefined,
     txt_autorizado_por: raw.txt_autorizado_por || undefined,
-    txt_status: raw.OS_status || 'Pendente de aprovação',
+    txt_status: raw.os_status ?? raw.OS_status ?? 'Pendente de aprovação',
     date_decisao: raw.date_decisao || undefined,
-    txt_observacoes: raw.txt_observacoes || undefined,
+    txt_observacoes: raw.txt_observacoes_decisao ?? raw.txt_observacoes ?? undefined,
     bool_revertida: Boolean(raw.bool_revertida),
     txt_revertida_por: raw.txt_revertida_por || undefined,
     txt_revertida_por_segundo: raw.txt_revertida_por_segundo || undefined,
@@ -555,15 +555,15 @@ function mapAlerta(raw: any): AlertaEquipamento {
   return {
     _id: raw._id,
     fk_equipamento: raw.fk_equipamento || '',
-    fk_locacao_equipamento: raw.fk_locacao_equipamento || undefined,
-    fk_ordem_servico_manutencao: raw.fk_ordem_servico_manutencao || undefined,
-    os_tipo_alerta: raw.os_tipo_alerta,
+    fk_locacao_equipamento: raw.fk_locacao ?? raw.fk_locacao_equipamento ?? undefined,
+    fk_ordem_servico_manutencao: raw.fk_ordem_servico ?? raw.fk_ordem_servico_manutencao ?? undefined,
+    os_tipo_alerta: raw.os_tipo ?? raw.os_tipo_alerta,
     txt_titulo: raw.txt_titulo || '',
-    txt_descricao: raw.txt_descricao || undefined,
-    date_prazo: raw.date_prazo || undefined,
+    txt_descricao: raw.txt_detalhe ?? raw.txt_descricao ?? undefined,
+    date_prazo: raw.date_vencimento ?? raw.date_prazo ?? undefined,
     txt_prioridade: raw.txt_prioridade || undefined,
     txt_responsavel: raw.txt_responsavel || undefined,
-    txt_status: raw.OS_status || 'Aberto',
+    txt_status: raw.os_status ?? raw.OS_status ?? 'Aberto',
     txt_resolucao: raw.txt_resolucao || undefined,
     date_resolucao: raw.date_resolucao || undefined,
     txt_chave_idempotencia: raw.txt_chave_idempotencia || '',
@@ -982,18 +982,18 @@ export const bubbleApi = {
 
     return {
       _id: raw._id,
-        fk_equipamento: raw.fk_equipamento,
-        fk_locacao_equipamento: raw.fk_locacao_equipamento || undefined,
-        fk_ordem_servico_manutencao: raw.fk_ordem_servico_manutencao || undefined,
+      fk_equipamento: raw.fk_equipamento,
+      fk_locacao_equipamento: raw.fk_locacao ?? raw.fk_locacao_equipamento ?? undefined,
+      fk_ordem_servico_manutencao: raw.fk_ordem_servico_manutencao || undefined,
       fk_domicilio: raw.fk_domicilio || undefined,
       fk_localizacao_anterior: raw.fk_localizacao_anterior || undefined,
-      fk_nova_localizacao: raw.fk_nova_localizacao || undefined,
-      os_tipo_movimentacao: raw.os_tipo_movimentacao,
-      txt_tipo_movimentacao: raw.txt_tipo_movimentacao,
-      txt_status_anterior: raw.txt_status_anterior || undefined,
-      txt_novo_status: raw.txt_novo_status,
+      fk_nova_localizacao: raw.fk_localizacao_nova ?? raw.fk_nova_localizacao ?? undefined,
+      os_tipo_movimentacao: raw.os_tipo_evento ?? raw.os_tipo_movimentacao,
+      txt_tipo_movimentacao: raw.txt_tipo_evento ?? raw.txt_tipo_movimentacao,
+      txt_status_anterior: raw.os_status_anterior ?? raw.txt_status_anterior ?? undefined,
+      txt_novo_status: raw.os_status_novo ?? raw.txt_novo_status,
       date_data_hora: raw.date_data_hora,
-      txt_responsavel: raw.txt_responsavel || undefined,
+      txt_responsavel: raw.txt_responsavel_operacao ?? raw.txt_responsavel ?? undefined,
       txt_observacoes: raw.txt_observacoes || undefined,
       txt_justificativa: raw.txt_justificativa || undefined,
       txt_chave_idempotencia: raw.txt_chave_idempotencia,
@@ -1038,12 +1038,12 @@ export const bubbleApi = {
     const porMovimentacao = movimentacoes.map((raw) => ({
       id: raw._id,
       data: raw.date_data_hora || raw['Created Date'],
-      tipo: raw.txt_tipo_movimentacao || raw.os_tipo_movimentacao || 'Movimentação',
-      statusAnterior: raw.txt_status_anterior || undefined,
-      statusNovo: raw.txt_novo_status || undefined,
+      tipo: raw.txt_tipo_evento ?? raw.os_tipo_evento ?? raw.txt_tipo_movimentacao ?? raw.os_tipo_movimentacao ?? 'Movimentação',
+      statusAnterior: raw.os_status_anterior ?? raw.txt_status_anterior ?? undefined,
+      statusNovo: raw.os_status_novo ?? raw.txt_novo_status ?? undefined,
       observacoes: raw.txt_observacoes || undefined,
-      responsavel: raw.txt_responsavel || undefined,
-      locacaoId: raw.fk_locacao_equipamento || undefined,
+      responsavel: raw.txt_responsavel_operacao ?? raw.txt_responsavel ?? undefined,
+      locacaoId: raw.fk_locacao ?? raw.fk_locacao_equipamento ?? undefined,
     }));
     return porMovimentacao.sort((a, b) => new Date(b.data).getTime() - new Date(a.data).getTime());
   },
@@ -1060,7 +1060,7 @@ export const bubbleApi = {
       txt_defeito_relatado: data.txt_defeito_relatado,
       txt_responsavel: data.txt_responsavel,
       txt_observacoes: data.txt_observacoes,
-      OS_status: data.txt_status,
+      os_status: data.txt_status,
       num_custo_total: data.num_custo_total,
     });
     return { _id: response.data.id || response.data.response?.id, ...data };
@@ -1076,11 +1076,11 @@ export const bubbleApi = {
     if (data.txt_defeito_relatado !== undefined) payload.txt_defeito_relatado = data.txt_defeito_relatado;
     if (data.txt_responsavel !== undefined) payload.txt_responsavel = data.txt_responsavel;
     if (data.txt_observacoes !== undefined) payload.txt_observacoes = data.txt_observacoes;
-    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
-    if (data.txt_resultado !== undefined) payload.OS_resultado = data.txt_resultado;
+    if (data.txt_status !== undefined) payload.os_status = data.txt_status;
+    if (data.txt_resultado !== undefined) payload.os_resultado = data.txt_resultado;
     if (data.date_diagnostico !== undefined) payload.date_diagnostico = data.date_diagnostico;
     if (data.date_conclusao !== undefined) payload.date_conclusao = data.date_conclusao;
-    if (data.date_prazo_estimado !== undefined) payload.date_prazo_estimado = data.date_prazo_estimado;
+    if (data.date_prazo_estimado !== undefined) payload.date_previsao_conclusao = data.date_prazo_estimado;
     if (data.txt_defeito_encontrado !== undefined) payload.txt_defeito_encontrado = data.txt_defeito_encontrado;
     if (data.txt_causa_provavel !== undefined) payload.txt_causa_provavel = data.txt_causa_provavel;
     if (data.txt_servico_recomendado !== undefined) payload.txt_servico_recomendado = data.txt_servico_recomendado;
@@ -1107,7 +1107,7 @@ export const bubbleApi = {
       date_entrada: raw.date_entrada || raw['Created Date'],
       date_diagnostico: raw.date_diagnostico || undefined,
       date_conclusao: raw.date_conclusao || undefined,
-      date_prazo_estimado: raw.date_prazo_estimado || undefined,
+      date_prazo_estimado: raw.date_previsao_conclusao ?? raw.date_prazo_estimado ?? undefined,
       txt_motivo: raw.txt_motivo || '',
       txt_defeito_relatado: raw.txt_defeito_relatado || undefined,
       txt_defeito_encontrado: raw.txt_defeito_encontrado || undefined,
@@ -1116,8 +1116,8 @@ export const bubbleApi = {
       txt_responsavel: raw.txt_responsavel || undefined,
       txt_responsavel_tecnico: raw.txt_responsavel_tecnico || undefined,
       txt_observacoes: raw.txt_observacoes || undefined,
-      txt_status: raw.OS_status || 'Aberta',
-      txt_resultado: raw.OS_resultado || undefined,
+      txt_status: raw.os_status ?? raw.OS_status ?? 'Aberta',
+      txt_resultado: raw.os_resultado ?? raw.OS_resultado ?? undefined,
       num_orcamento: raw.num_orcamento ?? undefined,
       num_custo_total: raw.num_custo_total ?? undefined,
       CreatedDate: raw['Created Date'],
@@ -1130,22 +1130,27 @@ export const bubbleApi = {
       fk_equipamento: data.fk_equipamento,
       fk_paciente: data.fk_paciente,
       fk_domicilio: data.fk_domicilio,
-      date_reserva: data.date_reserva,
-      date_implantacao_prevista: data.date_implantacao_prevista,
+      date_data_reserva: data.date_reserva,
+      date_prevista_implantacao: data.date_implantacao_prevista,
       date_validade: data.date_validade,
       txt_responsavel: data.txt_responsavel,
       txt_observacoes: data.txt_observacoes,
-      OS_status: data.txt_status,
+      os_status: data.txt_status,
       txt_chave_idempotencia: data.txt_chave_idempotencia,
     });
     return { _id: response.data.id || response.data.response?.id, ...data };
   },
 
-  async atualizarReservaEquipamento(id: string, data: Partial<ReservaEquipamento>): Promise<void> {
+  async atualizarReservaEquipamento(
+    id: string,
+    data: Partial<ReservaEquipamento> & { date_cancelamento?: string; txt_motivo_cancelamento?: string }
+  ): Promise<void> {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de reservas v2 ainda nao esta habilitado.');
     const payload: Record<string, unknown> = {};
     if (data.fk_movimentacao_reserva !== undefined) payload.fk_movimentacao_reserva = data.fk_movimentacao_reserva;
-    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
+    if (data.txt_status !== undefined) payload.os_status = data.txt_status;
+    if (data.date_cancelamento !== undefined) payload.date_cancelamento = data.date_cancelamento;
+    if (data.txt_motivo_cancelamento !== undefined) payload.txt_motivo_cancelamento = data.txt_motivo_cancelamento;
     await bubbleClient.patch(`/obj/reserva_equipamento/${id}`, payload);
   },
 
@@ -1153,12 +1158,12 @@ export const bubbleApi = {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de conferencia v2 ainda nao esta habilitado.');
     const response = await bubbleClient.post('/obj/conferencia_equipamento', {
       fk_equipamento: data.fk_equipamento,
-      fk_movimentacao_equipamento: data.fk_movimentacao_equipamento,
+      fk_movimentacao: data.fk_movimentacao_equipamento,
       date_conferencia: data.date_conferencia,
       txt_responsavel: data.txt_responsavel,
       txt_estado_conservacao: data.txt_estado_conservacao,
       txt_resultado: data.txt_resultado,
-      txt_status_destino: data.txt_status_destino,
+      os_status_destino: data.txt_status_destino,
       txt_observacoes: data.txt_observacoes,
     });
     return { _id: response.data.id || response.data.response?.id, ...data };
@@ -1167,9 +1172,9 @@ export const bubbleApi = {
   async criarHigienizacaoEquipamento(data: Omit<HigienizacaoEquipamento, '_id'>): Promise<HigienizacaoEquipamento> {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de higienizacao v2 ainda nao esta habilitado.');
     const response = await bubbleClient.post('/obj/higienizacao_equipamento', {
-      fk_equipamento: data.fk_equipamento, date_inicio: data.date_inicio, date_fim: data.date_fim,
+      fk_equipamento: data.fk_equipamento, date_inicio: data.date_inicio, date_conclusao: data.date_fim,
       txt_metodo: data.txt_metodo, txt_resultado: data.txt_resultado, txt_responsavel: data.txt_responsavel,
-      OS_status: data.txt_status, txt_observacoes: data.txt_observacoes,
+      os_status: data.txt_status, txt_observacoes: data.txt_observacoes,
     });
     return { _id: response.data.id || response.data.response?.id, ...data };
   },
@@ -1209,17 +1214,17 @@ export const bubbleApi = {
     try {
       const response = await bubbleClient.post('/obj/movimentacao_equipamento', {
         fk_equipamento: input.fk_equipamento,
-        fk_locacao_equipamento: input.fk_locacao_equipamento,
+        fk_locacao: input.fk_locacao_equipamento,
         fk_ordem_servico_manutencao: input.fk_ordem_servico_manutencao,
         fk_domicilio: input.fk_domicilio,
         fk_localizacao_anterior: equipamento.fk_localizacao_atual,
-        fk_nova_localizacao: input.fk_nova_localizacao,
-        os_tipo_movimentacao: input.os_tipo_movimentacao,
-        txt_tipo_movimentacao: input.os_tipo_movimentacao,
-        txt_status_anterior: equipamento.txt_status,
-        txt_novo_status: input.txt_novo_status,
+        fk_localizacao_nova: input.fk_nova_localizacao,
+        os_tipo_evento: input.os_tipo_movimentacao,
+        txt_tipo_evento: input.os_tipo_movimentacao,
+        os_status_anterior: equipamento.txt_status,
+        os_status_novo: input.txt_novo_status,
         date_data_hora: dataHora,
-        txt_responsavel: input.txt_responsavel,
+        txt_responsavel_operacao: input.txt_responsavel,
         txt_observacoes: input.txt_observacoes,
         txt_justificativa: input.txt_justificativa,
         txt_chave_idempotencia: input.txt_chave_idempotencia,
@@ -1286,7 +1291,7 @@ export const bubbleApi = {
   async getReservasVencidas(dataReferenciaIso: string): Promise<ReservaEquipamento[]> {
     if (!equipamentosV2Ativo) return [];
     const itens = await getAllResults<any>('/obj/reserva_equipamento', [
-      { key: 'OS_status', constraint_type: 'equals', value: 'Ativa' },
+      { key: 'os_status', constraint_type: 'equals', value: 'Ativa' },
       { key: 'date_validade', constraint_type: 'less than', value: dataReferenciaIso },
     ]);
     return itens.map(mapReserva);
@@ -1297,16 +1302,16 @@ export const bubbleApi = {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de baixa v2 ainda nao esta habilitado.');
     const response = await bubbleClient.post('/obj/baixa_equipamento', {
       fk_equipamento: data.fk_equipamento,
-      date_baixa: data.date_baixa,
-      os_motivo_baixa: data.os_motivo_baixa,
-      txt_laudo: data.txt_laudo,
+      date_solicitacao: data.date_baixa,
+      os_motivo: data.os_motivo_baixa,
+      txt_laudo_tecnico: data.txt_laudo,
       num_valor_reparo_estimado: data.num_valor_reparo_estimado,
       num_valor_residual: data.num_valor_residual,
       txt_destino_final: data.txt_destino_final,
       txt_solicitante: data.txt_solicitante,
       txt_autorizado_por: data.txt_autorizado_por,
-      OS_status: data.txt_status,
-      txt_observacoes: data.txt_observacoes,
+      os_status: data.txt_status,
+      txt_observacoes_decisao: data.txt_observacoes,
     });
     return { _id: response.data.id || response.data.response?.id, ...data };
   },
@@ -1322,13 +1327,17 @@ export const bubbleApi = {
     ]);
     return itens.map(mapBaixa).sort((a, b) => new Date(b.date_baixa).getTime() - new Date(a.date_baixa).getTime());
   },
-  async atualizarBaixaEquipamento(id: string, data: Partial<BaixaEquipamento>): Promise<void> {
+  async atualizarBaixaEquipamento(
+    id: string,
+    data: Partial<BaixaEquipamento> & { date_baixa_efetiva?: string }
+  ): Promise<void> {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de baixa v2 ainda nao esta habilitado.');
     const payload: Record<string, unknown> = {};
-    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
+    if (data.txt_status !== undefined) payload.os_status = data.txt_status;
     if (data.txt_autorizado_por !== undefined) payload.txt_autorizado_por = data.txt_autorizado_por;
     if (data.date_decisao !== undefined) payload.date_decisao = data.date_decisao;
-    if (data.txt_observacoes !== undefined) payload.txt_observacoes = data.txt_observacoes;
+    if (data.date_baixa_efetiva !== undefined) payload.date_baixa_efetiva = data.date_baixa_efetiva;
+    if (data.txt_observacoes !== undefined) payload.txt_observacoes_decisao = data.txt_observacoes;
     if (data.bool_revertida !== undefined) payload.bool_revertida = data.bool_revertida;
     if (data.txt_revertida_por !== undefined) payload.txt_revertida_por = data.txt_revertida_por;
     if (data.txt_revertida_por_segundo !== undefined) payload.txt_revertida_por_segundo = data.txt_revertida_por_segundo;
@@ -1344,12 +1353,12 @@ export const bubbleApi = {
     const custoUnitario = Number(data.num_custo_unitario ?? 0);
     const custoTotal = data.num_custo_total ?? Math.round((quantidade * custoUnitario + Number.EPSILON) * 100) / 100;
     const response = await bubbleClient.post('/obj/item_manutencao', {
-      fk_ordem_servico_manutencao: data.fk_ordem_servico_manutencao,
-      os_tipo: data.txt_tipo,
+      fk_ordem_servico: data.fk_ordem_servico_manutencao,
+      txt_tipo: data.txt_tipo,
       txt_descricao: data.txt_descricao,
       num_quantidade: quantidade,
-      num_custo_unitario: custoUnitario,
-      num_custo_total: custoTotal,
+      num_valor_unitario: custoUnitario,
+      num_valor_total: custoTotal,
       txt_fornecedor: data.txt_fornecedor,
       txt_responsavel: data.txt_responsavel,
     });
@@ -1358,16 +1367,16 @@ export const bubbleApi = {
   async getItensManutencao(osId: string): Promise<ItemManutencao[]> {
     if (!equipamentosV2Ativo) return [];
     const itens = await getAllResults<any>('/obj/item_manutencao', [
-      { key: 'fk_ordem_servico_manutencao', constraint_type: 'equals', value: osId },
+      { key: 'fk_ordem_servico', constraint_type: 'equals', value: osId },
     ]);
     return itens.map((raw) => ({
       _id: raw._id,
-      fk_ordem_servico_manutencao: raw.fk_ordem_servico_manutencao,
-      txt_tipo: raw.os_tipo || raw.txt_tipo || 'Outro',
+      fk_ordem_servico_manutencao: raw.fk_ordem_servico ?? raw.fk_ordem_servico_manutencao,
+      txt_tipo: raw.txt_tipo ?? raw.os_tipo ?? 'Outro',
       txt_descricao: raw.txt_descricao || '',
       num_quantidade: raw.num_quantidade ?? undefined,
-      num_custo_unitario: raw.num_custo_unitario ?? undefined,
-      num_custo_total: raw.num_custo_total ?? undefined,
+      num_custo_unitario: raw.num_valor_unitario ?? raw.num_custo_unitario ?? undefined,
+      num_custo_total: raw.num_valor_total ?? raw.num_custo_total ?? undefined,
       txt_fornecedor: raw.txt_fornecedor || undefined,
       txt_responsavel: raw.txt_responsavel || undefined,
       CreatedDate: raw['Created Date'],
@@ -1411,15 +1420,15 @@ export const bubbleApi = {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de alertas v2 ainda nao esta habilitado.');
     const response = await bubbleClient.post('/obj/alerta_equipamento', {
       fk_equipamento: data.fk_equipamento,
-      fk_locacao_equipamento: data.fk_locacao_equipamento,
-      fk_ordem_servico_manutencao: data.fk_ordem_servico_manutencao,
-      os_tipo_alerta: data.os_tipo_alerta,
+      fk_locacao: data.fk_locacao_equipamento,
+      fk_ordem_servico: data.fk_ordem_servico_manutencao,
+      os_tipo: data.os_tipo_alerta,
       txt_titulo: data.txt_titulo,
-      txt_descricao: data.txt_descricao,
-      date_prazo: data.date_prazo,
+      txt_detalhe: data.txt_descricao,
+      date_vencimento: data.date_prazo,
       txt_prioridade: data.txt_prioridade,
       txt_responsavel: data.txt_responsavel,
-      OS_status: data.txt_status,
+      os_status: data.txt_status,
       txt_chave_idempotencia: data.txt_chave_idempotencia,
     });
     return { _id: response.data.id || response.data.response?.id, ...data };
@@ -1434,13 +1443,16 @@ export const bubbleApi = {
     const itens = await getAllResults<any>('/obj/alerta_equipamento', [
       { key: 'txt_chave_idempotencia', constraint_type: 'equals', value: chave },
     ]);
-    const raw = itens.find((item) => item.OS_status !== 'Resolvido' && item.OS_status !== 'Ignorado');
+    const raw = itens.find((item) => {
+      const status = item.os_status ?? item.OS_status;
+      return status !== 'Resolvido' && status !== 'Ignorado';
+    });
     return raw ? mapAlerta(raw) : null;
   },
   async atualizarAlerta(id: string, data: Partial<AlertaEquipamento>): Promise<void> {
     if (!equipamentosV2Ativo) throw new Error('O fluxo de alertas v2 ainda nao esta habilitado.');
     const payload: Record<string, unknown> = {};
-    if (data.txt_status !== undefined) payload.OS_status = data.txt_status;
+    if (data.txt_status !== undefined) payload.os_status = data.txt_status;
     if (data.txt_resolucao !== undefined) payload.txt_resolucao = data.txt_resolucao;
     if (data.date_resolucao !== undefined) payload.date_resolucao = data.date_resolucao;
     if (data.txt_responsavel !== undefined) payload.txt_responsavel = data.txt_responsavel;
