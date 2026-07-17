@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { bubbleApi, Termo } from '@/lib/bubble';
 import { zapsignApi } from '@/lib/zapsign';
+import { isValidCPF, cpfDigits } from '@/lib/cpf';
 import { jsPDF } from 'jspdf';
 
 export const runtime = 'edge';
@@ -95,6 +96,27 @@ export async function POST(request: Request) {
 
     if (!personalData || !personalData.nomeCompleto || !personalData.cpf) {
       return NextResponse.json({ error: 'Dados pessoais obrigatórios ausentes' }, { status: 400 });
+    }
+
+    if (!isValidCPF(personalData.cpf)) {
+      return NextResponse.json({ error: 'CPF inválido. Confira os números digitados.' }, { status: 400 });
+    }
+
+    // Guarda contra cadastro duplicado: um CPF só pode ter um cadastro de cooperado.
+    const existente = await bubbleApi.findCooperadoByCPF(cpfDigits(personalData.cpf));
+    if (existente) {
+      const registro = existente as { txt_termo_status?: string };
+      const aguardandoAssinatura = registro.txt_termo_status === 'Aguardando Assinatura';
+      return NextResponse.json(
+        {
+          error: aguardandoAssinatura
+            ? 'Este CPF já possui um cadastro com assinatura do termo pendente. Verifique seu e-mail (inclusive spam) para localizar o link de assinatura da ZapSign ou entre em contato com a cooperativa.'
+            : 'Este CPF já possui cadastro na cooperativa. Se precisar atualizar seus dados ou tiver dúvidas, entre em contato com a cooperativa.',
+          code: 'CPF_JA_CADASTRADO',
+          termoStatus: registro.txt_termo_status || null,
+        },
+        { status: 409 }
+      );
     }
 
     // 1. Format Address text

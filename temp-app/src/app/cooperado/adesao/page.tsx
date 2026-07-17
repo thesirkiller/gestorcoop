@@ -19,7 +19,13 @@ import {
   Loader2,
   FileCheck,
   Check,
+  HelpCircle,
+  X,
+  RotateCcw,
+  MessageCircle,
+  Mail,
 } from 'lucide-react';
+import { isValidCPF } from '@/lib/cpf';
 
 // Form interfaces
 interface Profession {
@@ -37,11 +43,73 @@ interface BankAccount {
   type: string;
 }
 
+// Chave única do progresso salvo. Mudar a versão invalida rascunhos antigos
+// caso a estrutura do formulário mude de forma incompatível.
+const PROGRESS_STORAGE_KEY = 'gc_adesao_progress_v1';
+const PROGRESS_COOKIE = 'gc_adesao_step';
+
+const SUPORTE_WHATSAPP = process.env.NEXT_PUBLIC_SUPORTE_WHATSAPP || '';
+const SUPORTE_EMAIL = process.env.NEXT_PUBLIC_SUPORTE_EMAIL || '';
+
+// Orientações exibidas no painel de ajuda, por etapa.
+const HELP_BY_STEP: Record<number, { title: string; items: string[] }> = {
+  1: {
+    title: 'Dados Pessoais',
+    items: [
+      'Preencha seu nome completo exatamente como consta no seu documento de identidade.',
+      'O CPF é usado para identificar seu cadastro — cada CPF só pode ter uma adesão.',
+      'Use um e-mail que você acessa com frequência: o link de assinatura do termo será enviado para ele.',
+      'O WhatsApp é o principal canal de contato da cooperativa com você.',
+    ],
+  },
+  2: {
+    title: 'Endereço',
+    items: [
+      'Digite o CEP e os campos de rua, bairro e cidade serão preenchidos automaticamente.',
+      'Confira o número e complete com apartamento/bloco no campo Complemento, se houver.',
+    ],
+  },
+  3: {
+    title: 'Profissões',
+    items: [
+      'Adicione todas as profissões que você exerce, com o número de registro do conselho de classe (COREN, CRM etc.).',
+      'Clique em "Adicionar" após preencher cada profissão — ela deve aparecer na lista antes de avançar.',
+      'Marque como principal a profissão que você mais exerce na cooperativa.',
+    ],
+  },
+  4: {
+    title: 'Dados Bancários',
+    items: [
+      'Informe uma conta em seu nome para receber os repasses da cooperativa.',
+      'Clique em "Adicionar" após preencher os dados — a conta deve aparecer na lista antes de avançar.',
+    ],
+  },
+  5: {
+    title: 'Documentos',
+    items: [
+      'Envie foto nítida (ou PDF) do seu RG ou CNH e de um comprovante de residência recente.',
+      'Se tiver, envie também o comprovante de registro no conselho de classe.',
+      'Formatos aceitos: PDF, JPEG e PNG, com até 10MB por arquivo.',
+    ],
+  },
+  6: {
+    title: 'Assinatura',
+    items: [
+      'Você será redirecionado para a ZapSign para assinar o Termo de Adesão eletronicamente.',
+      'Se o link não abrir, verifique seu e-mail (inclusive a caixa de spam) — o link de assinatura também é enviado por lá.',
+    ],
+  },
+};
+
 export default function AdesaoPage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [checkingCpf, setCheckingCpf] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [resumed, setResumed] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   // Sign URL from ZapSign
   const [signUrl, setSignUrl] = useState('');
@@ -100,6 +168,65 @@ export default function AdesaoPage() {
   // Step 5: Document Uploads
   const [uploadedFiles, setUploadedFiles] = useState<{ url: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+
+  // ── Retomada de progresso ────────────────────────────────────────────────
+  // O rascunho completo fica no localStorage (cookies têm limite de ~4KB e
+  // seriam enviados em toda requisição); um cookie leve guarda só a etapa,
+  // permitindo que o servidor saiba que há um cadastro em andamento.
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(PROGRESS_STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved && typeof saved === 'object' && saved.currentStep >= 1 && saved.currentStep <= 5) {
+          if (saved.personalData) setPersonalData((prev) => ({ ...prev, ...saved.personalData }));
+          if (saved.addressData) setAddressData((prev) => ({ ...prev, ...saved.addressData }));
+          if (Array.isArray(saved.professions)) setProfessions(saved.professions);
+          if (Array.isArray(saved.bankAccounts)) setBankAccounts(saved.bankAccounts);
+          if (Array.isArray(saved.uploadedFiles)) setUploadedFiles(saved.uploadedFiles);
+          setCurrentStep(saved.currentStep);
+          setResumed(true);
+        }
+      }
+    } catch (e) {
+      console.warn('Não foi possível restaurar o progresso salvo:', e);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated || currentStep >= 6) return;
+    try {
+      const snapshot = JSON.stringify({
+        currentStep,
+        personalData,
+        addressData,
+        professions,
+        bankAccounts,
+        uploadedFiles,
+        savedAt: new Date().toISOString(),
+      });
+      window.localStorage.setItem(PROGRESS_STORAGE_KEY, snapshot);
+      document.cookie = `${PROGRESS_COOKIE}=${currentStep}; path=/; max-age=604800; SameSite=Lax`;
+    } catch (e) {
+      console.warn('Não foi possível salvar o progresso:', e);
+    }
+  }, [hydrated, currentStep, personalData, addressData, professions, bankAccounts, uploadedFiles]);
+
+  const clearProgress = () => {
+    try {
+      window.localStorage.removeItem(PROGRESS_STORAGE_KEY);
+      document.cookie = `${PROGRESS_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+    } catch (e) {
+      console.warn('Não foi possível limpar o progresso salvo:', e);
+    }
+  };
+
+  const restartForm = () => {
+    if (!window.confirm('Tem certeza que deseja recomeçar? Todos os dados preenchidos serão apagados.')) return;
+    clearProgress();
+    window.location.reload();
+  };
 
   // Auto-redirect to ZapSign signing page once we reach step 6 with a valid URL
   useEffect(() => {
@@ -279,13 +406,39 @@ export default function AdesaoPage() {
   });
 
   // Next / Prev step navigation
-  const nextStep = () => {
+  const nextStep = async () => {
     // Basic validation per step
     if (currentStep === 1) {
       if (!personalData.nomeCompleto || !personalData.cpf || !personalData.email || !personalData.whatsapp) {
         alert('Por favor, preencha todos os campos obrigatórios (*).');
         return;
       }
+      if (!isValidCPF(personalData.cpf)) {
+        setErrorMsg('CPF inválido. Confira os números digitados.');
+        return;
+      }
+      // Bloqueia cadastro duplicado logo na primeira etapa
+      setCheckingCpf(true);
+      setErrorMsg('');
+      try {
+        const res = await axios.get('/api/cooperado/verificar-cpf', {
+          params: { cpf: personalData.cpf.replace(/\D/g, '') },
+        });
+        if (res.data.exists) {
+          setErrorMsg(
+            res.data.termoStatus === 'Aguardando Assinatura'
+              ? 'Este CPF já possui um cadastro com assinatura do termo pendente. Verifique seu e-mail (inclusive spam) para localizar o link de assinatura, ou fale com a cooperativa pelo botão de Ajuda.'
+              : 'Este CPF já possui cadastro na cooperativa. Se precisar atualizar seus dados, fale com a cooperativa pelo botão de Ajuda.'
+          );
+          return;
+        }
+      } catch (e) {
+        // Falha na consulta não bloqueia: o envio final repete a verificação no servidor.
+        console.warn('Falha ao verificar CPF, seguindo em frente:', e);
+      } finally {
+        setCheckingCpf(false);
+      }
+      setErrorMsg('');
     }
     if (currentStep === 2) {
       if (!addressData.cep || !addressData.rua || !addressData.numero || !addressData.cidade) {
@@ -334,6 +487,7 @@ export default function AdesaoPage() {
       const res = await axios.post('/api/cooperado/adesao', payload);
 
       if (res.data.success) {
+        clearProgress();
         setSignUrl(res.data.signUrl);
         setCurrentStep(6);
       }
@@ -409,6 +563,23 @@ export default function AdesaoPage() {
 
         {/* Form Body with slide transitions */}
         <div className="p-6 md:p-10 flex-1 relative min-h-[450px]">
+          {resumed && currentStep < 6 && (
+            <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 shrink-0 text-indigo-600" />
+                <span>Continuamos de onde você parou. Seus dados preenchidos anteriormente foram recuperados.</span>
+              </div>
+              <button
+                type="button"
+                onClick={restartForm}
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2 self-start sm:self-center shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Recomeçar do zero
+              </button>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2">
               <span className="w-2 h-2 bg-red-500 rounded-full"></span>
@@ -1122,12 +1293,16 @@ export default function AdesaoPage() {
 
             <button
               onClick={nextStep}
-              disabled={submitting}
+              disabled={submitting || checkingCpf}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50"
             >
               {submitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" /> Processando...
+                </>
+              ) : checkingCpf ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" /> Verificando CPF...
                 </>
               ) : currentStep === 5 ? (
                 <>
@@ -1143,6 +1318,115 @@ export default function AdesaoPage() {
         )}
 
       </div>
+
+      {/* Ajuda ao cooperado: botão flutuante + painel com orientações da etapa atual */}
+      <button
+        type="button"
+        onClick={() => setHelpOpen(true)}
+        aria-label="Abrir ajuda"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-full text-sm font-bold shadow-xl shadow-indigo-600/30 active:scale-95 transition-all"
+      >
+        <HelpCircle className="w-5 h-5" />
+        <span className="hidden sm:inline">Ajuda</span>
+      </button>
+
+      <AnimatePresence>
+        {helpOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-slate-900/40 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setHelpOpen(false)}
+          >
+            <motion.div
+              initial={{ y: 40, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 40, opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              role="dialog"
+              aria-label="Painel de ajuda"
+              className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[85vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+                <div className="flex items-center gap-2">
+                  <HelpCircle className="w-5 h-5 text-indigo-600" />
+                  <h3 className="font-bold text-slate-900">Precisa de ajuda?</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setHelpOpen(false)}
+                  aria-label="Fechar ajuda"
+                  className="text-slate-500 hover:text-slate-800 p-1.5 hover:bg-slate-100 rounded-lg transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5">
+                <p className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-2">
+                  Etapa atual: {HELP_BY_STEP[currentStep]?.title || 'Cadastro'}
+                </p>
+                <ul className="space-y-2.5">
+                  {(HELP_BY_STEP[currentStep]?.items || []).map((item, idx) => (
+                    <li key={idx} className="flex items-start gap-2.5 text-sm text-slate-700">
+                      <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span>{item}</span>
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-6 pt-5 border-t border-slate-200">
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Informações gerais</p>
+                  <ul className="space-y-2.5 text-sm text-slate-700">
+                    <li className="flex items-start gap-2.5">
+                      <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span>Seu progresso é salvo automaticamente neste dispositivo — se fechar a página, você continua de onde parou.</span>
+                    </li>
+                    <li className="flex items-start gap-2.5">
+                      <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span>Cada CPF só pode ter um cadastro. Se você já se cadastrou antes, não é necessário (nem possível) se cadastrar de novo.</span>
+                    </li>
+                    <li className="flex items-start gap-2.5">
+                      <Check className="w-4 h-4 text-emerald-500 mt-0.5 shrink-0" />
+                      <span>Ao final, o Termo de Adesão é assinado eletronicamente pela ZapSign — o link também chega no seu e-mail.</span>
+                    </li>
+                  </ul>
+                </div>
+
+                {(SUPORTE_WHATSAPP || SUPORTE_EMAIL) && (
+                  <div className="mt-6 pt-5 border-t border-slate-200">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Fale com a cooperativa</p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      {SUPORTE_WHATSAPP && (
+                        <a
+                          href={`https://wa.me/${SUPORTE_WHATSAPP.replace(/\D/g, '')}?text=${encodeURIComponent('Olá! Preciso de ajuda com o cadastro de adesão de cooperado.')}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-all"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          WhatsApp
+                        </a>
+                      )}
+                      {SUPORTE_EMAIL && (
+                        <a
+                          href={`mailto:${SUPORTE_EMAIL}?subject=${encodeURIComponent('Ajuda com o cadastro de adesão')}`}
+                          className="flex-1 inline-flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-800 px-4 py-2.5 rounded-lg text-sm font-bold border border-slate-200 transition-all"
+                        >
+                          <Mail className="w-4 h-4" />
+                          E-mail
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

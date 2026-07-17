@@ -610,6 +610,28 @@ export const bubbleApi = {
     return response.data;
   },
 
+  async findCooperadoByCPF(cpf: string) {
+    // O CPF pode ter sido salvo com máscara (000.000.000-00) ou só dígitos —
+    // consulta os dois formatos antes de concluir que não existe.
+    const digits = cpf.replace(/\D/g, '');
+    const masked = digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
+    const candidates = digits === masked ? [digits] : [masked, digits];
+
+    for (const value of candidates) {
+      const constraints = [
+        {
+          key: 'txt_CPF',
+          constraint_type: 'equals',
+          value,
+        },
+      ];
+      const response = await bubbleClient.get(`/obj/socioscooperados?constraints=${JSON.stringify(constraints)}`);
+      const found = response.data.response.results?.[0];
+      if (found) return found;
+    }
+    return null;
+  },
+
   async findCooperadoByEmail(email: string) {
     const constraints = [
       {
