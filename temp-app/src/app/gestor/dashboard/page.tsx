@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Link from 'next/link';
 import { fetchFullDataset } from '@/lib/client-fetch';
 import {
   Users,
@@ -18,14 +17,10 @@ import {
   X,
   Loader2,
   RefreshCw,
-  DollarSign,
   Copy,
   Check,
   ChevronDown,
   ExternalLink,
-  Activity,
-  Wrench,
-  BarChart3,
 } from 'lucide-react';
 
 interface Cooperado {
@@ -223,7 +218,7 @@ export default function GestorDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10 font-sans">
+    <div className="text-slate-800 font-sans">
       {/* Header */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10">
         <div>
@@ -237,41 +232,6 @@ export default function GestorDashboard() {
         </div>
 
         <div className="flex items-center gap-4">
-          <Link
-            href="/gestor/financeiro"
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow flex items-center gap-2 transition-all"
-          >
-            <DollarSign className="w-4 h-4" />
-            Painel Financeiro
-          </Link>
-          <Link
-            href="/gestor/termos"
-            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
-          >
-            <FileText className="w-4 h-4 text-slate-500" />
-            Gerenciar Termos
-          </Link>
-          <Link
-            href="/gestor/equipamentos"
-            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
-          >
-            <Activity className="w-4 h-4 text-slate-500" />
-            Equipamentos
-          </Link>
-          <Link
-            href="/gestor/manutencao"
-            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
-          >
-            <Wrench className="w-4 h-4 text-slate-500" />
-            Manutenção
-          </Link>
-          <Link
-            href="/gestor/equipamentos-relatorios"
-            className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 hover:text-slate-900 px-4 py-2 rounded-lg text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
-          >
-            <BarChart3 className="w-4 h-4 text-slate-500" />
-            Relatórios
-          </Link>
           <button
             onClick={fetchData}
             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm"

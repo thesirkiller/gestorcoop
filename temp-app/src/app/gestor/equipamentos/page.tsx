@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Link from 'next/link';
 import {
   Activity,
   Plus,
@@ -16,7 +15,6 @@ import {
   FileText,
   Wrench,
   Edit3,
-  ArrowLeft,
 } from 'lucide-react';
 import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Paciente, LocacaoEquipamento, StatusEquipamento } from '@/lib/bubble';
 import { TipoCobrancaLocacao } from '@/lib/equipamentos-financeiro';
@@ -548,7 +546,7 @@ export default function GestorEquipamentos() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10 font-sans relative overflow-hidden">
+    <div className="text-slate-800 font-sans relative overflow-hidden">
       {/* Glow effects */}
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-100 rounded-full blur-[120px] pointer-events-none opacity-60" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-100 rounded-full blur-[120px] pointer-events-none opacity-60" />
@@ -556,12 +554,6 @@ export default function GestorEquipamentos() {
       {/* Header */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 z-10 relative">
         <div>
-          <div className="flex items-center gap-2 text-indigo-600 mb-1 hover:text-indigo-850 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            <Link href="/gestor/dashboard" className="text-xs font-bold uppercase tracking-wider">
-              Painel Principal
-            </Link>
-          </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Activity className="w-8 h-8 text-indigo-600 animate-pulse" />
             Gestão de Equipamentos
@@ -573,24 +565,6 @@ export default function GestorEquipamentos() {
 
         {/* Action buttons matching dashboard style */}
         <div className="flex flex-wrap items-center gap-3">
-          <Link
-            href="/gestor/dashboard"
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all"
-          >
-            Dashboard Cooperados
-          </Link>
-          <Link
-            href="/gestor/financeiro"
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all"
-          >
-            Painel Financeiro
-          </Link>
-          <Link
-            href="/gestor/termos"
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all"
-          >
-            Gerenciar Termos
-          </Link>
           <button
             onClick={handleExportarInventario}
             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all"

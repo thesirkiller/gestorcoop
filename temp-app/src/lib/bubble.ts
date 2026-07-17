@@ -1501,6 +1501,11 @@ export const bubbleApi = {
     await bubbleClient.patch(`/obj/alerta_equipamento/${id}`, payload);
   },
 
+  async getUser(id: string): Promise<any> {
+    const response = await bubbleClient.get(`/obj/user/${id}`);
+    return response.data.response;
+  },
+
   // Autenticação SSO
   async findUserBySSOToken(token: string): Promise<any> {
     let constraints = [

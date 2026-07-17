@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Link from 'next/link';
 import {
   Activity,
   Plus,
@@ -11,7 +10,6 @@ import {
   RefreshCw,
   Info,
   Wrench,
-  ArrowLeft,
   ChevronDown,
   ChevronRight,
   Trash2,
@@ -280,19 +278,13 @@ export default function GestorManutencao() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10 font-sans relative overflow-hidden">
+    <div className="text-slate-800 font-sans relative overflow-hidden">
       <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-100 rounded-full blur-[120px] pointer-events-none opacity-60" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-100 rounded-full blur-[120px] pointer-events-none opacity-60" />
 
       {/* Header */}
       <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 z-10 relative">
         <div>
-          <div className="flex items-center gap-2 text-indigo-600 mb-1 hover:text-indigo-800 transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            <Link href="/gestor/equipamentos" className="text-xs font-bold uppercase tracking-wider">
-              Gestão de Equipamentos
-            </Link>
-          </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Wrench className="w-8 h-8 text-indigo-600" />
             Ordens de Serviço (Manutenção)

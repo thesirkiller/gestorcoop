@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import Link from 'next/link';
 import { fetchFullDataset } from '@/lib/client-fetch';
 import {
   Users,
@@ -18,10 +17,8 @@ import {
   Loader2,
   Edit2,
   Save,
-  ArrowLeft,
   Printer,
   ChevronDown,
-  Activity
 } from 'lucide-react';
 
 interface Cooperado {
@@ -321,7 +318,7 @@ export default function FinanceiroPage() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-10 font-sans">
+    <div className="text-slate-800 font-sans">
 
       {/* Print styles override (only prints print-area when printing) */}
       <style jsx global>{`
@@ -345,24 +342,6 @@ export default function FinanceiroPage() {
       `}</style>
 
       <div className="max-w-7xl mx-auto">
-
-        {/* Navigation Link back */}
-        <div className="mb-6 flex items-center gap-4">
-          <Link href="/gestor/dashboard" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
-            <ArrowLeft className="w-4 h-4" />
-            Voltar para Adesões
-          </Link>
-          <span className="text-slate-300">|</span>
-          <Link href="/gestor/termos" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
-            <FileText className="w-4 h-4 text-slate-500" />
-            Gerenciar Termos
-          </Link>
-          <span className="text-slate-300">|</span>
-          <Link href="/gestor/equipamentos" className="text-slate-500 hover:text-indigo-600 transition-all flex items-center gap-2 text-sm font-semibold">
-            <Activity className="w-4 h-4 text-slate-500" />
-            Gestão de Equipamentos
-          </Link>
-        </div>
 
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
