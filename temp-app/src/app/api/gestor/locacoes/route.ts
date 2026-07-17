@@ -147,11 +147,18 @@ export async function POST(request: NextRequest) {
     await bubbleApi.updateEquipamento(fk_equipamento, { txt_status: 'Alugado' });
     return NextResponse.json({ success: true, data: created });
   } catch (error) {
-    const err = error as { message?: string };
-    console.error('Erro ao registrar locação:', err);
+    // Erros do axios (ex.: o Bubble recusa a gravação com 400) trazem o motivo
+    // real em error.response.data.body.message. Sem extrair isso, a resposta
+    // vira apenas "Request failed with status code 400" e o motivo se perde.
+    const ax = error as {
+      message?: string;
+      response?: { status?: number; data?: { body?: { message?: string }; message?: string } };
+    };
+    const bubbleDetail = ax.response?.data?.body?.message ?? ax.response?.data?.message;
+    console.error('Erro ao registrar locação:', ax.response?.data ?? ax.message ?? error);
     return NextResponse.json(
-      { success: false, error: err.message || 'Erro ao registrar locação' },
-      { status: 500 }
+      { success: false, error: bubbleDetail || ax.message || 'Erro ao registrar locação' },
+      { status: ax.response?.status && ax.response.status >= 400 ? ax.response.status : 500 }
     );
   }
 }

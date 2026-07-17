@@ -25,6 +25,10 @@ const SETS: Record<string, { tipo: string; campo: string; labels: string[] }> = 
     'Aguardando conferência','Disponível','Reservado','Em transporte para implantação','Implantado no domicílio',
     'Em transporte para recolhimento','Recolhido e aguardando conferência','Aguardando higienização','Em higienização',
     'Manutenção','Aguardando peça','Liberado pela manutenção','Bloqueado','Extraviado','Condenado','Baixado','Alugado','Inativo'] },
+  os_status_locacao_equipamento: { tipo: 'locacao_equipamento', campo: 'OS_status', labels: [
+    'Ativo','Finalizado','Cancelado'] },
+  os_tipo_cobranca_locacao_equipamento: { tipo: 'locacao_equipamento', campo: 'os_tipo_cobranca', labels: [
+    'Somente diária','Somente mensalidade','Mensalidade proporcional','Mensalidade fechada','Valor personalizado','Sem cobrança'] },
   os_os_tipo_movimentacao_equipamento: { tipo: 'movimentacao_equipamento', campo: 'os_tipo_evento', labels: [
     'Cadastro','Entrada no estoque','Alteração cadastral','Reserva','Cancelamento de reserva','Implantação','Recolhimento',
     'Transferência','Higienização','Manutenção','Calibração','Bloqueio','Liberação','Extravio','Baixa','Correção'] },

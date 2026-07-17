@@ -241,6 +241,7 @@ export default function GestorEquipamentos() {
     setRentDataFimPrevisto('');
     setRentObservacoes('');
     setPatientSearch('');
+    setErrorMsg('');
     setIsRentalModalOpen(true);
   };
 
@@ -1429,6 +1430,12 @@ export default function GestorEquipamentos() {
             </div>
 
             <form onSubmit={handleSubmitRental} className="p-6 space-y-4">
+              {errorMsg && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3">
+                  <Info className="w-5 h-5 text-red-500 shrink-0" />
+                  <span className="text-sm font-medium">{errorMsg}</span>
+                </div>
+              )}
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Selecionar Paciente *</label>
                 <div className="space-y-2">
