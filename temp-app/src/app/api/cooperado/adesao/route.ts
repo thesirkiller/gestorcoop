@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { bubbleApi, Termo } from '@/lib/bubble';
 import { zapsignApi } from '@/lib/zapsign';
 import { isValidCPF, cpfDigits } from '@/lib/cpf';
+import { normalizeProfissaoBubble } from '@/lib/profissoes';
 import { jsPDF } from 'jspdf';
 
 export const runtime = 'edge';
@@ -24,7 +25,7 @@ function resolveTermoText(
   professionOptionNames: string[],
   allTerms: Termo[]
 ) {
-  const professionsText = professionOptionNames.join(', ') || 'Cooperado';
+  const professionsText = professionOptionNames.map((p) => p.trim()).join(', ') || 'Cooperado';
   const nomeCompleto = personalData.nomeCompleto || '';
   const rg = personalData.rg || '';
   const cpf = personalData.cpf || '';
@@ -102,23 +103,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'CPF inválido. Confira os números digitados.' }, { status: 400 });
     }
 
-    // Guarda contra cadastro duplicado: um CPF só pode ter um cadastro de cooperado.
-    const existente = await bubbleApi.findCooperadoByCPF(cpfDigits(personalData.cpf));
-    if (existente) {
-      const registro = existente as { txt_termo_status?: string };
-      const aguardandoAssinatura = registro.txt_termo_status === 'Aguardando Assinatura';
-      return NextResponse.json(
-        {
-          error: aguardandoAssinatura
-            ? 'Este CPF já possui um cadastro com assinatura do termo pendente. Verifique seu e-mail (inclusive spam) para localizar o link de assinatura da ZapSign ou entre em contato com a cooperativa.'
-            : 'Este CPF já possui cadastro na cooperativa. Se precisar atualizar seus dados ou tiver dúvidas, entre em contato com a cooperativa.',
-          code: 'CPF_JA_CADASTRADO',
-          termoStatus: registro.txt_termo_status || null,
-        },
-        { status: 409 }
-      );
-    }
-
     // 1. Format Address text
     const fullAddress = `${addressData.rua || ''}, Nº ${addressData.numero || ''}${addressData.complemento ? `, ${addressData.complemento}` : ''}, ${addressData.bairro || ''}, ${addressData.cidade || ''} - ${addressData.estado || ''}, CEP: ${addressData.cep || ''}`;
 
@@ -151,12 +135,59 @@ export async function POST(request: Request) {
       fks_pasta: uploadedFiles || [],
     };
 
-    console.log('Criando cooperado no Bubble:', personalData.nomeCompleto);
-    const cooperadoResponse = await bubbleApi.createCooperado(cooperadoPayload);
-    const cooperadoId = cooperadoResponse.id;
+    // 2b. Um CPF só pode ter um cadastro. Se já existe com o termo pendente de
+    // assinatura (cadastro que parou no meio — ex.: falha após criar o registro
+    // ou usuário que nunca assinou), RETOMA esse registro em vez de bloquear:
+    // atualiza os dados, recria os sub-registros e gera um novo link de
+    // assinatura. Qualquer outro status bloqueia com 409.
+    const existente = await bubbleApi.findCooperadoByCPF(cpfDigits(personalData.cpf));
+    let cooperadoId: string;
+    let retomada = false;
 
-    if (!cooperadoId) {
-      throw new Error('Falha ao obter ID do cooperado criado no Bubble');
+    if (existente) {
+      const registro = existente as {
+        _id: string;
+        txt_termo_status?: string;
+        bool_BLOQUEADO?: boolean;
+        bool_listaNegra?: boolean;
+      };
+      const aguardandoAssinatura = registro.txt_termo_status === 'Aguardando Assinatura';
+      const bloqueado = !!registro.bool_BLOQUEADO || !!registro.bool_listaNegra;
+
+      if (!aguardandoAssinatura || bloqueado) {
+        return NextResponse.json(
+          {
+            error: 'Este CPF já possui cadastro na cooperativa. Se precisar atualizar seus dados ou tiver dúvidas, entre em contato com a cooperativa.',
+            code: 'CPF_JA_CADASTRADO',
+            termoStatus: registro.txt_termo_status || null,
+          },
+          { status: 409 }
+        );
+      }
+
+      retomada = true;
+      cooperadoId = registro._id;
+      console.log('Retomando cadastro existente (termo pendente):', cooperadoId);
+
+      // Remove sub-registros de tentativas anteriores para não duplicar
+      const [profsAntigas, contasAntigas] = await Promise.all([
+        bubbleApi.getProfissoesByCooperado(cooperadoId),
+        bubbleApi.getContasByCooperado(cooperadoId),
+      ]);
+      await Promise.all([
+        ...profsAntigas.map((p) => bubbleApi.deleteProfissao(p._id)),
+        ...contasAntigas.map((c) => bubbleApi.deleteContaBancaria(c._id)),
+      ]);
+
+      await bubbleApi.updateCooperado(cooperadoId, cooperadoPayload);
+    } else {
+      console.log('Criando cooperado no Bubble:', personalData.nomeCompleto);
+      const cooperadoResponse = await bubbleApi.createCooperado(cooperadoPayload);
+      cooperadoId = cooperadoResponse.id;
+
+      if (!cooperadoId) {
+        throw new Error('Falha ao obter ID do cooperado criado no Bubble');
+      }
     }
 
     // 3. Create Professions in Bubble and link
@@ -164,19 +195,24 @@ export async function POST(request: Request) {
     const professionOptionNames: string[] = [];
 
     for (const prof of (professions || [])) {
+      // O option set do Bubble só aceita valores exatos ('Psicologo (a)' sem
+      // acento, 'Técnico (a) de Enfermagem ' com espaço final...). Normaliza o
+      // que veio do cliente; sem correspondência, omite o option set em vez de
+      // derrubar a adesão inteira com 400.
+      const osValue = normalizeProfissaoBubble(prof.name);
       const profPayload = {
-        txt_nome: prof.name,
+        txt_nome: osValue?.trim() || prof.name,
         txt_conselho: prof.registration || '', // using council number/registration
         date_emissao: prof.emissionDate ? new Date(prof.emissionDate).toISOString() : undefined,
         bool_principal: !!prof.isPrincipal,
-        OS_profissao: prof.name, // maps to option.profiss_es text value
+        ...(osValue ? { OS_profissao: osValue } : {}),
         fk_socio_cooperado: cooperadoId,
         fk_cooperativa: defaultCooperativaId,
       };
       const profResponse = await bubbleApi.createProfissao(profPayload);
       if (profResponse.id) {
         professionIds.push(profResponse.id);
-        professionOptionNames.push(prof.name);
+        if (osValue) professionOptionNames.push(osValue);
       }
     }
 
@@ -302,6 +338,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       cooperadoId,
+      retomada,
       docToken,
       signUrl,
     });

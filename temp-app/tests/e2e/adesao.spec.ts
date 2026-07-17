@@ -120,15 +120,16 @@ test('CPF inválido bloqueia o avanço da etapa 1', async ({ page }) => {
   await expect(page.locator('input[name="nomeCompleto"]')).toBeVisible();
 });
 
-test('CPF já cadastrado com termo pendente é bloqueado com orientação', async ({ page }) => {
+test('CPF com termo pendente pode continuar (retomada) com aviso informativo', async ({ page }) => {
   await mockBackend(page, { cpfExists: true, termoStatus: 'Aguardando Assinatura' });
   await page.goto('/cooperado/adesao');
 
   await preencherEtapa1(page);
   await avancar(page);
 
-  await expect(page.getByText(/já possui um cadastro com assinatura do termo pendente/)).toBeVisible();
-  await expect(page.locator('input[name="nomeCompleto"]')).toBeVisible();
+  // Não bloqueia: avança para a etapa 2 com aviso de que o cadastro será retomado
+  await expect(page.getByRole('heading', { name: 'Endereço' })).toBeVisible();
+  await expect(page.getByText(/assinatura do termo pendente. Pode continuar normalmente/)).toBeVisible();
 });
 
 test('CPF já cadastrado (ativo) é bloqueado', async ({ page }) => {

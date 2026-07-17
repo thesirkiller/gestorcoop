@@ -48,7 +48,7 @@ export interface CreateProfissaoInput {
   txt_conselho: string;
   date_emissao?: string;
   bool_principal: boolean;
-  OS_profissao: string;
+  OS_profissao?: string;
   fk_socio_cooperado: string;
   fk_cooperativa: string;
 }
@@ -582,9 +582,29 @@ export const bubbleApi = {
     return response.data;
   },
 
+  async deleteProfissao(id: string): Promise<void> {
+    await bubbleClient.delete(`/obj/profissao_cooperado/${id}`);
+  },
+
+  async getProfissoesByCooperado(cooperadoId: string): Promise<Array<{ _id: string }>> {
+    return getAllResults('/obj/profissao_cooperado', [
+      { key: 'fk_socio_cooperado', constraint_type: 'equals', value: cooperadoId },
+    ]);
+  },
+
   async createContaBancaria(data: CreateContaInput) {
     const response = await bubbleClient.post('/obj/conta_cooperado', data);
     return response.data;
+  },
+
+  async deleteContaBancaria(id: string): Promise<void> {
+    await bubbleClient.delete(`/obj/conta_cooperado/${id}`);
+  },
+
+  async getContasByCooperado(cooperadoId: string): Promise<Array<{ _id: string }>> {
+    return getAllResults('/obj/conta_cooperado', [
+      { key: 'fk_cooperado', constraint_type: 'equals', value: cooperadoId },
+    ]);
   },
 
   async getCooperado(id: string) {

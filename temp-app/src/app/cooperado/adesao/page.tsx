@@ -26,6 +26,7 @@ import {
   Mail,
 } from 'lucide-react';
 import { isValidCPF } from '@/lib/cpf';
+import { PROFISSOES_FORM } from '@/lib/profissoes';
 
 // Form interfaces
 interface Profession {
@@ -106,6 +107,7 @@ export default function AdesaoPage() {
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [infoMsg, setInfoMsg] = useState('');
   const [checkingCpf, setCheckingCpf] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [resumed, setResumed] = useState(false);
@@ -417,20 +419,23 @@ export default function AdesaoPage() {
         setErrorMsg('CPF inválido. Confira os números digitados.');
         return;
       }
-      // Bloqueia cadastro duplicado logo na primeira etapa
+      // Verifica cadastro existente logo na primeira etapa
       setCheckingCpf(true);
       setErrorMsg('');
+      setInfoMsg('');
       try {
         const res = await axios.get('/api/cooperado/verificar-cpf', {
           params: { cpf: personalData.cpf.replace(/\D/g, '') },
         });
         if (res.data.exists) {
-          setErrorMsg(
-            res.data.termoStatus === 'Aguardando Assinatura'
-              ? 'Este CPF já possui um cadastro com assinatura do termo pendente. Verifique seu e-mail (inclusive spam) para localizar o link de assinatura, ou fale com a cooperativa pelo botão de Ajuda.'
-              : 'Este CPF já possui cadastro na cooperativa. Se precisar atualizar seus dados, fale com a cooperativa pelo botão de Ajuda.'
-          );
-          return;
+          const pendente = res.data.termoStatus === 'Aguardando Assinatura' && !res.data.bloqueado;
+          if (!pendente) {
+            setErrorMsg('Este CPF já possui cadastro na cooperativa. Se precisar atualizar seus dados, fale com a cooperativa pelo botão de Ajuda.');
+            return;
+          }
+          // Cadastro anterior parou antes da assinatura: deixa continuar —
+          // ao finalizar, o servidor retoma o mesmo registro e gera novo link.
+          setInfoMsg('Encontramos um cadastro seu com a assinatura do termo pendente. Pode continuar normalmente: ao finalizar, seus dados serão atualizados e um novo link de assinatura será gerado.');
         }
       } catch (e) {
         // Falha na consulta não bloqueia: o envio final repete a verificação no servidor.
@@ -577,6 +582,13 @@ export default function AdesaoPage() {
                 <RotateCcw className="w-3.5 h-3.5" />
                 Recomeçar do zero
               </button>
+            </div>
+          )}
+
+          {infoMsg && currentStep < 6 && (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm flex items-center gap-2">
+              <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0"></span>
+              {infoMsg}
             </div>
           )}
 
@@ -934,14 +946,9 @@ export default function AdesaoPage() {
                           onChange={(e) => setCurrentProf(prev => ({ ...prev, name: e.target.value }))}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
                         >
-                          <option value="Enfermeiro (a)">Enfermeiro (a)</option>
-                          <option value="Técnico (a) de Enfermagem">Técnico (a) de Enfermagem</option>
-                          <option value="Médico (a)">Médico (a)</option>
-                          <option value="Fisioterapeuta">Fisioterapeuta</option>
-                          <option value="Nutricionista">Nutricionista</option>
-                          <option value="Psicólogo (a)">Psicólogo (a)</option>
-                          <option value="Técnico (a) de Laboratório">Técnico (a) de Laboratório</option>
-                          <option value="Outros">Outros</option>
+                          {PROFISSOES_FORM.map((p) => (
+                            <option key={p.value} value={p.value}>{p.label}</option>
+                          ))}
                         </select>
                       </div>
 
