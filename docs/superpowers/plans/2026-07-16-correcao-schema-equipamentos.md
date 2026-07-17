@@ -1,5 +1,18 @@
 # Plano: Correção do schema de equipamentos (Bubble × Next) e do bug do MCP
 
+> ## ✅ PLANO CONCLUÍDO (2026-07-17)
+> Módulo de equipamentos V2 **no ar em produção**. Tasks 2–5 concluídas; Task 1
+> removida (não mexemos no MCP, por decisão do usuário).
+> - **Schema:** 107/107 campos no Data API **live** + 10/10 option sets com valores 100%.
+> - **Homologação:** 27/27 asserts verdes tanto no **version-test** quanto no **live**
+>   (reserva, movimentação + máquina de estados + idempotência, OS + item + custo,
+>   baixa com dupla autorização, alerta). Registros de teste sempre removidos.
+> - **Produção:** `EQUIPAMENTOS_V2_ENABLED=true` ativo; crons `/api/cron/*` retornam 200.
+> - **Ferramentas versionadas:** `temp-app/scripts/` (`equip:probe` / `equip:audit-values` / `equip:homolog`).
+> - Único item não exercitado: suspensão de locação (não há `locacao_equipamento` no live/test;
+>   schema de `suspensao_locacao` probado OK à parte, 5/5).
+> - Commits: `3bfc572` (código) · `b179c87` (schema) · `6423e8a` (homolog) · `cd15d0a` (go-live) · `95e9a44` (scripts).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fazer o módulo de equipamentos V2 funcionar de ponta a ponta corrigindo (1) o bug do befree-bubble-mcp que deixa campos "missing" no Bubble, (2) o schema quebrado/incompleto no Bubble e (3) a divergência de nomes de campo entre o código Next e o schema real.
