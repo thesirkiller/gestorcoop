@@ -495,6 +495,11 @@ export default function AdesaoPage() {
         clearProgress();
         setSignUrl(res.data.signUrl);
         setCurrentStep(6);
+        if (res.data.signUrl) {
+          setTimeout(() => {
+            window.location.href = res.data.signUrl;
+          }, 1500);
+        }
       }
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } }; message?: string };
@@ -1242,41 +1247,47 @@ export default function AdesaoPage() {
                 </div>
               )}
 
-              {/* STEP 6: Redirect to ZapSign Signature */}
+              {/* STEP 6: ZapSign Direct Redirect */}
               {currentStep === 6 && (
-                <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-                  {signUrl ? (
-                    <>
-                      <div className="w-20 h-20 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center mb-6">
-                        <CheckCircle className="w-11 h-11 text-emerald-500" />
-                      </div>
-                      <h2 className="text-2xl font-bold text-slate-900 flex items-center justify-center gap-2">
-                        Cadastro realizado com sucesso!
-                      </h2>
-                      <p className="text-sm text-slate-550 mt-3 max-w-md">
-                        Você será redirecionado para assinar seu Termo de Adesão na ZapSign.
-                        Se o redirecionamento não acontecer automaticamente, clique no botão abaixo.
-                      </p>
+                <div className="flex flex-col items-center py-12 text-center animate-fadeIn">
+                  <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-sm border border-indigo-100 animate-pulse">
+                    <FileCheck className="w-10 h-10" />
+                  </div>
+                  
+                  <h2 className="text-2xl font-extrabold text-slate-900 mb-3">
+                    Ficha de Inscrição Enviada!
+                  </h2>
+                  
+                  <p className="text-sm text-slate-600 max-w-md mb-8">
+                    Para concluir sua adesão à cooperativa, você está sendo redirecionado para assinar o termo eletronicamente na ZapSign.
+                  </p>
 
-                      <a
-                        href={signUrl}
-                        className="mt-8 inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8 py-3.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 active:scale-95 transition-all"
-                      >
-                        <FileCheck className="w-5 h-5" />
-                        Assinar Termo de Adesão
-                      </a>
-
-                      <div className="mt-6 flex items-center gap-2 text-xs text-slate-500">
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        Redirecionando automaticamente...
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 max-w-lg w-full flex flex-col items-center justify-center gap-4 shadow-sm">
+                    {signUrl ? (
+                      <>
+                        <div className="flex items-center gap-3 text-emerald-600 font-semibold text-sm bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
+                          <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+                          Redirecionando automaticamente...
+                        </div>
+                        
+                        <p className="text-xs text-slate-550 mt-2">
+                          Se o redirecionamento automático não iniciar em alguns segundos, clique no botão abaixo:
+                        </p>
+                        
+                        <a
+                          href={signUrl}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3.5 rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 transition-all text-base flex items-center gap-2 mt-2"
+                        >
+                          Ir para Assinatura <ChevronRight className="w-5 h-5" />
+                        </a>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-6 gap-3">
+                        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+                        <p className="text-sm font-semibold text-slate-600">Gerando documento de assinatura...</p>
                       </div>
-                    </>
-                  ) : (
-                    <div className="flex flex-col items-center justify-center gap-3">
-                      <Loader2 className="w-12 h-12 text-indigo-500 animate-spin" />
-                      <p className="text-sm text-slate-550">Gerando seu documento para assinatura...</p>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
 

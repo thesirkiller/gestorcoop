@@ -58,7 +58,7 @@ export const zapsignApi = {
     } catch (err) {
       const error = err as { response?: unknown; message?: string };
       if (error.response) {
-        throw err;
+        throw error;
       }
       throw {
         message: error.message || 'Erro de rede ou conexão com ZapSign'
