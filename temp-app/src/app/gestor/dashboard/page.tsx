@@ -547,7 +547,7 @@ export default function GestorDashboard() {
                                   onClick={() =>
                                     handleCopyLink(
                                       coop._id,
-                                      activeLink || `https://sandbox.zapsign.com.br/sign/mock` // fallback se já estivesse aguardando assinatura anteriormente
+                                      activeLink || `https://app.zapsign.com.br/sign/mock` // fallback se já estivesse aguardando assinatura anteriormente
                                     )
                                   }
                                   className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border ${copiedId === coop._id

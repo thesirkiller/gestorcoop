@@ -200,10 +200,8 @@ export async function POST(request: Request) {
     } catch (zapsignError) {
       const err = zapsignError as { response?: { data?: unknown }; message?: string };
       console.error('Erro na integração com a ZapSign:', err?.response?.data || err.message);
-      // Fallback para simulação em ambiente de desenvolvimento caso as credenciais falhem
-      docToken = `mock-token-${Date.now()}`;
-      const isProduction = process.env.ZAPSIGN_BASE_URL?.includes('api.zapsign.com.br') && !process.env.ZAPSIGN_BASE_URL?.includes('sandbox');
-      const baseSignUrl = isProduction ? 'https://zapsign.com.br' : 'https://sandbox.zapsign.com.br';
+      const isSandbox = process.env.ZAPSIGN_BASE_URL?.includes('sandbox');
+      const baseSignUrl = isSandbox ? 'https://sandbox.zapsign.com.br' : 'https://app.zapsign.com.br';
       signUrl = `${baseSignUrl}/sign/${docToken}`;
     }
 
