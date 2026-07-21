@@ -15,9 +15,11 @@ import {
   FileText,
   Wrench,
   Edit3,
+  Sparkles,
 } from 'lucide-react';
 import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Paciente, LocacaoEquipamento, StatusEquipamento } from '@/lib/bubble';
 import { TipoCobrancaLocacao } from '@/lib/equipamentos-financeiro';
+import { generateSerialNumber } from '@/lib/equipamentos-helpers';
 
 export default function GestorEquipamentos() {
   // Data States
@@ -411,12 +413,18 @@ export default function GestorEquipamentos() {
     setErrorMsg('');
 
     try {
+      let finalSerie = equipSerie.trim();
+      if (!finalSerie) {
+        finalSerie = generateSerialNumber(equipMarca, equipModelo);
+        setEquipSerie(finalSerie);
+      }
+
       const payload: Record<string, unknown> = {
         txt_nome: equipNome,
         txt_descricao: equipDescricao,
         txt_marca: equipMarca,
         txt_modelo: equipModelo,
-        txt_numero_serie: equipSerie,
+        txt_numero_serie: finalSerie,
         num_preco_padrao: Number(equipPreco),
       };
       if (!fluxoV2Ativo) payload.txt_status = equipStatus;
@@ -1199,14 +1207,24 @@ export default function GestorEquipamentos() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nº Série / Patrimônio *</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Nº Série / Patrimônio *</label>
+                    <button
+                      type="button"
+                      onClick={() => setEquipSerie(generateSerialNumber(equipMarca, equipModelo))}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-700 flex items-center gap-1 hover:underline transition-all"
+                      title="Gerar número de série automático"
+                    >
+                      <Sparkles className="w-3 h-3 text-amber-500" />
+                      Gerar S/N
+                    </button>
+                  </div>
                   <input
                     type="text"
-                    required
                     value={equipSerie}
                     onChange={(e) => setEquipSerie(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none font-mono"
-                    placeholder="Ex: SN-19842"
+                    placeholder="Ex: PHIL-EVER-1984"
                   />
                 </div>
                 <div>
