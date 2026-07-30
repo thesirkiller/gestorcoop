@@ -10,6 +10,7 @@ import {
   FileText,
   Boxes,
   Wrench,
+  Archive,
   BarChart3,
   ChevronsLeft,
   ChevronsRight,
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { href: '/gestor/termos', label: 'Termos', icon: FileText },
   { href: '/gestor/equipamentos', label: 'Equipamentos', icon: Boxes },
   { href: '/gestor/manutencao', label: 'Manutenção', icon: Wrench },
+  { href: '/gestor/baixas', label: 'Baixas', icon: Archive },
   { href: '/gestor/equipamentos-relatorios', label: 'Relatórios', icon: BarChart3 },
 ];
 

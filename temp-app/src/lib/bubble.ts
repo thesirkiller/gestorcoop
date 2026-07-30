@@ -1338,6 +1338,12 @@ export const bubbleApi = {
     ]);
     return itens.map(mapReserva);
   },
+  async getReservasPorStatus(status?: string): Promise<ReservaEquipamento[]> {
+    if (!equipamentosV2Ativo) return [];
+    const constraints = status ? [{ key: 'os_status', constraint_type: 'equals', value: status }] : [];
+    const itens = await getAllResults<any>('/obj/reserva_equipamento', constraints);
+    return itens.map(mapReserva).sort((a, b) => new Date(b.date_reserva).getTime() - new Date(a.date_reserva).getTime());
+  },
 
   // Baixa — solicitação, decisão e reversão excepcional
   async criarBaixaEquipamento(data: Omit<BaixaEquipamento, '_id' | 'CreatedDate'>): Promise<BaixaEquipamento> {
@@ -1367,6 +1373,12 @@ export const bubbleApi = {
     const itens = await getAllResults<any>('/obj/baixa_equipamento', [
       { key: 'fk_equipamento', constraint_type: 'equals', value: equipamentoId },
     ]);
+    return itens.map(mapBaixa).sort((a, b) => new Date(b.date_baixa).getTime() - new Date(a.date_baixa).getTime());
+  },
+  async getBaixasPorStatus(status?: string): Promise<BaixaEquipamento[]> {
+    if (!equipamentosV2Ativo) return [];
+    const constraints = status ? [{ key: 'os_status', constraint_type: 'equals', value: status }] : [];
+    const itens = await getAllResults<any>('/obj/baixa_equipamento', constraints);
     return itens.map(mapBaixa).sort((a, b) => new Date(b.date_baixa).getTime() - new Date(a.date_baixa).getTime());
   },
   async atualizarBaixaEquipamento(

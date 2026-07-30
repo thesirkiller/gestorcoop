@@ -41,3 +41,11 @@ befree-bubble-mcp/
 
 # cache local do wrangler
 .wrangler/
+
+# Impeccable cloned source repository
+.impeccable/
+
+# Agent local customizations
+.agents/
+
+

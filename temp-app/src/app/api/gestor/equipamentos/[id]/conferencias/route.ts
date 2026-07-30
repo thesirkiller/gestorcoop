@@ -15,7 +15,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ success: false, error: 'Informe o resultado e um encaminhamento válido.' }, { status: 400 });
     }
     const equipamento = await bubbleApi.getEquipamento(params.id);
-    if (equipamento.txt_status !== 'Recolhido e aguardando conferência') {
+    if (!['Recolhido e aguardando conferência', 'Aguardando conferência'].includes(equipamento.txt_status)) {
       return NextResponse.json({ success: false, error: 'Este equipamento não está aguardando conferência.' }, { status: 409 });
     }
     const conferencia: Omit<ConferenciaEquipamento, '_id' | 'CreatedDate'> = {

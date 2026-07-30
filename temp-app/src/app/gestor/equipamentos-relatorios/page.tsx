@@ -433,7 +433,7 @@ export default function GestorEquipamentosRelatorios() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
+                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                         <th className="px-6 py-4">Alerta</th>
                         <th className="px-6 py-4">Tipo</th>
                         <th className="px-6 py-4">Prioridade</th>
@@ -447,7 +447,7 @@ export default function GestorEquipamentosRelatorios() {
                         <tr key={alerta._id} className="hover:bg-slate-50/40 transition-colors">
                           <td className="px-6 py-4">
                             <div className="font-semibold text-slate-900">{alerta.txt_titulo}</div>
-                            {alerta.txt_descricao && <div className="text-xs text-slate-450 max-w-md">{alerta.txt_descricao}</div>}
+                            {alerta.txt_descricao && <div className="text-xs text-slate-400 max-w-md">{alerta.txt_descricao}</div>}
                           </td>
                           <td className="px-6 py-4 text-slate-600 text-xs">{alerta.os_tipo_alerta}</td>
                           <td className="px-6 py-4">
@@ -566,7 +566,7 @@ export default function GestorEquipamentosRelatorios() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
+                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                         <th className="px-6 py-4">Equipamento</th>
                         <th className="px-6 py-4">Nº Série</th>
                         <th className="px-6 py-4">Patrimônio</th>
@@ -653,7 +653,7 @@ export default function GestorEquipamentosRelatorios() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
+                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                         <th className="px-6 py-4">Tipo</th>
                         <th className="px-6 py-4">Data</th>
                         <th className="px-6 py-4">Equipamento (ID)</th>
@@ -710,7 +710,7 @@ export default function GestorEquipamentosRelatorios() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
+                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-400 uppercase text-[10px] font-bold tracking-wider">
                         <th className="px-6 py-4">#</th>
                         <th className="px-6 py-4">Equipamento</th>
                         <th className="px-6 py-4">Nº Série</th>

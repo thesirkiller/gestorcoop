@@ -11,14 +11,16 @@ import {
   Loader2,
   RefreshCw,
   Info,
-  DollarSign,
   FileText,
   Wrench,
   Edit3,
   Sparkles,
+  Calendar,
+  TrendingUp,
+  XCircle,
 } from 'lucide-react';
-import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Paciente, LocacaoEquipamento, StatusEquipamento } from '@/lib/bubble';
-import { TipoCobrancaLocacao } from '@/lib/equipamentos-financeiro';
+import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Paciente, LocacaoEquipamento, StatusEquipamento, ReservaEquipamento } from '@/lib/bubble';
+import { TipoCobrancaLocacao, RentabilidadeResultado } from '@/lib/equipamentos-financeiro';
 import { generateSerialNumber } from '@/lib/equipamentos-helpers';
 
 export default function GestorEquipamentos() {
@@ -26,12 +28,13 @@ export default function GestorEquipamentos() {
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([]);
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [locacoes, setLocacoes] = useState<LocacaoEquipamento[]>([]);
+  const [reservas, setReservas] = useState<ReservaEquipamento[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
   const [fluxoV2Ativo, setFluxoV2Ativo] = useState(false);
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState<'locacoes' | 'equipamentos' | 'pacientes'>('locacoes');
+  const [activeTab, setActiveTab] = useState<'locacoes' | 'equipamentos' | 'reservas' | 'pacientes'>('locacoes');
 
   // Search Queries
   const [searchQuery, setSearchQuery] = useState('');
@@ -55,6 +58,12 @@ export default function GestorEquipamentos() {
   const [historicoEventos, setHistoricoEventos] = useState<HistoricoEventoEquipamento[]>([]);
   const [historicoOrdens, setHistoricoOrdens] = useState<OrdemServicoManutencao[]>([]);
   const [historicoLoading, setHistoricoLoading] = useState(false);
+  const [rentabilidade, setRentabilidade] = useState<RentabilidadeResultado | null>(null);
+  const [rentabilidadeLoading, setRentabilidadeLoading] = useState(false);
+
+  // Cancelamento de reserva
+  const [reservaParaCancelar, setReservaParaCancelar] = useState<ReservaEquipamento | null>(null);
+  const [cancelReservaMotivo, setCancelReservaMotivo] = useState('');
 
   // Return Rental Target
   const [selectedRentalForReturn, setSelectedRentalForReturn] = useState<LocacaoEquipamento | null>(null);
@@ -118,6 +127,14 @@ export default function GestorEquipamentos() {
       }
       if (resPat.data.success) setPacientes(resPat.data.data || []);
       if (resRent.data.success) setLocacoes(resRent.data.data || []);
+
+      // Reservas ativas são complementares: uma falha aqui não deve zerar a tela.
+      try {
+        const resReserva = await axios.get('/api/gestor/equipamentos/reservas', { params: { status: 'Ativa' } });
+        if (resReserva.data.success) setReservas(resReserva.data.data || []);
+      } catch (reservaErr) {
+        console.error('Erro ao carregar reservas:', reservaErr);
+      }
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
       setErrorMsg('Falha ao obter dados do Bubble. Certifique-se de que o servidor está rodando e as tabelas estão criadas.');
@@ -148,65 +165,117 @@ export default function GestorEquipamentos() {
     }
   };
 
-  // Metrics Calculations
-  const totalEquips = equipamentos.length;
-  const availableEquips = equipamentos.filter((e) => ['Disponível', 'Liberado pela manutenção'].includes(e.txt_status)).length;
-  const rentedEquips = equipamentos.filter((e) => ['Alugado', 'Implantado no domicílio', 'Em transporte para implantação'].includes(e.txt_status)).length;
-  const maintenanceEquips = equipamentos.filter((e) => ['Manutenção', 'Aguardando peça', 'Em higienização', 'Aguardando higienização'].includes(e.txt_status)).length;
-  const activeRentals = locacoes.filter((l) => l.txt_status === 'Ativo');
-  const estimatedRevenue = activeRentals.reduce((sum, r) => sum + (r.num_total_estimado ?? r.num_valor_aluguel), 0);
-  const hoje = new Date().toISOString().slice(0, 10);
-  const recolhimentosAtrasados = activeRentals.filter((locacao) => locacao.date_fim_previsto && locacao.date_fim_previsto.slice(0, 10) < hoje);
-  const aguardandoConferencia = equipamentos.filter((equipamento) => ['Aguardando conferência', 'Recolhido e aguardando conferência'].includes(equipamento.txt_status));
-  const aguardandoTratativaTecnica = equipamentos.filter((equipamento) => ['Manutenção', 'Aguardando peça', 'Aguardando higienização', 'Em higienização'].includes(equipamento.txt_status));
+  // Metrics Calculations (Memoized)
+  const {
+    totalEquips,
+    availableEquips,
+    rentedEquips,
+    maintenanceEquips,
+    estimatedRevenue,
+    recolhimentosAtrasados,
+    aguardandoConferencia,
+    aguardandoTratativaTecnica,
+  } = React.useMemo(() => {
+    const total = equipamentos.length;
+    const available = equipamentos.filter((e) => ['Disponível', 'Liberado pela manutenção'].includes(e.txt_status)).length;
+    const rented = equipamentos.filter((e) => ['Alugado', 'Implantado no domicílio', 'Em transporte para implantação'].includes(e.txt_status)).length;
+    const maintenance = equipamentos.filter((e) => ['Manutenção', 'Aguardando peça', 'Em higienização', 'Aguardando higienização'].includes(e.txt_status)).length;
+    const active = locacoes.filter((l) => l.txt_status === 'Ativo');
+    const revenue = active.reduce((sum, r) => sum + (r.num_total_estimado ?? r.num_valor_aluguel), 0);
+    const hojeStr = new Date().toISOString().slice(0, 10);
+    const recolhimentos = active.filter((locacao) => locacao.date_fim_previsto && locacao.date_fim_previsto.slice(0, 10) < hojeStr);
+    const conf = equipamentos.filter((equipamento) => ['Aguardando conferência', 'Recolhido e aguardando conferência'].includes(equipamento.txt_status));
+    const tratativa = equipamentos.filter((equipamento) => ['Manutenção', 'Aguardando peça', 'Aguardando higienização', 'Em higienização'].includes(equipamento.txt_status));
+    return {
+      totalEquips: total,
+      availableEquips: available,
+      rentedEquips: rented,
+      maintenanceEquips: maintenance,
+      activeRentals: active,
+      estimatedRevenue: revenue,
+      recolhimentosAtrasados: recolhimentos,
+      aguardandoConferencia: conf,
+      aguardandoTratativaTecnica: tratativa,
+    };
+  }, [equipamentos, locacoes]);
 
   // Reset queries on Tab Change
   useEffect(() => {
     setSearchQuery('');
   }, [activeTab]);
 
-  // Filters & Search
-  const filteredEquipamentos = equipamentos.filter((e) => {
+  // Filters & Search (Memoized)
+  const filteredEquipamentos = React.useMemo(() => {
     const term = searchQuery.toLowerCase();
-    return (
-      e.txt_nome.toLowerCase().includes(term) ||
-      (e.txt_numero_serie || '').toLowerCase().includes(term) ||
-      (e.txt_marca || '').toLowerCase().includes(term) ||
-      (e.txt_modelo || '').toLowerCase().includes(term)
-    );
-  });
+    return equipamentos.filter((e) => {
+      return (
+        e.txt_nome.toLowerCase().includes(term) ||
+        (e.txt_numero_serie || '').toLowerCase().includes(term) ||
+        (e.txt_marca || '').toLowerCase().includes(term) ||
+        (e.txt_modelo || '').toLowerCase().includes(term)
+      );
+    });
+  }, [equipamentos, searchQuery]);
 
-  const filteredPacientes = pacientes.filter((p) => {
+  const filteredPacientes = React.useMemo(() => {
     const term = searchQuery.toLowerCase();
-    const matchesSearch =
-      p.txt_nome.toLowerCase().includes(term) ||
-      (p.txt_cpf || '').includes(searchQuery) ||
-      (p.txt_whatsapp || '').includes(searchQuery);
+    return pacientes.filter((p) => {
+      const matchesSearch =
+        p.txt_nome.toLowerCase().includes(term) ||
+        (p.txt_cpf || '').includes(searchQuery) ||
+        (p.txt_whatsapp || '').includes(searchQuery);
 
-    if (!matchesSearch) return false;
+      if (!matchesSearch) return false;
 
-    if (patientFilter === 'homecare') {
-      return p.txt_tipo === 'Homecare' || !p.txt_tipo;
-    }
-    if (patientFilter === 'hospital') {
-      return p.txt_tipo === 'Hospital';
-    }
-    if (patientFilter === 'com_equipamento') {
-      return locacoes.some((l) => l.fk_paciente === p._id && l.txt_status === 'Ativo');
-    }
-    return true;
-  });
+      if (patientFilter === 'homecare') {
+        return p.txt_tipo === 'Homecare' || !p.txt_tipo;
+      }
+      if (patientFilter === 'hospital') {
+        return p.txt_tipo === 'Hospital';
+      }
+      if (patientFilter === 'com_equipamento') {
+        return locacoes.some((l) => l.fk_paciente === p._id && l.txt_status === 'Ativo');
+      }
+      return true;
+    });
+  }, [pacientes, searchQuery, patientFilter, locacoes]);
 
-  const filteredLocacoes = locacoes.filter((l) => {
+  const filteredLocacoes = React.useMemo(() => {
     const term = searchQuery.toLowerCase();
-    const equip = equipamentos.find((e) => e._id === l.fk_equipamento);
-    const pac = pacientes.find((p) => p._id === l.fk_paciente);
-    return (
-      (equip?.txt_nome || '').toLowerCase().includes(term) ||
-      (pac?.txt_nome || '').toLowerCase().includes(term) ||
-      (equip?.txt_numero_serie || '').toLowerCase().includes(term)
-    );
-  });
+    return locacoes.filter((l) => {
+      const equip = equipamentos.find((e) => e._id === l.fk_equipamento);
+      const pac = pacientes.find((p) => p._id === l.fk_paciente);
+      return (
+        (equip?.txt_nome || '').toLowerCase().includes(term) ||
+        (pac?.txt_nome || '').toLowerCase().includes(term) ||
+        (equip?.txt_numero_serie || '').toLowerCase().includes(term)
+      );
+    });
+  }, [locacoes, searchQuery, equipamentos, pacientes]);
+
+  const filteredReservas = React.useMemo(() => {
+    const term = searchQuery.toLowerCase();
+    return reservas
+      .filter((r) => r.txt_status === 'Ativa')
+      .filter((r) => {
+        const equip = equipamentos.find((e) => e._id === r.fk_equipamento);
+        const pac = pacientes.find((p) => p._id === r.fk_paciente);
+        return (
+          (equip?.txt_nome || '').toLowerCase().includes(term) ||
+          (pac?.txt_nome || '').toLowerCase().includes(term) ||
+          (equip?.txt_numero_serie || '').toLowerCase().includes(term)
+        );
+      });
+  }, [reservas, searchQuery, equipamentos, pacientes]);
+
+  // Dias restantes até a validade da reserva (negativo = vencida).
+  const diasAteValidade = (dataIso?: string) => {
+    if (!dataIso) return null;
+    const alvo = new Date(dataIso);
+    if (Number.isNaN(alvo.getTime())) return null;
+    const base = new Date();
+    return Math.floor((alvo.setHours(0, 0, 0, 0) - base.setHours(0, 0, 0, 0)) / 86_400_000);
+  };
 
   // Modal Open Handlers
   const handleOpenEquipModal = (equip: Equipamento | null = null) => {
@@ -250,7 +319,20 @@ export default function GestorEquipamentos() {
     setHistoricoEquipamento(equipamento);
     setHistoricoEventos([]);
     setHistoricoOrdens([]);
+    setRentabilidade(null);
     setHistoricoLoading(true);
+
+    if (fluxoV2Ativo) {
+      setRentabilidadeLoading(true);
+      axios
+        .get(`/api/gestor/equipamentos/${equipamento._id}/rentabilidade`)
+        .then((response) => {
+          if (response.data.success) setRentabilidade(response.data.data.rentabilidade);
+        })
+        .catch((error) => console.error('Erro ao calcular rentabilidade:', error))
+        .finally(() => setRentabilidadeLoading(false));
+    }
+
     try {
       const response = await axios.get(`/api/gestor/equipamentos/${equipamento._id}/historico`);
       if (response.data.success) {
@@ -262,6 +344,27 @@ export default function GestorEquipamentos() {
       setErrorMsg('Não foi possível carregar o histórico do equipamento.');
     } finally {
       setHistoricoLoading(false);
+    }
+  };
+
+  const handleSubmitCancelReserva = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!reservaParaCancelar?._id) return;
+    setSubmitting(true);
+    setErrorMsg('');
+    try {
+      await axios.post(
+        `/api/gestor/equipamentos/${reservaParaCancelar.fk_equipamento}/reservas/${reservaParaCancelar._id}/cancelar`,
+        { txt_motivo: cancelReservaMotivo }
+      );
+      setReservaParaCancelar(null);
+      setCancelReservaMotivo('');
+      fetchData();
+    } catch (error) {
+      const responseError = error as { response?: { data?: { error?: string } } };
+      setErrorMsg(responseError.response?.data?.error || 'Erro ao cancelar a reserva.');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -554,37 +657,35 @@ export default function GestorEquipamentos() {
   };
 
   return (
-    <div className="text-slate-800 font-sans relative overflow-hidden">
-      {/* Glow effects */}
-      <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-100 rounded-full blur-[120px] pointer-events-none opacity-60" />
-      <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-blue-100 rounded-full blur-[120px] pointer-events-none opacity-60" />
-
+    <div className="text-slate-800 font-sans relative">
       {/* Header */}
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-10 z-10 relative">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 relative">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Activity className="w-8 h-8 text-indigo-600 animate-pulse" />
+          <h1 className="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+            <Activity className="w-6 h-6 text-indigo-600 shrink-0" />
             Gestão de Equipamentos
           </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Cadastre equipamentos, gerencie pacientes e acompanhe o fluxo de locações médicas.
+          <p className="text-slate-500 text-xs mt-0.5">
+            Controle de inventário, pacientes cadastrados e ciclos de locações médicas.
           </p>
         </div>
 
-        {/* Action buttons matching dashboard style */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={handleExportarInventario}
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all"
+            className="bg-white hover:bg-slate-500/10 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
           >
             Exportar inventário
           </button>
-          <button onClick={handleExportarLocacoes} className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all">
+          <button 
+            onClick={handleExportarLocacoes} 
+            className="bg-white hover:bg-slate-500/10 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+          >
             Exportar locações
           </button>
           <button
             onClick={fetchData}
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm"
+            className="bg-white hover:bg-slate-500/10 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
             title="Atualizar dados"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -593,72 +694,73 @@ export default function GestorEquipamentos() {
       </div>
 
       {/* Metrics Row */}
-      <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-4 mb-10 z-10 relative">
+      <div className="max-w-7xl mx-auto grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8 relative">
         {[
           {
-            label: 'Total Equipamentos',
+            label: 'Total de Ativos',
             val: totalEquips,
-            icon: Activity,
-            color: 'text-indigo-600 bg-indigo-500/10 border-indigo-500/20',
+            detail: 'equipamentos cadastrados',
           },
           {
             label: 'Disponíveis',
             val: availableEquips,
-            icon: CheckCircle,
-            color: 'text-green-600 bg-green-500/10 border-green-500/20',
+            detail: 'em estoque e prontos',
           },
           {
-            label: 'Alugados',
+            label: 'Implantados',
             val: rentedEquips,
-            icon: FileText,
-            color: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
+            detail: 'em uso domiciliar',
           },
           {
-            label: 'Manutenção',
+            label: 'Em Manutenção / OS',
             val: maintenanceEquips,
-            icon: Wrench,
-            color: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
+            detail: 'em conserto ou limpeza',
           },
           {
             label: 'Faturamento Estimado',
             val: formatCurrency(estimatedRevenue),
-            icon: DollarSign,
-            color: 'text-emerald-600 bg-emerald-500/10 border-emerald-500/20',
+            detail: 'mensalidade ativa total',
           },
         ].map((item, idx) => {
-          const Icon = item.icon;
           return (
             <div
               key={idx}
-              className="bg-white border border-slate-200 p-5 rounded-xl flex items-center justify-between gap-4 shadow-sm"
+              className="bg-white border border-slate-200 p-4 rounded-xl flex flex-col justify-between shadow-[0_1px_2px_rgba(0,0,0,0.02)]"
             >
-              <div>
-                <span className="text-[10px] uppercase font-bold text-slate-400">{item.label}</span>
-                <p className="text-xl font-black text-slate-900 mt-1">{item.val}</p>
-              </div>
-              <div className={`p-3 rounded-lg border ${item.color} shrink-0`}>
-                <Icon className="w-5 h-5" />
+              <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">{item.label}</span>
+              <div className="mt-1">
+                <span className="text-xl font-bold text-slate-900">{item.val}</span>
+                <p className="text-[10px] text-slate-500 mt-0.5">{item.detail}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="max-w-7xl mx-auto grid md:grid-cols-3 gap-4 mb-6 z-10 relative">
-        {[
-          { label: 'Recolhimentos atrasados', total: recolhimentosAtrasados.length, detail: 'Locações ativas após a data prevista.', color: 'border-red-200 bg-red-50 text-red-800' },
-          { label: 'Aguardando conferência', total: aguardandoConferencia.length, detail: 'Ativos que não podem voltar ao estoque.', color: 'border-amber-200 bg-amber-50 text-amber-800' },
-          { label: 'Tratativa técnica', total: aguardandoTratativaTecnica.length, detail: 'Higienização, manutenção ou peça pendente.', color: 'border-blue-200 bg-blue-50 text-blue-800' },
-        ].map((pendencia) => (
-          <div key={pendencia.label} className={`rounded-xl border p-4 flex items-start gap-3 ${pendencia.color}`}>
-            <Info className="w-5 h-5 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-lg font-black leading-none">{pendencia.total}</p>
-              <p className="text-xs font-bold mt-1">{pendencia.label}</p>
-              <p className="text-[11px] opacity-75 mt-1">{pendencia.detail}</p>
-            </div>
+      {/* Backlog alerts */}
+      <div className="max-w-7xl mx-auto bg-slate-50 border border-slate-200/80 rounded-xl p-4 mb-8 relative flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Info className="w-5 h-5 text-indigo-600 shrink-0 animate-pulse" />
+          <div>
+            <h4 className="text-xs uppercase font-bold text-slate-500 tracking-wider">Ações Operacionais Pendentes</h4>
+            <p className="text-[11px] text-slate-500 mt-0.5">Fluxos que exigem atenção ou liberação no ciclo de vida atual.</p>
           </div>
-        ))}
+        </div>
+
+        <div className="flex flex-wrap gap-4 text-xs font-semibold text-slate-700">
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200/60 shadow-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0"></span>
+            <span>Recolhimentos em Atraso: <span className="font-bold text-slate-950">{recolhimentosAtrasados.length}</span></span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200/60 shadow-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0"></span>
+            <span>Aguardando Conferência: <span className="font-bold text-slate-950">{aguardandoConferencia.length}</span></span>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200/60 shadow-sm">
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0"></span>
+            <span>Tratativa Técnica: <span className="font-bold text-slate-950">{aguardandoTratativaTecnica.length}</span></span>
+          </div>
+        </div>
       </div>
 
       {/* Error Banner */}
@@ -670,36 +772,30 @@ export default function GestorEquipamentos() {
       )}
 
       {/* Navigation Tabs and Register Actions */}
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 z-10 relative">
-        <div className="flex bg-white p-1 rounded-xl border border-slate-200 shadow-sm w-fit">
-          <button
-            onClick={() => setActiveTab('locacoes')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-              activeTab === 'locacoes' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Locações Ativas
-          </button>
-          <button
-            onClick={() => setActiveTab('equipamentos')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-              activeTab === 'equipamentos' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Catálogo de Equipamentos
-          </button>
-          <button
-            onClick={() => setActiveTab('pacientes')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-              activeTab === 'pacientes' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            Cadastro de Pacientes
-          </button>
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-px relative">
+        <div className="flex gap-6">
+          {[
+            { id: 'locacoes', label: 'Locações Ativas' },
+            { id: 'equipamentos', label: 'Catálogo de Equipamentos' },
+            ...(fluxoV2Ativo ? [{ id: 'reservas', label: `Reservas${reservas.filter((r) => r.txt_status === 'Ativa').length ? ` (${reservas.filter((r) => r.txt_status === 'Ativa').length})` : ''}` }] : []),
+            { id: 'pacientes', label: 'Cadastro de Pacientes' },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as 'locacoes' | 'equipamentos' | 'reservas' | 'pacientes')}
+              className={`pb-3 text-xs font-bold transition-all relative focus:outline-none ${
+                activeTab === tab.id
+                  ? 'text-slate-950 border-b-2 border-indigo-600'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
         {/* Search bar & quick registers */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 pb-2 md:pb-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
@@ -709,20 +805,22 @@ export default function GestorEquipamentos() {
                   ? 'Buscar por paciente ou equipamento...'
                   : activeTab === 'equipamentos'
                   ? 'Buscar por nome, marca, nº série...'
+                  : activeTab === 'reservas'
+                  ? 'Buscar por paciente ou equipamento...'
                   : 'Buscar por nome ou CPF...'
               }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-slate-200 focus:border-indigo-500 rounded-xl pl-9 pr-4 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm w-64"
+              className="bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 rounded-lg pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm w-64"
             />
           </div>
 
           {activeTab === 'locacoes' && (
             <button
               onClick={handleOpenRentalModal}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               Nova Locação
             </button>
           )}
@@ -730,9 +828,9 @@ export default function GestorEquipamentos() {
           {activeTab === 'equipamentos' && (
             <button
               onClick={() => handleOpenEquipModal(null)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               Cadastrar Equipamento
             </button>
           )}
@@ -740,9 +838,9 @@ export default function GestorEquipamentos() {
           {activeTab === 'pacientes' && (
             <button
               onClick={() => setIsPatientModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="w-3.5 h-3.5" />
               Cadastrar Paciente
             </button>
           )}
@@ -750,11 +848,11 @@ export default function GestorEquipamentos() {
       </div>
 
       {/* Main Tables Container */}
-      <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-2xl shadow-sm z-10 relative overflow-hidden">
+      <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] z-10 relative overflow-hidden">
         {loading ? (
           <div className="p-20 flex flex-col items-center justify-center text-slate-500 gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-            <span className="text-sm font-medium">Carregando dados do Bubble...</span>
+            <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+            <span className="text-xs font-medium">Carregando dados...</span>
           </div>
         ) : (
           <>
@@ -763,18 +861,18 @@ export default function GestorEquipamentos() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
-                      <th className="px-6 py-4">Paciente</th>
-                      <th className="px-6 py-4">Equipamento</th>
-                      <th className="px-6 py-4">Valor Estimado</th>
-                      <th className="px-6 py-4">Início</th>
-                      <th className="px-6 py-4">Fim Previsto</th>
-                      <th className="px-6 py-4">Devolução</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4 text-right">Ações</th>
+                    <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                      <th className="px-6 py-3.5">Paciente</th>
+                      <th className="px-6 py-3.5">Equipamento</th>
+                      <th className="px-6 py-3.5">Valor Estimado</th>
+                      <th className="px-6 py-3.5">Início</th>
+                      <th className="px-6 py-3.5">Fim Previsto</th>
+                      <th className="px-6 py-3.5">Devolução</th>
+                      <th className="px-6 py-3.5">Status</th>
+                      <th className="px-6 py-3.5 text-right">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700 text-sm">
+                  <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
                     {filteredLocacoes.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="text-center py-12 text-slate-400">
@@ -786,14 +884,14 @@ export default function GestorEquipamentos() {
                         const equip = equipamentos.find((e) => e._id === l.fk_equipamento);
                         const pac = pacientes.find((p) => p._id === l.fk_paciente);
                         return (
-                          <tr key={l._id} className="hover:bg-slate-50/40 transition-colors">
+                          <tr key={l._id} className="hover:bg-slate-50/30 transition-colors">
                             <td className="px-6 py-4">
                               <div className="font-semibold text-slate-900">{pac?.txt_nome || 'Desconhecido'}</div>
-                              <div className="text-xs text-slate-400">CPF: {pac?.txt_cpf || '-'}</div>
+                              <div className="text-[10px] text-slate-400">CPF: {pac?.txt_cpf || '-'}</div>
                             </td>
                             <td className="px-6 py-4">
                               <div className="font-semibold text-slate-800">{equip?.txt_nome || 'N/A'}</div>
-                              <div className="text-xs text-slate-400">S/N: {equip?.txt_numero_serie || '-'}</div>
+                              <div className="text-[10px] text-slate-400">S/N: {equip?.txt_numero_serie || '-'}</div>
                             </td>
                             <td className="px-6 py-4 font-semibold text-slate-900">
                               {formatCurrency(l.num_total_estimado ?? l.num_valor_aluguel)}
@@ -803,12 +901,12 @@ export default function GestorEquipamentos() {
                             <td className="px-6 py-4 text-slate-500">{formatDate(l.date_fim_real)}</td>
                             <td className="px-6 py-4">
                               <span
-                                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
                                   l.txt_status === 'Ativo'
-                                    ? 'bg-green-550/10 text-green-700 border border-green-200'
+                                    ? 'bg-green-500/10 text-green-700 border border-green-500/20'
                                     : l.txt_status === 'Finalizado'
-                                    ? 'bg-slate-100 text-slate-600 border border-slate-200'
-                                    : 'bg-red-50 text-red-600 border border-red-150'
+                                    ? 'bg-slate-500/10 text-slate-600 border border-slate-500/20'
+                                    : 'bg-red-500/10 text-red-700 border border-red-500/20'
                                 }`}
                               >
                                 {l.txt_status}
@@ -818,7 +916,7 @@ export default function GestorEquipamentos() {
                               {l.txt_status === 'Ativo' && (
                                 <button
                                   onClick={() => handleOpenReturnModal(l)}
-                                  className="text-indigo-600 hover:text-indigo-800 text-xs font-bold hover:underline"
+                                  className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                                 >
                                   Devolver
                                 </button>
@@ -838,16 +936,16 @@ export default function GestorEquipamentos() {
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
-                    <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
-                      <th className="px-6 py-4">Equipamento</th>
-                      <th className="px-6 py-4">Marca/Modelo</th>
-                      <th className="px-6 py-4">Nº Série</th>
-                      <th className="px-6 py-4">Preço Padrão</th>
-                      <th className="px-6 py-4">Status</th>
-                      <th className="px-6 py-4 text-right">Ações</th>
+                    <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                      <th className="px-6 py-3.5">Equipamento</th>
+                      <th className="px-6 py-3.5">Marca / Modelo</th>
+                      <th className="px-6 py-3.5">Nº Série</th>
+                      <th className="px-6 py-3.5">Preço Padrão</th>
+                      <th className="px-6 py-3.5">Status</th>
+                      <th className="px-6 py-3.5 text-right">Ações</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700 text-sm">
+                  <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
                     {filteredEquipamentos.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="text-center py-12 text-slate-400">
@@ -856,69 +954,73 @@ export default function GestorEquipamentos() {
                       </tr>
                     ) : (
                       filteredEquipamentos.map((e) => (
-                        <tr key={e._id} className="hover:bg-slate-50/40 transition-colors">
+                        <tr key={e._id} className="hover:bg-slate-50/30 transition-colors">
                           <td className="px-6 py-4">
                             <div className="font-semibold text-slate-900">{e.txt_nome}</div>
-                            {e.txt_descricao && <div className="text-xs text-slate-450 truncate max-w-md">{e.txt_descricao}</div>}
-                            {e.txt_codigo_interno && <div className="text-[10px] text-indigo-600 font-mono mt-1">{e.txt_codigo_interno}</div>}
+                            {e.txt_descricao && <div className="text-[10px] text-slate-400 truncate max-w-md">{e.txt_descricao}</div>}
+                            {e.txt_codigo_interno && <div className="text-[9px] text-indigo-600 font-mono mt-0.5">{e.txt_codigo_interno}</div>}
                           </td>
                           <td className="px-6 py-4">
                             <span className="font-medium text-slate-800">{e.txt_marca || '-'}</span>
-                            {e.txt_modelo && <span className="text-slate-400 text-xs block">{e.txt_modelo}</span>}
+                            {e.txt_modelo && <span className="text-slate-400 text-[10px] block">{e.txt_modelo}</span>}
                           </td>
-                          <td className="px-6 py-4 text-slate-500 font-mono text-xs">{e.txt_numero_serie}</td>
+                          <td className="px-6 py-4 text-slate-500 font-mono">{e.txt_numero_serie}</td>
                           <td className="px-6 py-4 font-semibold text-slate-900">
                             {formatCurrency(e.num_preco_padrao)}
                           </td>
                           <td className="px-6 py-4">
                             <span
-                              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                              className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
                                 e.txt_status === 'Disponível'
-                                  ? 'bg-green-550/10 text-green-700 border border-green-200'
-                                  : e.txt_status === 'Alugado'
-                                  ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                  ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20'
+                                  : e.txt_status === 'Alugado' || e.txt_status === 'Implantado no domicílio'
+                                  ? 'bg-blue-500/10 text-blue-700 border border-blue-500/20'
                                   : e.txt_status === 'Manutenção'
-                                  ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                                  : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  ? 'bg-amber-500/10 text-amber-700 border border-amber-500/20'
+                                  : e.txt_status === 'Aguardando higienização' || e.txt_status === 'Em higienização'
+                                  ? 'bg-teal-500/10 text-teal-700 border border-teal-500/20'
+                                  : e.txt_status === 'Recolhido e aguardando conferência' || e.txt_status === 'Aguardando conferência'
+                                  ? 'bg-purple-500/10 text-purple-700 border border-purple-500/20'
+                                  : 'bg-slate-500/10 text-slate-600 border border-slate-500/20'
                               }`}
                             >
                               {e.txt_status}
                             </span>
                           </td>
                           <td className="px-6 py-4 text-right">
-                            <div className="inline-flex items-center gap-3">
+                            <div className="inline-flex items-center gap-2">
                               {fluxoV2Ativo && e.txt_status === 'Aguardando higienização' && (
-                                <button onClick={() => handleOpenHygiene(e)} className="text-teal-700 hover:text-teal-900 inline-flex items-center gap-1 text-xs font-bold hover:underline">Higienizar</button>
+                                <button onClick={() => handleOpenHygiene(e)} className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-teal-50 hover:bg-teal-100/70 border border-teal-200 text-teal-700 hover:text-teal-900 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-teal-500/20">Higienizar</button>
                               )}
-                              {fluxoV2Ativo && e.txt_status === 'Recolhido e aguardando conferência' && (
-                                <button onClick={() => handleOpenInspection(e)} className="text-purple-700 hover:text-purple-900 inline-flex items-center gap-1 text-xs font-bold hover:underline">Conferir</button>
+                              {fluxoV2Ativo && ['Recolhido e aguardando conferência', 'Aguardando conferência'].includes(e.txt_status) && (
+                                <button onClick={() => handleOpenInspection(e)} className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-purple-50 hover:bg-purple-100/70 border border-purple-200 text-purple-700 hover:text-purple-900 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-purple-500/20">Conferir</button>
                               )}
                               {fluxoV2Ativo && e.txt_status === 'Disponível' && (
-                                <button onClick={() => handleOpenReserve(e)} className="text-blue-700 hover:text-blue-900 inline-flex items-center gap-1 text-xs font-bold hover:underline">
+                                <button onClick={() => handleOpenReserve(e)} className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-blue-50 hover:bg-blue-100/70 border border-blue-200 text-blue-700 hover:text-blue-900 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-blue-500/20">
                                   Reservar
                                 </button>
                               )}
                               {fluxoV2Ativo && !['Baixado', 'Condenado', 'Extraviado'].includes(e.txt_status) && (
                                 <button
                                   onClick={() => handleOpenMaintenance(e)}
-                                  className="text-amber-700 hover:text-amber-900 inline-flex items-center gap-1 text-xs font-bold hover:underline"
+                                  className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-amber-50 hover:bg-amber-100/70 border border-amber-200 text-amber-700 hover:text-amber-900 text-xs font-bold transition-all min-h-[32px] gap-1 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
                                 >
-                                  <Wrench className="w-3.5 h-3.5" />
-                                  Manutenção
+                                  <Wrench className="w-3 h-3" />
+                                  OS
                                 </button>
                               )}
                               <button
                                 onClick={() => handleOpenHistorico(e)}
-                                className="text-slate-600 hover:text-slate-900 inline-flex items-center gap-1 text-xs font-bold hover:underline"
+                                className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 hover:text-slate-900 text-xs font-bold transition-all min-h-[32px] gap-1 focus:outline-none focus:ring-2 focus:ring-slate-500/20"
                               >
-                                <FileText className="w-3.5 h-3.5" />
+                                <FileText className="w-3 h-3" />
                                 Histórico
                               </button>
                               <button
                                 onClick={() => handleOpenEquipModal(e)}
-                                className="text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1 text-xs font-bold hover:underline"
+                                className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] gap-1 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                <Edit3 className="w-3 h-3" />
                                 Editar
                               </button>
                             </div>
@@ -931,10 +1033,94 @@ export default function GestorEquipamentos() {
               </div>
             )}
 
+            {/* TAB: RESERVAS */}
+            {activeTab === 'reservas' && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                      <th className="px-6 py-3.5">Paciente</th>
+                      <th className="px-6 py-3.5">Equipamento</th>
+                      <th className="px-6 py-3.5">Reservado em</th>
+                      <th className="px-6 py-3.5">Implantação prevista</th>
+                      <th className="px-6 py-3.5">Validade</th>
+                      <th className="px-6 py-3.5">Status</th>
+                      <th className="px-6 py-3.5 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
+                    {filteredReservas.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-16 text-slate-400">
+                          <Calendar className="w-8 h-8 mx-auto mb-3 text-slate-300" />
+                          <p className="font-semibold text-slate-500">Nenhuma reserva ativa.</p>
+                          <p className="text-[11px] mt-1">Reserve um equipamento disponível no Catálogo para bloqueá-lo até a implantação.</p>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredReservas.map((r) => {
+                        const equip = equipamentos.find((e) => e._id === r.fk_equipamento);
+                        const pac = pacientes.find((p) => p._id === r.fk_paciente);
+                        const dias = diasAteValidade(r.date_validade);
+                        return (
+                          <tr key={r._id} className="hover:bg-slate-50/30 transition-colors">
+                            <td className="px-6 py-4">
+                              <div className="font-semibold text-slate-900">{pac?.txt_nome || 'Desconhecido'}</div>
+                              <div className="text-[10px] text-slate-400">CPF: {pac?.txt_cpf || '-'}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="font-semibold text-slate-800">{equip?.txt_nome || 'N/A'}</div>
+                              <div className="text-[10px] text-slate-400">S/N: {equip?.txt_numero_serie || '-'}</div>
+                            </td>
+                            <td className="px-6 py-4 text-slate-500">{formatDate(r.date_reserva)}</td>
+                            <td className="px-6 py-4 text-slate-500">{formatDate(r.date_implantacao_prevista)}</td>
+                            <td className="px-6 py-4">
+                              <div className="text-slate-700 font-medium">{formatDate(r.date_validade)}</div>
+                              {dias !== null && (
+                                <span
+                                  className={`inline-flex items-center mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${
+                                    dias < 0
+                                      ? 'bg-rose-500/10 text-rose-700 border border-rose-500/20'
+                                      : dias <= 3
+                                      ? 'bg-amber-500/10 text-amber-700 border border-amber-500/20'
+                                      : 'bg-slate-500/10 text-slate-600 border border-slate-500/20'
+                                  }`}
+                                >
+                                  {dias < 0 ? `Vencida há ${Math.abs(dias)}d` : dias === 0 ? 'Vence hoje' : `Vence em ${dias}d`}
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-blue-500/10 text-blue-700 border border-blue-500/20">
+                                {r.txt_status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                onClick={() => {
+                                  setReservaParaCancelar(r);
+                                  setCancelReservaMotivo('');
+                                  setErrorMsg('');
+                                }}
+                                className="text-rose-600 hover:text-rose-800 inline-flex items-center gap-1 text-xs font-bold hover:underline transition-colors"
+                              >
+                                <XCircle className="w-3 h-3" />
+                                Cancelar
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {/* TAB 3: PACIENTES */}
             {activeTab === 'pacientes' && (
               <div>
-                <div className="flex gap-2 p-4 border-b border-slate-100 bg-slate-50/40 flex-wrap">
+                <div className="flex gap-1.5 p-3 border-b border-slate-100 bg-slate-50/50 flex-wrap">
                   {[
                     { id: 'todos', label: 'Todos' },
                     { id: 'homecare', label: 'Homecare' },
@@ -944,7 +1130,7 @@ export default function GestorEquipamentos() {
                     <button
                       key={filter.id}
                       onClick={() => setPatientFilter(filter.id)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                      className={`px-3 py-1 rounded-lg text-[11px] font-semibold transition-all border ${
                         patientFilter === filter.id
                           ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
                           : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -957,14 +1143,14 @@ export default function GestorEquipamentos() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-left border-collapse">
                     <thead>
-                      <tr className="bg-slate-50/70 border-b border-slate-100 text-slate-450 uppercase text-[10px] font-bold tracking-wider">
-                        <th className="px-6 py-4">Nome / Tipo</th>
-                        <th className="px-6 py-4">Endereço de Entrega</th>
-                        <th className="px-6 py-4">Equipamentos Enviados</th>
-                        <th className="px-6 py-4">Contato</th>
+                      <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
+                        <th className="px-6 py-3.5">Nome / Tipo</th>
+                        <th className="px-6 py-3.5">Endereço de Entrega</th>
+                        <th className="px-6 py-3.5">Equipamentos Enviados</th>
+                        <th className="px-6 py-3.5">Contato</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100 text-slate-700 text-sm">
+                    <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
                       {filteredPacientes.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="text-center py-12 text-slate-400">
@@ -979,22 +1165,22 @@ export default function GestorEquipamentos() {
                             .filter((equipamento): equipamento is Equipamento => Boolean(equipamento));
                           const hasActiveRental = activePatientRentals.length > 0;
                           return (
-                            <tr key={p._id} className="hover:bg-slate-50/40 transition-colors">
+                            <tr key={p._id} className="hover:bg-slate-50/30 transition-colors">
                               <td className="px-6 py-4">
                                 <div className="font-semibold text-slate-900 flex items-center gap-2">
                                   {p.txt_nome}
                                   <span
-                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                                    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold border border-slate-200 uppercase tracking-wide ${
                                       p.txt_tipo === 'Hospital'
-                                        ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                        : 'bg-green-50 text-green-700 border-green-200'
+                                        ? 'bg-blue-500/10 text-blue-700 border-blue-500/20'
+                                        : 'bg-green-500/10 text-green-700 border-green-500/20'
                                     }`}
                                   >
                                     {p.txt_tipo || 'Homecare'}
                                   </span>
                                   {hasActiveRental && (
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
-                                      Com Equipamento
+                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-500/10 text-amber-700 border border-amber-500/20 uppercase tracking-wide">
+                                      Ativo
                                     </span>
                                   )}
                                 </div>
@@ -1003,11 +1189,11 @@ export default function GestorEquipamentos() {
                                 {p.txt_endereco}
                               </td>
                               <td className="px-6 py-4">
-                                <div className="text-slate-500 text-xs space-y-1">
+                                <div className="text-slate-500 space-y-1">
                                   {activePatientEquipamentos.length > 0 ? (
                                     activePatientEquipamentos.map((equipamento) => (
-                                      <div key={equipamento._id} className="flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                                      <div key={equipamento._id} className="flex items-center gap-1.5">
+                                        <span className="w-1 h-1 rounded-full bg-indigo-500 shrink-0"></span>
                                         <span className="font-medium text-slate-700">{equipamento.txt_nome}</span>
                                       </div>
                                     ))
@@ -1017,8 +1203,8 @@ export default function GestorEquipamentos() {
                                 </div>
                               </td>
                               <td className="px-6 py-4">
-                                {p.txt_whatsapp && <div className="text-xs text-slate-600 font-medium">WhatsApp: {p.txt_whatsapp}</div>}
-                                {p.txt_email && <div className="text-[11px] text-slate-450">{p.txt_email}</div>}
+                                {p.txt_whatsapp && <div className="text-slate-600 font-medium">WhatsApp: {p.txt_whatsapp}</div>}
+                                {p.txt_email && <div className="text-[10px] text-slate-400">{p.txt_email}</div>}
                                 {!p.txt_whatsapp && !p.txt_email && <span className="text-slate-400">-</span>}
                               </td>
                             </tr>
@@ -1034,56 +1220,131 @@ export default function GestorEquipamentos() {
         )}
       </div>
 
+      {/* MODAL HISTÓRICO / PRONTUÁRIO */}
       {historicoEquipamento && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] shadow-2xl overflow-hidden border border-slate-150 flex flex-col">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="historyModalTitle" className="bg-white rounded-xl max-w-2xl w-full max-h-[85vh] shadow-xl overflow-hidden border border-slate-200/80 flex flex-col animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Prontuário do equipamento</h2>
-                <p className="text-xs text-slate-500 mt-0.5">{historicoEquipamento.txt_nome} {historicoEquipamento.txt_codigo_interno ? `• ${historicoEquipamento.txt_codigo_interno}` : ''}</p>
+                <h2 id="historyModalTitle" className="text-base font-bold text-slate-900">Prontuário do Equipamento</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">{historicoEquipamento.txt_nome} {historicoEquipamento.txt_codigo_interno ? `• ${historicoEquipamento.txt_codigo_interno}` : ''}</p>
               </div>
               <button onClick={() => setHistoricoEquipamento(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto">
+            <div className="p-6 overflow-y-auto space-y-6">
+              {fluxoV2Ativo && (
+                <section>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-400 flex items-center gap-1.5">
+                      <TrendingUp className="w-3.5 h-3.5 text-indigo-500" /> Rentabilidade do ativo
+                    </h3>
+                    {rentabilidade && (
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide ${
+                          rentabilidade.aquisicaoRecuperada
+                            ? 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/20'
+                            : 'bg-slate-500/10 text-slate-600 border border-slate-500/20'
+                        }`}
+                      >
+                        {rentabilidade.aquisicaoRecuperada ? 'Aquisição recuperada' : 'Aquisição em recuperação'}
+                      </span>
+                    )}
+                  </div>
+                  {rentabilidadeLoading ? (
+                    <div className="py-6 flex justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>
+                  ) : !rentabilidade ? (
+                    <p className="text-[11px] text-slate-400 py-2">Indicadores financeiros indisponíveis para este ativo.</p>
+                  ) : (
+                    <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
+                        {[
+                          { label: 'Aquisição', val: formatCurrency(rentabilidade.valorAquisicao) },
+                          { label: 'Receita realizada', val: formatCurrency(rentabilidade.receitaRealizada) },
+                          { label: 'Receita em aberto', val: formatCurrency(rentabilidade.receitaEstimada) },
+                          { label: 'Custo manutenção', val: formatCurrency(rentabilidade.custoManutencaoTotal) },
+                        ].map((f) => (
+                          <div key={f.label}>
+                            <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">{f.label}</div>
+                            <div className="text-sm font-bold text-slate-900 mt-0.5">{f.val}</div>
+                          </div>
+                        ))}
+                        {[
+                          { label: 'Resultado realizado', val: rentabilidade.resultadoRealizado },
+                          { label: 'Resultado projetado', val: rentabilidade.resultadoProjetado },
+                        ].map((f) => (
+                          <div key={f.label}>
+                            <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">{f.label}</div>
+                            <div className={`text-sm font-bold mt-0.5 ${f.val < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{formatCurrency(f.val)}</div>
+                          </div>
+                        ))}
+                        <div>
+                          <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Implantações</div>
+                          <div className="text-sm font-bold text-slate-900 mt-0.5">{rentabilidade.quantidadeImplantacoes}</div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Dias implantado</div>
+                          <div className="text-sm font-bold text-slate-900 mt-0.5">{rentabilidade.diasImplantado}</div>
+                        </div>
+                      </div>
+                      <div className="mt-4 pt-3 border-t border-slate-200/70">
+                        <div className="flex justify-between items-center text-[10px] font-semibold text-slate-500 mb-1.5">
+                          <span>Recuperação da aquisição</span>
+                          <span className="text-slate-800 tabular-nums">{Math.round(rentabilidade.percentualRecuperacaoAquisicao)}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${rentabilidade.aquisicaoRecuperada ? 'bg-emerald-500' : 'bg-indigo-500'}`}
+                            style={{ width: `${Math.min(100, Math.max(0, rentabilidade.percentualRecuperacaoAquisicao))}%` }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
               {historicoLoading ? (
-                <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-indigo-600" /></div>
+                <div className="py-12 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-indigo-600" /></div>
               ) : historicoEventos.length === 0 && historicoOrdens.length === 0 ? (
-                <p className="text-center text-sm text-slate-400 py-10">Nenhuma movimentação registrada.</p>
+                <p className="text-center text-xs text-slate-400 py-10">Nenhuma movimentação registrada.</p>
               ) : (
                 <>
                   {historicoOrdens.length > 0 && (
-                    <section className="mb-6">
-                      <h3 className="text-xs uppercase tracking-wide font-black text-slate-500 mb-3">Ordens de serviço</h3>
+                    <section>
+                      <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-3">Ordens de Serviço</h3>
                       <div className="space-y-2">
                         {historicoOrdens.map((ordem) => (
-                          <div key={ordem._id} className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs">
-                            <div className="flex justify-between gap-3"><span className="font-black text-slate-800">{ordem.txt_numero_os || 'OS'}</span><span className="font-bold text-amber-700">{ordem.txt_status}</span></div>
+                          <div key={ordem._id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-3 text-xs">
+                            <div className="flex justify-between gap-3"><span className="font-bold text-slate-800">{ordem.txt_numero_os || 'OS'}</span><span className="font-semibold text-amber-700">{ordem.txt_status}</span></div>
                             <p className="text-slate-600 mt-1">{ordem.txt_motivo}</p>
-                            {ordem.txt_defeito_encontrado && <p className="text-slate-500 mt-1">Diagnóstico: {ordem.txt_defeito_encontrado}</p>}
-                            <div className="flex justify-between text-slate-400 mt-2"><span>{formatDate(ordem.date_entrada)}</span><span>{ordem.num_custo_total !== undefined ? formatCurrency(ordem.num_custo_total) : 'Custo pendente'}</span></div>
+                            {ordem.txt_defeito_encontrado && <p className="text-slate-500 mt-0.5">Diagnóstico: {ordem.txt_defeito_encontrado}</p>}
+                            <div className="flex justify-between text-slate-400 text-[10px] mt-2"><span>{formatDate(ordem.date_entrada)}</span><span>{ordem.num_custo_total !== undefined ? formatCurrency(ordem.num_custo_total) : 'Custo pendente'}</span></div>
                           </div>
                         ))}
                       </div>
                     </section>
                   )}
-                  <ol className="space-y-4 border-l-2 border-slate-100 ml-2 pl-5">
-                  {historicoEventos.map((evento) => (
-                    <li key={evento.id} className="relative">
-                      <span className="absolute -left-[31px] top-1.5 w-3 h-3 rounded-full bg-indigo-500 border-2 border-white" />
-                      <div className="flex justify-between gap-3">
-                        <div>
-                          <p className="font-bold text-sm text-slate-800">{evento.tipo}</p>
-                          {(evento.statusAnterior || evento.statusNovo) && <p className="text-xs text-slate-500 mt-0.5">{evento.statusAnterior || '—'} → {evento.statusNovo || '—'}</p>}
-                          {evento.observacoes && <p className="text-xs text-slate-600 mt-2 whitespace-pre-wrap">{evento.observacoes}</p>}
-                          {evento.responsavel && <p className="text-[11px] text-slate-400 mt-1">Responsável: {evento.responsavel}</p>}
-                        </div>
-                        <time className="text-[11px] text-slate-400 whitespace-nowrap">{formatDate(evento.data)}</time>
-                      </div>
-                    </li>
-                  ))}
-                  </ol>
+                  
+                  <section>
+                    <h3 className="text-[10px] uppercase tracking-wider font-bold text-slate-400 mb-3">Linha do Tempo</h3>
+                    <ol className="space-y-4 border-l-2 border-slate-100 ml-1.5 pl-4">
+                      {historicoEventos.map((evento) => (
+                        <li key={evento.id} className="relative">
+                          <span className="absolute -left-[23px] top-1 w-2 h-2 rounded-full bg-indigo-500 border-2 border-white" />
+                          <div className="flex justify-between gap-3">
+                            <div>
+                              <p className="font-bold text-xs text-slate-800">{evento.tipo}</p>
+                              {(evento.statusAnterior || evento.statusNovo) && <p className="text-[10px] text-slate-500 mt-0.5">{evento.statusAnterior || '—'} → {evento.statusNovo || '—'}</p>}
+                              {evento.observacoes && <p className="text-[11px] text-slate-600 mt-1 whitespace-pre-wrap bg-slate-50 p-2 rounded-md border border-slate-200/50">{evento.observacoes}</p>}
+                              {evento.responsavel && <p className="text-[10px] text-slate-400 mt-1">Responsável: {evento.responsavel}</p>}
+                            </div>
+                            <time className="text-[10px] text-slate-400 whitespace-nowrap">{formatDate(evento.data)}</time>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
                 </>
               )}
             </div>
@@ -1091,45 +1352,175 @@ export default function GestorEquipamentos() {
         </div>
       )}
 
-      {isHygieneModalOpen && selectedForHygiene && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden"><div className="bg-slate-50 px-6 py-4 border-b flex justify-between"><div><h2 className="text-lg font-black">Registrar higienização</h2><p className="text-xs text-slate-500">{selectedForHygiene.txt_nome}</p></div><button onClick={() => setIsHygieneModalOpen(false)}><X className="w-5 h-5" /></button></div><form onSubmit={handleSubmitHygiene} className="p-6 space-y-4"><div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Método *</label><input required value={hygieneMethod} onChange={(event) => setHygieneMethod(event.target.value)} className="w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-sm" placeholder="Ex.: limpeza química e troca de filtro" /></div><div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Resultado *</label><textarea required value={hygieneResult} onChange={(event) => setHygieneResult(event.target.value)} className="w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-sm h-20" placeholder="Descreva o resultado e eventuais pendências" /></div><p className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg p-3">Ao aprovar, o equipamento retorna a disponível no estoque.</p><div className="pt-2 flex justify-end gap-3 border-t"><button type="button" onClick={() => setIsHygieneModalOpen(false)} className="border px-4 py-2 rounded-xl text-sm">Cancelar</button><button type="submit" disabled={submitting} className="bg-teal-600 text-white px-5 py-2 rounded-xl text-sm font-bold">{submitting ? 'Salvando...' : 'Concluir'}</button></div></form></div></div>
-      )}
-
-      {isInspectionModalOpen && selectedForInspection && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"><div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden"><div className="bg-slate-50 px-6 py-4 border-b flex justify-between"><div><h2 className="text-lg font-black">Conferência pós-recolhimento</h2><p className="text-xs text-slate-500">{selectedForInspection.txt_nome}</p></div><button onClick={() => setIsInspectionModalOpen(false)}><X className="w-5 h-5" /></button></div><form onSubmit={handleSubmitInspection} className="p-6 space-y-4"><div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Resultado *</label><textarea required value={inspectionResult} onChange={(event) => setInspectionResult(event.target.value)} className="w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-sm h-24" placeholder="Estado, acessórios, avarias e pendências..." /></div><div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Encaminhar para *</label><select value={inspectionDestination} onChange={(event) => setInspectionDestination(event.target.value as StatusEquipamento)} className="w-full bg-slate-50 border rounded-xl px-4 py-2.5 text-sm"><option value="Aguardando higienização">Aguardando higienização</option><option value="Manutenção">Manutenção</option><option value="Bloqueado">Bloqueado</option></select></div><p className="text-xs text-purple-700 bg-purple-50 border border-purple-100 rounded-lg p-3">A conferência não libera diretamente para estoque.</p><div className="pt-2 flex justify-end gap-3 border-t"><button type="button" onClick={() => setIsInspectionModalOpen(false)} className="border px-4 py-2 rounded-xl text-sm">Cancelar</button><button type="submit" disabled={submitting} className="bg-purple-600 text-white px-5 py-2 rounded-xl text-sm font-bold">{submitting ? 'Salvando...' : 'Confirmar'}</button></div></form></div></div>
-      )}
-
-      {isReserveModalOpen && selectedForReserve && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-150">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between"><div><h2 className="text-lg font-black text-slate-900">Reservar equipamento</h2><p className="text-xs text-slate-500">{selectedForReserve.txt_nome}</p></div><button onClick={() => setIsReserveModalOpen(false)} className="text-slate-400"><X className="w-5 h-5" /></button></div>
-            <form onSubmit={handleSubmitReserve} className="p-6 space-y-4">
-              <div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Paciente *</label><select required value={reservePatientId} onChange={(event) => setReservePatientId(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm"><option value="">Selecione...</option>{pacientes.map((paciente) => <option key={paciente._id} value={paciente._id}>{paciente.txt_nome}</option>)}</select></div>
-              <div className="grid grid-cols-2 gap-4"><div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Implantação prevista *</label><input required type="date" value={reserveDate} onChange={(event) => setReserveDate(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm" /></div><div><label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Validade *</label><input required type="date" value={reserveValidity} onChange={(event) => setReserveValidity(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm" /></div></div>
-              <p className="text-xs text-blue-700 bg-blue-50 border border-blue-100 rounded-lg p-3">A reserva bloqueia este equipamento para novas implantações até ser cancelada, expirar ou ser convertida.</p>
-              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100"><button type="button" onClick={() => setIsReserveModalOpen(false)} className="border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold">Cancelar</button><button type="submit" disabled={submitting} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5">{submitting && <Loader2 className="w-4 h-4 animate-spin" />} Reservar</button></div>
+      {/* CANCELAR RESERVA MODAL */}
+      {reservaParaCancelar && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl max-w-md w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Cancelar Reserva</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {equipamentos.find((e) => e._id === reservaParaCancelar.fk_equipamento)?.txt_nome || 'Equipamento'}
+                  {' • '}
+                  {pacientes.find((p) => p._id === reservaParaCancelar.fk_paciente)?.txt_nome || 'Paciente'}
+                </p>
+              </div>
+              <button onClick={() => setReservaParaCancelar(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitCancelReserva} className="p-6 space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Motivo do cancelamento *</label>
+                <textarea
+                  required
+                  value={cancelReservaMotivo}
+                  onChange={(event) => setCancelReservaMotivo(event.target.value)}
+                  className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all h-24 resize-none"
+                  placeholder="Ex.: desistência do paciente, realocação para outro caso, reserva duplicada..."
+                />
+              </div>
+              <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-3">
+                Ao cancelar, a reserva é encerrada e o equipamento volta a <span className="font-bold">Disponível</span> no estoque, liberando-o para novas reservas e locações.
+              </p>
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onClick={() => setReservaParaCancelar(null)} className="border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 transition-all">Voltar</button>
+                <button type="submit" disabled={submitting} className="bg-rose-600 hover:bg-rose-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-rose-500/25">
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Confirmar cancelamento
+                </button>
+              </div>
             </form>
           </div>
         </div>
       )}
 
-      {isMaintenanceModalOpen && selectedForMaintenance && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-150">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+      {/* HIGIENIZAR MODAL */}
+      {isHygieneModalOpen && selectedForHygiene && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="hygieneModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Abrir ordem de serviço</h2>
-                <p className="text-xs text-slate-500">{selectedForMaintenance.txt_nome}</p>
+                <h2 id="hygieneModalTitle" className="text-base font-bold text-slate-900">Registrar Higienização</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">{selectedForHygiene.txt_nome}</p>
               </div>
-              <button onClick={() => setIsMaintenanceModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+              <button onClick={() => setIsHygieneModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitHygiene} className="p-6 space-y-4">
+              <div>
+                <label htmlFor="hygieneMethod" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Método *</label>
+                <input id="hygieneMethod" required value={hygieneMethod} onChange={(event) => setHygieneMethod(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all" placeholder="Ex.: Limpeza química e troca de filtro" />
+              </div>
+              <div>
+                <label htmlFor="hygieneResult" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Resultado *</label>
+                <textarea id="hygieneResult" required value={hygieneResult} onChange={(event) => setHygieneResult(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all h-20 resize-none" placeholder="Descreva o resultado e eventuais observações..." />
+              </div>
+              <p className="text-[11px] text-teal-700 bg-teal-50 border border-teal-100/50 rounded-lg p-3">Ao aprovar, o equipamento retorna a disponível no estoque para novas reservas e locações.</p>
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsHygieneModalOpen(false)} className="border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 transition-all">Cancelar</button>
+                <button type="submit" disabled={submitting} className="bg-teal-600 hover:bg-teal-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-teal-500/25">{submitting ? 'Salvando...' : 'Concluir'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CONFERIR MODAL */}
+      {isInspectionModalOpen && selectedForInspection && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="inspectionModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center">
+              <div>
+                <h2 id="inspectionModalTitle" className="text-base font-bold text-slate-900">Conferência Pós-Recolhimento</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">{selectedForInspection.txt_nome}</p>
+              </div>
+              <button onClick={() => setIsInspectionModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSubmitInspection} className="p-6 space-y-4">
+              <div>
+                <label htmlFor="inspectionResult" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Resultado *</label>
+                <textarea id="inspectionResult" required value={inspectionResult} onChange={(event) => setInspectionResult(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all h-24 resize-none" placeholder="Estado geral do ativo, integridade dos acessórios, avarias..." />
+              </div>
+              <div>
+                <label htmlFor="inspectionDestination" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Encaminhar Para *</label>
+                <select id="inspectionDestination" value={inspectionDestination} onChange={(event) => setInspectionDestination(event.target.value as StatusEquipamento)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all">
+                  <option value="Aguardando higienização">Aguardando higienização</option>
+                  <option value="Manutenção">Manutenção</option>
+                  <option value="Bloqueado">Bloqueado</option>
+                </select>
+              </div>
+              <p className="text-[11px] text-purple-700 bg-purple-50 border border-purple-100/50 rounded-lg p-3">A conferência registra a integridade, mas não libera o ativo diretamente para o estoque de locação.</p>
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsInspectionModalOpen(false)} className="border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 transition-all">Cancelar</button>
+                <button type="submit" disabled={submitting} className="bg-purple-600 hover:bg-purple-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm transition-all focus:outline-none focus:ring-2 focus:ring-purple-500/25">{submitting ? 'Salvando...' : 'Confirmar'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* RESERVAR MODAL */}
+      {isReserveModalOpen && selectedForReserve && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="reserveModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 id="reserveModalTitle" className="text-base font-bold text-slate-900">Reservar Equipamento</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">{selectedForReserve.txt_nome}</p>
+              </div>
+              <button onClick={() => setIsReserveModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleSubmitReserve} className="p-6 space-y-4">
+              <div>
+                <label htmlFor="reservePatientId" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Paciente *</label>
+                <select id="reservePatientId" required value={reservePatientId} onChange={(event) => setReservePatientId(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all">
+                  <option value="">Selecione o paciente...</option>
+                  {pacientes.map((paciente) => <option key={paciente._id} value={paciente._id}>{paciente.txt_nome}</option>)}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="reserveDate" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Implantação Prevista *</label>
+                  <input id="reserveDate" required type="date" value={reserveDate} onChange={(event) => setReserveDate(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all" />
+                </div>
+                <div>
+                  <label htmlFor="reserveValidity" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Validade *</label>
+                  <input id="reserveValidity" required type="date" value={reserveValidity} onChange={(event) => setReserveValidity(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all" />
+                </div>
+              </div>
+              <p className="text-[11px] text-blue-700 bg-blue-50 border border-blue-100/50 rounded-lg p-3">A reserva bloqueia este equipamento para novas implantações até que ela seja convertida, cancelada ou expire.</p>
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsReserveModalOpen(false)} className="border border-slate-200 hover:bg-slate-500/10 px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 transition-all">Cancelar</button>
+                <button type="submit" disabled={submitting} className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/25">
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Reservar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MANUTENÇÃO / OS MODAL */}
+      {isMaintenanceModalOpen && selectedForMaintenance && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="maintenanceModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 id="maintenanceModalTitle" className="text-base font-bold text-slate-900">Abrir Ordem de Serviço</h2>
+                <p className="text-[11px] text-slate-500 mt-0.5">{selectedForMaintenance.txt_nome}</p>
+              </div>
+              <button onClick={() => setIsMaintenanceModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <X className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleSubmitMaintenance} className="p-6 space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Motivo *</label>
-                <select required value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500">
-                  <option value="">Selecione...</option>
+                <label htmlFor="maintenanceReason" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Motivo *</label>
+                <select id="maintenanceReason" required value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all">
+                  <option value="">Selecione o motivo...</option>
                   <option value="Defeito relatado">Defeito relatado</option>
                   <option value="Manutenção preventiva">Manutenção preventiva</option>
                   <option value="Calibração">Calibração</option>
@@ -1138,13 +1529,13 @@ export default function GestorEquipamentos() {
                 </select>
               </div>
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Defeito / detalhes</label>
-                <textarea value={maintenanceDetails} onChange={(event) => setMaintenanceDetails(event.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 h-24 resize-none" placeholder="Descreva o problema, diagnóstico inicial ou serviço necessário..." />
+                <label htmlFor="maintenanceDetails" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Defeito / Detalhes</label>
+                <textarea id="maintenanceDetails" value={maintenanceDetails} onChange={(event) => setMaintenanceDetails(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all h-24 resize-none" placeholder="Descreva o defeito apresentado, laudos iniciais ou serviço preventivo planejado..." />
               </div>
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3">Ao abrir a OS, o equipamento será bloqueado para implantação e passará para manutenção.</p>
-              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
-                <button type="button" onClick={() => setIsMaintenanceModalOpen(false)} className="border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold">Cancelar</button>
-                <button type="submit" disabled={submitting} className="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5">
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-100/50 rounded-lg p-3">Ao abrir a ordem de serviço, o ativo passa a manutenção e fica bloqueado para novas locações.</p>
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onClick={() => setIsMaintenanceModalOpen(false)} className="border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg text-xs font-semibold text-slate-700 transition-all">Cancelar</button>
+                <button type="submit" disabled={submitting} className="bg-amber-600 hover:bg-amber-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-amber-500/25">
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />} Abrir OS
                 </button>
               </div>
@@ -1153,12 +1544,12 @@ export default function GestorEquipamentos() {
         </div>
       )}
 
-      {/* MODAL 1: CADASTRAR/EDITAR EQUIPAMENTO */}
+      {/* CADASTRAR/EDITAR EQUIPAMENTO MODAL */}
       {isEquipModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-150 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-black text-slate-900">
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="equipModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 id="equipModalTitle" className="text-base font-bold text-slate-900">
                 {editingEquipamento ? 'Editar Equipamento' : 'Cadastrar Equipamento'}
               </h2>
               <button
@@ -1171,35 +1562,38 @@ export default function GestorEquipamentos() {
 
             <form onSubmit={handleSubmitEquipamento} className="p-6 space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome do Equipamento *</label>
+                <label htmlFor="equipNome" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Equipamento *</label>
                 <input
+                  id="equipNome"
                   type="text"
                   required
                   value={equipNome}
                   onChange={(e) => setEquipNome(e.target.value)}
                   placeholder="Ex: Concentrador de Oxigênio 10L"
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all"
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all focus:ring-2 focus:ring-indigo-100"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Marca / Fabricante</label>
+                  <label htmlFor="equipMarca" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Marca / Fabricante</label>
                   <input
+                    id="equipMarca"
                     type="text"
                     value={equipMarca}
                     onChange={(e) => setEquipMarca(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                     placeholder="Ex: Philips"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Modelo</label>
+                  <label htmlFor="equipModelo" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Modelo</label>
                   <input
+                    id="equipModelo"
                     type="text"
                     value={equipModelo}
                     onChange={(e) => setEquipModelo(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                     placeholder="Ex: EverFlo"
                   />
                 </div>
@@ -1208,7 +1602,7 @@ export default function GestorEquipamentos() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Nº Série / Patrimônio *</label>
+                    <label htmlFor="equipSerie" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nº Série / Patrimônio *</label>
                     <button
                       type="button"
                       onClick={() => setEquipSerie(generateSerialNumber(equipMarca, equipModelo))}
@@ -1220,6 +1614,7 @@ export default function GestorEquipamentos() {
                     </button>
                   </div>
                   <input
+                    id="equipSerie"
                     type="text"
                     value={equipSerie}
                     onChange={(e) => setEquipSerie(e.target.value)}
@@ -1228,16 +1623,17 @@ export default function GestorEquipamentos() {
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Preço Base Aluguel *</label>
+                  <label htmlFor="equipPreco" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Preço Base Aluguel *</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
                     <input
+                      id="equipPreco"
                       type="number"
                       required
                       step="0.01"
                       value={equipPreco}
                       onChange={(e) => setEquipPreco(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                      className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                       placeholder="0,00"
                     />
                   </div>
@@ -1246,17 +1642,32 @@ export default function GestorEquipamentos() {
 
               {editingEquipamento && (
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Status</label>
+                  <label htmlFor="equipStatus" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
                   {fluxoV2Ativo ? (
-                    <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-700">
-                      {equipStatus}
-                      <p className="text-[11px] text-slate-500 mt-1">A situação é atualizada pelas movimentações operacionais.</p>
+                    <div className="w-full bg-slate-100 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 flex items-center justify-between gap-3">
+                      <div>
+                        <span className="font-semibold text-slate-900">{equipStatus}</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5">O status do ativo é governado por ações de movimentação.</p>
+                      </div>
+                      {['Recolhido e aguardando conferência', 'Aguardando conferência'].includes(equipStatus) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsEquipModalOpen(false);
+                            if (editingEquipamento) handleOpenInspection(editingEquipamento);
+                          }}
+                          className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold shadow-sm transition-all whitespace-nowrap focus:outline-none focus:ring-2 focus:ring-purple-500/25"
+                        >
+                          Conferir Agora
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <select
+                      id="equipStatus"
                       value={equipStatus}
                       onChange={(e) => setEquipStatus(e.target.value as Equipamento['txt_status'])}
-                      className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                      className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                     >
                       <option value="Disponível">Disponível</option>
                       <option value="Alugado">Alugado</option>
@@ -1268,27 +1679,28 @@ export default function GestorEquipamentos() {
               )}
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Descrição / Notas</label>
+                <label htmlFor="equipDescricao" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Descrição / Notas</label>
                 <textarea
+                  id="equipDescricao"
                   value={equipDescricao}
                   onChange={(e) => setEquipDescricao(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2 text-sm text-slate-800 focus:outline-none h-20 resize-none"
-                  placeholder="Descreva detalhes como acessórios inclusos ou avarias estéticas..."
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none h-20 resize-none transition-all"
+                  placeholder="Detalhes sobre acessórios, estado físico..."
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsEquipModalOpen(false)}
-                  className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Salvar
@@ -1299,12 +1711,12 @@ export default function GestorEquipamentos() {
         </div>
       )}
 
-      {/* MODAL 2: CADASTRAR PACIENTE */}
+      {/* CADASTRAR PACIENTE MODAL */}
       {isPatientModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-150 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-black text-slate-900">Cadastrar Paciente</h2>
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="patientModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 id="patientModalTitle" className="text-base font-bold text-slate-900">Cadastrar Paciente</h2>
               <button
                 onClick={() => setIsPatientModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -1315,59 +1727,64 @@ export default function GestorEquipamentos() {
 
             <form onSubmit={handleSubmitPaciente} className="p-6 space-y-4">
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nome Completo *</label>
+                <label htmlFor="patNome" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome Completo *</label>
                 <input
+                  id="patNome"
                   type="text"
                   required
                   value={patNome}
                   onChange={(e) => setPatNome(e.target.value)}
                   placeholder="Nome do paciente..."
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">CPF *</label>
+                  <label htmlFor="patCPF" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">CPF *</label>
                   <input
+                    id="patCPF"
                     type="text"
                     required
                     value={patCPF}
                     onChange={(e) => setPatCPF(e.target.value)}
                     placeholder="Ex: 000.000.000-00"
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Whatsapp / Telefone *</label>
+                  <label htmlFor="patWhatsapp" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">WhatsApp / Tel *</label>
                   <input
+                    id="patWhatsapp"
                     type="text"
                     required
                     value={patWhatsapp}
                     onChange={(e) => setPatWhatsapp(e.target.value)}
                     placeholder="Ex: (00) 90000-0000"
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">E-mail (Opcional)</label>
+                <label htmlFor="patEmail" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">E-mail (Opcional)</label>
                 <input
+                  id="patEmail"
                   type="email"
                   value={patEmail}
                   onChange={(e) => setPatEmail(e.target.value)}
                   placeholder="Ex: paciente@email.com"
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                 />
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tipo de Paciente *</label>
+                <label htmlFor="patTipo" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo de Paciente *</label>
                 <select
+                  id="patTipo"
                   value={patTipo}
                   onChange={(e) => setPatTipo(e.target.value as 'Homecare' | 'Hospital')}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                 >
                   <option value="Homecare">Homecare</option>
                   <option value="Hospital">Hospital</option>
@@ -1375,28 +1792,29 @@ export default function GestorEquipamentos() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Endereço Completo de Entrega *</label>
+                <label htmlFor="patEndereco" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Endereço Completo de Entrega *</label>
                 <textarea
+                  id="patEndereco"
                   required
                   value={patEndereco}
                   onChange={(e) => setPatEndereco(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2 text-sm text-slate-800 focus:outline-none h-20 resize-none"
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none h-20 resize-none transition-all"
                   placeholder="Rua, número, complemento, bairro, cidade - UF..."
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsPatientModalOpen(false)}
-                  className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Cadastrar
@@ -1407,12 +1825,12 @@ export default function GestorEquipamentos() {
         </div>
       )}
 
-      {/* MODAL 3: REGISTRAR NOVA LOCAÇÃO */}
+      {/* NOVA LOCAÇÃO MODAL */}
       {isRentalModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl overflow-hidden border border-slate-150 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-black text-slate-900">Registrar Nova Locação</h2>
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="rentalModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 id="rentalModalTitle" className="text-base font-bold text-slate-900">Registrar Nova Locação</h2>
               <button
                 onClick={() => setIsRentalModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -1423,26 +1841,28 @@ export default function GestorEquipamentos() {
 
             <form onSubmit={handleSubmitRental} className="p-6 space-y-4">
               {errorMsg && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl flex items-center gap-3">
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
                   <Info className="w-5 h-5 text-red-500 shrink-0" />
-                  <span className="text-sm font-medium">{errorMsg}</span>
+                  <span className="text-xs font-medium">{errorMsg}</span>
                 </div>
               )}
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Selecionar Paciente *</label>
+                <label htmlFor="patientSearch" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Selecionar Paciente *</label>
                 <div className="space-y-2">
                   <input
+                    id="patientSearch"
                     type="text"
                     placeholder="🔍 Buscar paciente por nome..."
                     value={patientSearch}
                     onChange={(e) => setPatientSearch(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 focus:ring-opacity-20 rounded-xl px-4 py-2 text-sm text-slate-800 focus:outline-none transition-all placeholder-slate-400"
+                    className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all"
                   />
                   <select
                     required
+                    aria-label="Paciente selecionado"
                     value={rentPatId}
                     onChange={(e) => setRentPatId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-600 focus:ring-opacity-20 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none transition-all"
+                    className="w-full bg-slate-50/50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-sm text-slate-800 focus:outline-none transition-all"
                   >
                     <option value="">Selecione o paciente...</option>
                     {pacientes
@@ -1459,12 +1879,13 @@ export default function GestorEquipamentos() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Equipamento Disponível *</label>
+                <label htmlFor="rentEquipId" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Equipamento Disponível *</label>
                 <select
+                  id="rentEquipId"
                   required
                   value={rentEquipId}
                   onChange={(e) => setRentEquipId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                  className="w-full bg-slate-50/50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-sm text-slate-800 focus:outline-none transition-all"
                 >
                   <option value="">Selecione o equipamento...</option>
                   {equipamentos
@@ -1479,33 +1900,36 @@ export default function GestorEquipamentos() {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data de Início *</label>
+                  <label htmlFor="rentDataInicio" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Data de Início *</label>
                   <input
+                    id="rentDataInicio"
                     type="date"
                     required
                     value={rentDataInicio}
                     onChange={(e) => setRentDataInicio(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                   />
                 </div>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data Fim Previsto *</label>
+                  <label htmlFor="rentDataFimPrevisto" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Fim Previsto *</label>
                   <input
+                    id="rentDataFimPrevisto"
                     type="date"
                     required
                     value={rentDataFimPrevisto}
                     onChange={(e) => setRentDataFimPrevisto(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Regra de cobrança *</label>
+                <label htmlFor="rentTipoCobranca" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Regra de cobrança *</label>
                 <select
+                  id="rentTipoCobranca"
                   value={rentTipoCobranca}
                   onChange={(e) => setRentTipoCobranca(e.target.value as TipoCobrancaLocacao)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                  className="w-full bg-slate-50/50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-sm text-slate-800 focus:outline-none transition-all"
                 >
                   <option value="Somente diária">Somente diária</option>
                   <option value="Somente mensalidade">Somente mensalidade</option>
@@ -1517,45 +1941,47 @@ export default function GestorEquipamentos() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
+                <label htmlFor="rentValor" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
                   {rentTipoCobranca === 'Somente diária' ? 'Valor da diária *' : rentTipoCobranca === 'Sem cobrança' ? 'Valor (sem cobrança)' : 'Valor contratado *'}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs font-semibold">R$</span>
                   <input
+                    id="rentValor"
                     type="number"
                     required
                     step="0.01"
                     value={rentValor}
                     onChange={(e) => setRentValor(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl pl-9 pr-4 py-2.5 text-sm text-slate-800 focus:outline-none"
+                    className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                     placeholder="0,00"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Observações da Locação</label>
+                <label htmlFor="rentObservacoes" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Observações da Locação</label>
                 <textarea
+                  id="rentObservacoes"
                   value={rentObservacoes}
                   onChange={(e) => setRentObservacoes(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-xl px-4 py-2 text-sm text-slate-800 focus:outline-none h-20 resize-none"
-                  placeholder="Notas adicionais sobre o termo ou condições da entrega..."
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none h-20 resize-none transition-all"
+                  placeholder="Observações ou termos de entrega adicionais..."
                 />
               </div>
 
-              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setIsRentalModalOpen(false)}
-                  className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Registrar
@@ -1566,12 +1992,12 @@ export default function GestorEquipamentos() {
         </div>
       )}
 
-      {/* MODAL 4: REGISTRAR DEVOLUÇÃO */}
+      {/* DEVOLUÇÃO MODAL */}
       {isReturnModalOpen && selectedRentalForReturn && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-150 animate-in fade-in zoom-in-95 duration-200">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-lg font-black text-slate-900">Registrar Devolução</h2>
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="returnModalTitle" className="bg-white rounded-xl max-w-md w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 id="returnModalTitle" className="text-base font-bold text-slate-900">Registrar Devolução</h2>
               <button
                 onClick={() => {
                   setIsReturnModalOpen(false);
@@ -1584,8 +2010,8 @@ export default function GestorEquipamentos() {
             </div>
 
             <form onSubmit={handleSubmitReturn} className="p-6 space-y-4">
-              <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl text-xs space-y-1.5">
-                <div className="text-slate-450 font-semibold uppercase">Resumo da Locação</div>
+              <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl text-xs space-y-1.5">
+                <div className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Resumo da Locação</div>
                 <div className="text-slate-800">
                   <span className="font-bold">Paciente:</span>{' '}
                   {pacientes.find((p) => p._id === selectedRentalForReturn.fk_paciente)?.txt_nome || 'N/A'}
@@ -1602,20 +2028,20 @@ export default function GestorEquipamentos() {
 
               <div>
                 {fluxoV2Ativo ? (
-                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                    <p className="font-bold">Destino: Recolhido e aguardando conferência</p>
-                    <p className="mt-1 text-xs">O equipamento não volta ao estoque até a conferência, higienização e liberação necessárias.</p>
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                    <p className="font-bold uppercase tracking-wider text-[10px]">Destino: Recolhido e aguardando conferência</p>
+                    <p className="mt-1">O equipamento passará pelos processos obrigatórios de conferência, higienização e OS para voltar a ficar operacional.</p>
                   </div>
                 ) : (
                   <>
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-2">
-                      Status de destino do Equipamento
-                    </label>
+                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+                      Status de Destino do Equipamento
+                    </span>
                     <div className="grid grid-cols-2 gap-3">
                       <button
                         type="button"
                         onClick={() => setReturnEquipStatus('Disponível')}
-                        className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-sm font-semibold transition-all ${
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-semibold transition-all ${
                           returnEquipStatus === 'Disponível'
                             ? 'bg-green-50 border-green-300 text-green-700 font-bold shadow-sm'
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -1627,7 +2053,7 @@ export default function GestorEquipamentos() {
                       <button
                         type="button"
                         onClick={() => setReturnEquipStatus('Manutenção')}
-                        className={`flex items-center justify-center gap-2 p-3 rounded-xl border text-sm font-semibold transition-all ${
+                        className={`flex items-center justify-center gap-2 p-3 rounded-lg border text-sm font-semibold transition-all ${
                           returnEquipStatus === 'Manutenção'
                             ? 'bg-amber-50 border-amber-300 text-amber-700 font-bold shadow-sm'
                             : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -1637,28 +2063,28 @@ export default function GestorEquipamentos() {
                         Manutenção
                       </button>
                     </div>
-                    <p className="text-[11px] text-slate-400 mt-2">
-                      Defina se o equipamento retornará para estoque imediatamente ou passará por processo de higienização / reparo.
+                    <p className="text-[10px] text-slate-400 mt-2">
+                      Defina se o equipamento retornará para estoque imediatamente ou necessita de reparo/higienização.
                     </p>
                   </>
                 )}
               </div>
 
-              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => {
                     setIsReturnModalOpen(false);
                     setSelectedRentalForReturn(null);
                   }}
-                  className="bg-white hover:bg-slate-550/10 border border-slate-200 text-slate-700 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+                  className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
                 >
                   Voltar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="bg-indigo-600 hover:bg-indigo-800 text-white px-5 py-2 rounded-xl text-sm font-bold shadow-md flex items-center gap-1.5 transition-all"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirmar Devolução
