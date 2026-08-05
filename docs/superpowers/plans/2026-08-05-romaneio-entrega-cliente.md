@@ -6,6 +6,29 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-05-romaneio-entrega-cliente-design.md`
 
+## Status (2026-08-05)
+
+| Fase | Situação |
+|---|---|
+| 1 — Renomeação UI paciente → cliente | ✅ Concluída (commit `8bb47c8`) |
+| 2 — Romaneio impresso | ✅ Concluída (commit `aa0b042`) |
+| 3 — Persistência e baixa | ⏸️ Aguardando validação em campo e a definição sobre item não entregue |
+
+Verificação das fases 1 e 2: `npx tsc --noEmit` PASS, `npm run lint` PASS (só o warning
+pré-existente em `manutencao/page.tsx`), `npm run build` PASS,
+`npx playwright test tests/e2e/equipamentos.spec.ts --workers=1` 6/6 PASS.
+
+Dois problemas de ambiente encontrados ao rodar os testes, **ambos alheios a estas mudanças**:
+
+1. O `webServer` do `playwright.config.ts` usa `reuseExistingServer: !CI` apontando para a porta
+   3000. Se outro projeto já estiver servindo nessa porta, a suíte inteira roda contra o app
+   errado e falha por completo. Vale considerar uma porta dedicada para os testes.
+2. Com `fullyParallel: true` contra `npm run dev`, os testes disputam a compilação sob demanda do
+   Next e estouram o timeout de 60s a frio. Em série passam. Um `npm run build` + `next start` no
+   `webServer`, ou menos workers, resolveria.
+3. `adesao.spec.ts:69` ("fluxo completo de adesão até a tela de assinatura") falha também em
+   `main` (commit `5f30928`), sem nenhuma alteração deste trabalho. Quebra pré-existente.
+
 **Architecture:** A renomeação é restrita a strings visíveis — campos do Bubble (`fk_paciente`), rotas (`/api/gestor/pacientes`) e identificadores TypeScript (`interface Paciente`) permanecem intactos. O romaneio é uma página client-side dedicada (`/gestor/equipamentos/romaneio`) que reaproveita o padrão `#print-area` + `@media print` já usado em `temp-app/src/app/gestor/financeiro/page.tsx:325`. A persistência (Fase 3) adiciona dois tipos de dado novos no Bubble, sem alterar nenhum existente.
 
 **Tech Stack:** Next.js 14 (App Router, edge runtime), React, TypeScript, Tailwind CSS, Lucide Icons, Axios, Playwright.
