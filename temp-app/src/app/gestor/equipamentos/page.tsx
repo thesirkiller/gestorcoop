@@ -18,6 +18,7 @@ import {
   Calendar,
   TrendingUp,
   XCircle,
+  Printer,
 } from 'lucide-react';
 import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Paciente, LocacaoEquipamento, StatusEquipamento, ReservaEquipamento } from '@/lib/bubble';
 import { TipoCobrancaLocacao, RentabilidadeResultado } from '@/lib/equipamentos-financeiro';
@@ -493,7 +494,7 @@ export default function GestorEquipamentos() {
 
   const handleExportarLocacoes = () => {
     const escapeCsv = (valor: unknown) => `"${String(valor ?? '').replace(/"/g, '""')}"`;
-    const cabecalho = ['Equipamento', 'Código interno', 'Paciente', 'Início', 'Fim previsto', 'Fim real', 'Status', 'Cobrança', 'Valor final'];
+    const cabecalho = ['Equipamento', 'Código interno', 'Cliente', 'Início', 'Fim previsto', 'Fim real', 'Status', 'Cobrança', 'Valor final'];
     const linhas = locacoes.map((locacao) => {
       const equipamento = equipamentos.find((item) => item._id === locacao.fk_equipamento);
       const paciente = pacientes.find((item) => item._id === locacao.fk_paciente);
@@ -576,7 +577,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
-      setErrorMsg(error.response?.data?.error || 'Erro ao cadastrar paciente.');
+      setErrorMsg(error.response?.data?.error || 'Erro ao cadastrar cliente.');
     } finally {
       setSubmitting(false);
     }
@@ -666,7 +667,7 @@ export default function GestorEquipamentos() {
             Gestão de Equipamentos
           </h1>
           <p className="text-slate-500 text-xs mt-0.5">
-            Controle de inventário, pacientes cadastrados e ciclos de locações médicas.
+            Controle de inventário, clientes cadastrados e ciclos de locações médicas.
           </p>
         </div>
 
@@ -778,7 +779,7 @@ export default function GestorEquipamentos() {
             { id: 'locacoes', label: 'Locações Ativas' },
             { id: 'equipamentos', label: 'Catálogo de Equipamentos' },
             ...(fluxoV2Ativo ? [{ id: 'reservas', label: `Reservas${reservas.filter((r) => r.txt_status === 'Ativa').length ? ` (${reservas.filter((r) => r.txt_status === 'Ativa').length})` : ''}` }] : []),
-            { id: 'pacientes', label: 'Cadastro de Pacientes' },
+            { id: 'pacientes', label: 'Cadastro de Clientes' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -802,11 +803,11 @@ export default function GestorEquipamentos() {
               type="text"
               placeholder={
                 activeTab === 'locacoes'
-                  ? 'Buscar por paciente ou equipamento...'
+                  ? 'Buscar por cliente ou equipamento...'
                   : activeTab === 'equipamentos'
                   ? 'Buscar por nome, marca, nº série...'
                   : activeTab === 'reservas'
-                  ? 'Buscar por paciente ou equipamento...'
+                  ? 'Buscar por cliente ou equipamento...'
                   : 'Buscar por nome ou CPF...'
               }
               value={searchQuery}
@@ -841,7 +842,7 @@ export default function GestorEquipamentos() {
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
             >
               <Plus className="w-3.5 h-3.5" />
-              Cadastrar Paciente
+              Cadastrar Cliente
             </button>
           )}
         </div>
@@ -862,7 +863,7 @@ export default function GestorEquipamentos() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
-                      <th className="px-6 py-3.5">Paciente</th>
+                      <th className="px-6 py-3.5">Cliente</th>
                       <th className="px-6 py-3.5">Equipamento</th>
                       <th className="px-6 py-3.5">Valor Estimado</th>
                       <th className="px-6 py-3.5">Início</th>
@@ -914,12 +915,24 @@ export default function GestorEquipamentos() {
                             </td>
                             <td className="px-6 py-4 text-right">
                               {l.txt_status === 'Ativo' && (
-                                <button
-                                  onClick={() => handleOpenReturnModal(l)}
-                                  className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                >
-                                  Devolver
-                                </button>
+                                <div className="inline-flex items-center gap-1.5">
+                                  <a
+                                    href={`/gestor/equipamentos/romaneio?cliente=${l.fk_paciente}&itens=${l._id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Gerar romaneio de entrega apenas deste equipamento"
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold transition-all min-h-[32px]"
+                                  >
+                                    <Printer className="w-3.5 h-3.5" />
+                                    Romaneio
+                                  </a>
+                                  <button
+                                    onClick={() => handleOpenReturnModal(l)}
+                                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                  >
+                                    Devolver
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1039,7 +1052,7 @@ export default function GestorEquipamentos() {
                 <table className="w-full text-left border-collapse">
                   <thead>
                     <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
-                      <th className="px-6 py-3.5">Paciente</th>
+                      <th className="px-6 py-3.5">Cliente</th>
                       <th className="px-6 py-3.5">Equipamento</th>
                       <th className="px-6 py-3.5">Reservado em</th>
                       <th className="px-6 py-3.5">Implantação prevista</th>
@@ -1148,13 +1161,14 @@ export default function GestorEquipamentos() {
                         <th className="px-6 py-3.5">Endereço de Entrega</th>
                         <th className="px-6 py-3.5">Equipamentos Enviados</th>
                         <th className="px-6 py-3.5">Contato</th>
+                        <th className="px-6 py-3.5">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
                       {filteredPacientes.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="text-center py-12 text-slate-400">
-                            Nenhum paciente encontrado.
+                          <td colSpan={5} className="text-center py-12 text-slate-400">
+                            Nenhum cliente encontrado.
                           </td>
                         </tr>
                       ) : (
@@ -1206,6 +1220,22 @@ export default function GestorEquipamentos() {
                                 {p.txt_whatsapp && <div className="text-slate-600 font-medium">WhatsApp: {p.txt_whatsapp}</div>}
                                 {p.txt_email && <div className="text-[10px] text-slate-400">{p.txt_email}</div>}
                                 {!p.txt_whatsapp && !p.txt_email && <span className="text-slate-400">-</span>}
+                              </td>
+                              <td className="px-6 py-4">
+                                {hasActiveRental ? (
+                                  <a
+                                    href={`/gestor/equipamentos/romaneio?cliente=${p._id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Gerar romaneio de entrega para impressão"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold text-indigo-600 border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 transition-colors"
+                                  >
+                                    <Printer className="w-3.5 h-3.5" />
+                                    Romaneio
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-300">-</span>
+                                )}
                               </td>
                             </tr>
                           );
@@ -1362,7 +1392,7 @@ export default function GestorEquipamentos() {
                 <p className="text-[11px] text-slate-500 mt-0.5">
                   {equipamentos.find((e) => e._id === reservaParaCancelar.fk_equipamento)?.txt_nome || 'Equipamento'}
                   {' • '}
-                  {pacientes.find((p) => p._id === reservaParaCancelar.fk_paciente)?.txt_nome || 'Paciente'}
+                  {pacientes.find((p) => p._id === reservaParaCancelar.fk_paciente)?.txt_nome || 'Cliente'}
                 </p>
               </div>
               <button onClick={() => setReservaParaCancelar(null)} className="text-slate-400 hover:text-slate-600 transition-colors">
@@ -1377,7 +1407,7 @@ export default function GestorEquipamentos() {
                   value={cancelReservaMotivo}
                   onChange={(event) => setCancelReservaMotivo(event.target.value)}
                   className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all h-24 resize-none"
-                  placeholder="Ex.: desistência do paciente, realocação para outro caso, reserva duplicada..."
+                  placeholder="Ex.: desistência do cliente, realocação para outro caso, reserva duplicada..."
                 />
               </div>
               <p className="text-[11px] text-rose-700 bg-rose-50 border border-rose-100 rounded-lg p-3">
@@ -1475,9 +1505,9 @@ export default function GestorEquipamentos() {
             </div>
             <form onSubmit={handleSubmitReserve} className="p-6 space-y-4">
               <div>
-                <label htmlFor="reservePatientId" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Paciente *</label>
+                <label htmlFor="reservePatientId" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cliente *</label>
                 <select id="reservePatientId" required value={reservePatientId} onChange={(event) => setReservePatientId(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all">
-                  <option value="">Selecione o paciente...</option>
+                  <option value="">Selecione o cliente...</option>
                   {pacientes.map((paciente) => <option key={paciente._id} value={paciente._id}>{paciente.txt_nome}</option>)}
                 </select>
               </div>
@@ -1716,7 +1746,7 @@ export default function GestorEquipamentos() {
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
           <div role="dialog" aria-modal="true" aria-labelledby="patientModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 id="patientModalTitle" className="text-base font-bold text-slate-900">Cadastrar Paciente</h2>
+              <h2 id="patientModalTitle" className="text-base font-bold text-slate-900">Cadastrar Cliente</h2>
               <button
                 onClick={() => setIsPatientModalOpen(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -1734,7 +1764,7 @@ export default function GestorEquipamentos() {
                   required
                   value={patNome}
                   onChange={(e) => setPatNome(e.target.value)}
-                  placeholder="Nome do paciente..."
+                  placeholder="Nome do cliente..."
                   className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                 />
               </div>
@@ -1773,13 +1803,13 @@ export default function GestorEquipamentos() {
                   type="email"
                   value={patEmail}
                   onChange={(e) => setPatEmail(e.target.value)}
-                  placeholder="Ex: paciente@email.com"
+                  placeholder="Ex: cliente@email.com"
                   className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none transition-all"
                 />
               </div>
 
               <div>
-                <label htmlFor="patTipo" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo de Paciente *</label>
+                <label htmlFor="patTipo" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Tipo de Cliente *</label>
                 <select
                   id="patTipo"
                   value={patTipo}
@@ -1847,24 +1877,24 @@ export default function GestorEquipamentos() {
                 </div>
               )}
               <div>
-                <label htmlFor="patientSearch" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Selecionar Paciente *</label>
+                <label htmlFor="patientSearch" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Selecionar Cliente *</label>
                 <div className="space-y-2">
                   <input
                     id="patientSearch"
                     type="text"
-                    placeholder="🔍 Buscar paciente por nome..."
+                    placeholder="🔍 Buscar cliente por nome..."
                     value={patientSearch}
                     onChange={(e) => setPatientSearch(e.target.value)}
                     className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none transition-all"
                   />
                   <select
                     required
-                    aria-label="Paciente selecionado"
+                    aria-label="Cliente selecionado"
                     value={rentPatId}
                     onChange={(e) => setRentPatId(e.target.value)}
                     className="w-full bg-slate-50/50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-sm text-slate-800 focus:outline-none transition-all"
                   >
-                    <option value="">Selecione o paciente...</option>
+                    <option value="">Selecione o cliente...</option>
                     {pacientes
                       .filter((p) =>
                         p.txt_nome.toLowerCase().includes(patientSearch.toLowerCase())
@@ -2013,7 +2043,7 @@ export default function GestorEquipamentos() {
               <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl text-xs space-y-1.5">
                 <div className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Resumo da Locação</div>
                 <div className="text-slate-800">
-                  <span className="font-bold">Paciente:</span>{' '}
+                  <span className="font-bold">Cliente:</span>{' '}
                   {pacientes.find((p) => p._id === selectedRentalForReturn.fk_paciente)?.txt_nome || 'N/A'}
                 </div>
                 <div className="text-slate-800">

@@ -13,7 +13,7 @@ export async function GET() {
     const err = error as { message?: string };
     console.error('Erro ao listar pacientes:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Erro ao buscar pacientes' },
+      { success: false, error: err.message || 'Erro ao buscar clientes' },
       { status: 500 }
     );
   }
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     const err = error as { message?: string };
     console.error('Erro ao criar paciente:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Erro ao criar paciente' },
+      { success: false, error: err.message || 'Erro ao criar cliente' },
       { status: 500 }
     );
   }

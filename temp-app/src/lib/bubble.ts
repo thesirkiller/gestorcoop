@@ -151,6 +151,11 @@ export interface Equipamento {
   CreatedDate?: string;
 }
 
+// NOTA DE VOCABULÁRIO: na interface o sistema chama esta entidade de "Cliente".
+// Os nomes "Paciente" / "fk_paciente" / "locais_de_trabalho_pacientes" foram mantidos
+// porque são o contrato do Bubble em produção — renomeá-los exigiria migração de dados
+// e poderia quebrar workflows do Bubble que não estão neste repositório.
+// Ver docs/superpowers/specs/2026-08-05-romaneio-entrega-cliente-design.md
 export interface Paciente {
   _id?: string;
   txt_nome: string;
@@ -527,6 +532,26 @@ function mapReserva(raw: any): ReservaEquipamento {
   };
 }
 
+function mapDomicilio(raw: any): Domicilio {
+  return {
+    _id: raw._id,
+    fk_paciente: raw.fk_paciente || '',
+    // O Bubble devolve geo_endereco ora como texto, ora como objeto de endereço.
+    geo_endereco: typeof raw.geo_endereco === 'string' ? raw.geo_endereco : raw.geo_endereco?.address || '',
+    txt_cep: raw.txt_cep || undefined,
+    txt_numero: raw.txt_numero || undefined,
+    txt_complemento: raw.txt_complemento || undefined,
+    txt_bairro: raw.txt_bairro || undefined,
+    txt_cidade: raw.txt_cidade || undefined,
+    txt_estado: raw.txt_estado || undefined,
+    txt_ponto_referencia: raw.txt_ponto_referencia || undefined,
+    txt_contato_local: raw.txt_contato_local || undefined,
+    txt_instrucoes_acesso: raw.txt_instrucoes_acesso || undefined,
+    bool_ativo: raw.bool_ativo !== false,
+    CreatedDate: raw['Created Date'],
+  };
+}
+
 function mapBaixa(raw: any): BaixaEquipamento {
   return {
     _id: raw._id,
@@ -897,6 +922,18 @@ export const bubbleApi = {
     await bubbleClient.patch(`/obj/locais_de_trabalho_pacientes/${id}`, payload);
   },
 
+  async getDomicilio(id: string): Promise<Domicilio> {
+    const response = await bubbleClient.get(`/obj/domicilio/${id}`);
+    return mapDomicilio(response.data.response);
+  },
+
+  async getDomiciliosPorPaciente(pacienteId: string): Promise<Domicilio[]> {
+    const rawList = await getAllResults<any>('/obj/domicilio', [
+      { key: 'fk_paciente', constraint_type: 'equals', value: pacienteId },
+    ]);
+    return rawList.map(mapDomicilio);
+  },
+
   async obterOuCriarDomicilioAtivo(pacienteId: string, enderecoLegado: string): Promise<Domicilio> {
     if (!equipamentosV2Ativo) {
       throw new Error('O cadastro de domicilios v2 ainda nao esta habilitado.');
@@ -911,24 +948,7 @@ export const bubbleApi = {
     ]);
     const existente = existentes.find((item) => item.bool_ativo !== false);
     if (existente) {
-      return {
-        _id: existente._id,
-        fk_paciente: existente.fk_paciente,
-        geo_endereco: typeof existente.geo_endereco === 'string'
-          ? existente.geo_endereco
-          : existente.geo_endereco?.address || '',
-        txt_cep: existente.txt_cep || undefined,
-        txt_numero: existente.txt_numero || undefined,
-        txt_complemento: existente.txt_complemento || undefined,
-        txt_bairro: existente.txt_bairro || undefined,
-        txt_cidade: existente.txt_cidade || undefined,
-        txt_estado: existente.txt_estado || undefined,
-        txt_ponto_referencia: existente.txt_ponto_referencia || undefined,
-        txt_contato_local: existente.txt_contato_local || undefined,
-        txt_instrucoes_acesso: existente.txt_instrucoes_acesso || undefined,
-        bool_ativo: existente.bool_ativo !== false,
-        CreatedDate: existente['Created Date'],
-      };
+      return mapDomicilio(existente);
     }
 
     const response = await bubbleClient.post('/obj/domicilio', {
