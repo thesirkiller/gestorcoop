@@ -11,7 +11,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
     const body = await request.json();
     if (!body.fk_paciente || !body.date_implantacao_prevista || !body.date_validade) {
-      return NextResponse.json({ success: false, error: 'Paciente, implantação prevista e validade são obrigatórios.' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'Cliente, implantação prevista e validade são obrigatórios.' }, { status: 400 });
     }
     if (new Date(body.date_validade) < new Date(body.date_implantacao_prevista)) {
       return NextResponse.json({ success: false, error: 'A validade não pode ser anterior à implantação prevista.' }, { status: 400 });

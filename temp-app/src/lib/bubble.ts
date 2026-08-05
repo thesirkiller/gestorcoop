@@ -151,6 +151,11 @@ export interface Equipamento {
   CreatedDate?: string;
 }
 
+// NOTA DE VOCABULÁRIO: na interface o sistema chama esta entidade de "Cliente".
+// Os nomes "Paciente" / "fk_paciente" / "locais_de_trabalho_pacientes" foram mantidos
+// porque são o contrato do Bubble em produção — renomeá-los exigiria migração de dados
+// e poderia quebrar workflows do Bubble que não estão neste repositório.
+// Ver docs/superpowers/specs/2026-08-05-romaneio-entrega-cliente-design.md
 export interface Paciente {
   _id?: string;
   txt_nome: string;

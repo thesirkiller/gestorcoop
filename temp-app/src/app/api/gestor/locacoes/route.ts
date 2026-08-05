@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
 
     if (!fk_equipamento || !fk_paciente || !date_inicio || !date_fim_previsto || num_valor_aluguel === undefined) {
       return NextResponse.json(
-        { success: false, error: 'Equipamento, Paciente, Data de Início, Data de Fim Previsto e Valor do Aluguel são obrigatórios.' },
+        { success: false, error: 'Equipamento, Cliente, Data de Início, Data de Fim Previsto e Valor do Aluguel são obrigatórios.' },
         { status: 400 }
       );
     }
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       const paciente = await bubbleApi.getPaciente(fk_paciente);
       if (!paciente.txt_endereco) {
         return NextResponse.json(
-          { success: false, error: 'O paciente precisa ter um endereço antes da implantação.' },
+          { success: false, error: 'O cliente precisa ter um endereço antes da implantação.' },
           { status: 400 }
         );
       }

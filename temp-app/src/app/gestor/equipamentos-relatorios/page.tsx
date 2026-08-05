@@ -657,7 +657,7 @@ export default function GestorEquipamentosRelatorios() {
                         <th className="px-6 py-4">Tipo</th>
                         <th className="px-6 py-4">Data</th>
                         <th className="px-6 py-4">Equipamento (ID)</th>
-                        <th className="px-6 py-4">Paciente (ID)</th>
+                        <th className="px-6 py-4">Cliente (ID)</th>
                         <th className="px-6 py-4">Locação (ID)</th>
                       </tr>
                     </thead>

@@ -19,7 +19,7 @@ export async function PATCH(
     const err = error as { message?: string };
     console.error(`Erro ao atualizar paciente ${params.id}:`, err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Erro ao atualizar paciente' },
+      { success: false, error: err.message || 'Erro ao atualizar cliente' },
       { status: 500 }
     );
   }
