@@ -18,6 +18,7 @@ import {
   Calendar,
   TrendingUp,
   XCircle,
+  Printer,
 } from 'lucide-react';
 import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Paciente, LocacaoEquipamento, StatusEquipamento, ReservaEquipamento } from '@/lib/bubble';
 import { TipoCobrancaLocacao, RentabilidadeResultado } from '@/lib/equipamentos-financeiro';
@@ -914,12 +915,24 @@ export default function GestorEquipamentos() {
                             </td>
                             <td className="px-6 py-4 text-right">
                               {l.txt_status === 'Ativo' && (
-                                <button
-                                  onClick={() => handleOpenReturnModal(l)}
-                                  className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                                >
-                                  Devolver
-                                </button>
+                                <div className="inline-flex items-center gap-1.5">
+                                  <a
+                                    href={`/gestor/equipamentos/romaneio?cliente=${l.fk_paciente}&itens=${l._id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Gerar romaneio de entrega apenas deste equipamento"
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold transition-all min-h-[32px]"
+                                  >
+                                    <Printer className="w-3.5 h-3.5" />
+                                    Romaneio
+                                  </a>
+                                  <button
+                                    onClick={() => handleOpenReturnModal(l)}
+                                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                  >
+                                    Devolver
+                                  </button>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1148,12 +1161,13 @@ export default function GestorEquipamentos() {
                         <th className="px-6 py-3.5">Endereço de Entrega</th>
                         <th className="px-6 py-3.5">Equipamentos Enviados</th>
                         <th className="px-6 py-3.5">Contato</th>
+                        <th className="px-6 py-3.5">Ações</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-700 text-xs">
                       {filteredPacientes.length === 0 ? (
                         <tr>
-                          <td colSpan={4} className="text-center py-12 text-slate-400">
+                          <td colSpan={5} className="text-center py-12 text-slate-400">
                             Nenhum cliente encontrado.
                           </td>
                         </tr>
@@ -1206,6 +1220,22 @@ export default function GestorEquipamentos() {
                                 {p.txt_whatsapp && <div className="text-slate-600 font-medium">WhatsApp: {p.txt_whatsapp}</div>}
                                 {p.txt_email && <div className="text-[10px] text-slate-400">{p.txt_email}</div>}
                                 {!p.txt_whatsapp && !p.txt_email && <span className="text-slate-400">-</span>}
+                              </td>
+                              <td className="px-6 py-4">
+                                {hasActiveRental ? (
+                                  <a
+                                    href={`/gestor/equipamentos/romaneio?cliente=${p._id}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Gerar romaneio de entrega para impressão"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold text-indigo-600 border border-indigo-200 bg-indigo-50/50 hover:bg-indigo-50 transition-colors"
+                                  >
+                                    <Printer className="w-3.5 h-3.5" />
+                                    Romaneio
+                                  </a>
+                                ) : (
+                                  <span className="text-slate-300">-</span>
+                                )}
                               </td>
                             </tr>
                           );

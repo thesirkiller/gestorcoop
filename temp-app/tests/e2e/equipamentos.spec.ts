@@ -125,3 +125,103 @@ test('Permite clicar em "Conferir Agora" de dentro do modal de edição', async 
   await expect(page.getByText('Conferência Pós-Recolhimento')).toBeVisible();
   await expect(page.getByRole('dialog').getByText('Concentrador de oxigênio com nebulização')).toBeVisible();
 });
+
+// --- Romaneio de entrega ---
+
+const mockCliente = {
+  _id: 'cli-1',
+  txt_nome: 'Gabriele Almeida',
+  txt_cpf: '123.456.789-00',
+  txt_whatsapp: '(11) 90000-0000',
+  txt_endereco: 'Rua das Flores, 100 - São Paulo/SP',
+  txt_tipo: 'Homecare',
+};
+
+const mockLocacoesAtivas = [
+  {
+    _id: 'loc-1',
+    fk_equipamento: 'equip-1',
+    fk_paciente: 'cli-1',
+    date_inicio: '2026-08-01',
+    date_fim_previsto: '2026-09-01',
+    num_valor_aluguel: 100,
+    txt_status: 'Ativo',
+  },
+  {
+    _id: 'loc-2',
+    fk_equipamento: 'equip-2',
+    fk_paciente: 'cli-1',
+    date_inicio: '2026-08-01',
+    date_fim_previsto: '2026-09-01',
+    num_valor_aluguel: 200,
+    txt_status: 'Ativo',
+  },
+];
+
+// Sobrepõe os mocks vazios de mockApis com um cliente que tem locações ativas.
+// No Playwright a rota registrada por último vence, então esta função deve ser
+// chamada depois de mockApis.
+async function mockClienteComLocacoes(page: Page) {
+  await page.route('**/api/gestor/pacientes', (route) =>
+    route.fulfill({ json: { success: true, data: [mockCliente] } })
+  );
+  await page.route('**/api/gestor/locacoes', (route) =>
+    route.fulfill({ json: { success: true, data: mockLocacoesAtivas } })
+  );
+  await page.route('**/api/gestor/domicilios**', (route) =>
+    route.fulfill({ json: { success: true, data: [] } })
+  );
+}
+
+test('Exibe o botão de romaneio para cliente com locação ativa', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockClienteComLocacoes(page);
+
+  await page.goto('/gestor/equipamentos');
+  await page.getByRole('button', { name: 'Cadastro de Clientes' }).click();
+
+  const linha = page.locator('tr', { hasText: 'Gabriele Almeida' });
+  const botao = linha.getByRole('link', { name: 'Romaneio' });
+  await expect(botao).toBeVisible();
+  await expect(botao).toHaveAttribute('href', '/gestor/equipamentos/romaneio?cliente=cli-1');
+});
+
+test('Romaneio abre com todos os equipamentos ativos marcados e permite desmarcar', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockClienteComLocacoes(page);
+
+  await page.goto('/gestor/equipamentos/romaneio?cliente=cli-1');
+
+  // Cabeçalho do documento e dados do cliente
+  await expect(page.getByText('ROMANEIO DE ENTREGA DE EQUIPAMENTOS')).toBeVisible();
+  await expect(page.getByText('Rua das Flores, 100 - São Paulo/SP')).toBeVisible();
+
+  // Os dois equipamentos vêm marcados e aparecem no documento
+  await expect(page.getByText('2 de 2 equipamentos selecionados')).toBeVisible();
+  const documento = page.locator('#print-area');
+  await expect(documento.getByText('LUMI-MERC-5310')).toBeVisible();
+  await expect(documento.getByText('PIL-COMF-9988')).toBeVisible();
+  await expect(documento.getByText('Total de itens: 2')).toBeVisible();
+
+  // Desmarcar um item o remove do documento impresso
+  await page.getByRole('checkbox').first().uncheck();
+  await expect(page.getByText('1 de 2 equipamentos selecionados')).toBeVisible();
+  await expect(documento.getByText('LUMI-MERC-5310')).toHaveCount(0);
+  await expect(documento.getByText('PIL-COMF-9988')).toBeVisible();
+  await expect(documento.getByText('Total de itens: 1')).toBeVisible();
+});
+
+test('Romaneio pré-seleciona apenas o item informado na query', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockClienteComLocacoes(page);
+
+  await page.goto('/gestor/equipamentos/romaneio?cliente=cli-1&itens=loc-2');
+
+  await expect(page.getByText('1 de 2 equipamentos selecionados')).toBeVisible();
+  const documento = page.locator('#print-area');
+  await expect(documento.getByText('PIL-COMF-9988')).toBeVisible();
+  await expect(documento.getByText('LUMI-MERC-5310')).toHaveCount(0);
+});
