@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { COOKIE_SESSAO_COOPERADO } from '@/lib/sessao-cooperado';
+// Duplicado de propósito em vez de importado de `@/lib/sessao-cooperado`: aquele
+// módulo importa `@/lib/bubble`, que instancia o axios e LANÇA no carregamento
+// quando BUBBLE_API_URL falta. Arrastar isso para o bundle do middleware, que
+// roda no edge a cada requisição, derruba o SSR inteiro.
+const COOKIE_SESSAO_COOPERADO = 'cooperado_session';
 
 /**
  * Rotas do prefixo /cooperado que precisam continuar públicas: são o funil de

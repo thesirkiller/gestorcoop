@@ -204,30 +204,32 @@ export default function ProntuariosAuditDashboard() {
       {/* Seção Filtros */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-end">
         {/* Pesquisa Geral */}
-        <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
-          <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
-            <Search className="w-3.5 h-3.5" />
+        <div className="flex-1 w-full sm:min-w-[200px] flex flex-col gap-1.5">
+          <label htmlFor="filtroPesquisa" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+            <Search className="w-3.5 h-3.5" aria-hidden="true" />
             Pesquisa rápida
           </label>
           <input
+            id="filtroPesquisa"
             type="text"
             placeholder="Buscar por Paciente, CPF ou Profissional..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350 w-full"
+            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350 w-full"
           />
         </div>
 
         {/* Especialidade */}
-        <div className="w-[180px] flex flex-col gap-1.5">
-          <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
-            <Filter className="w-3.5 h-3.5" />
+        <div className="w-full sm:w-[180px] flex flex-col gap-1.5">
+          <label htmlFor="filtroEspecialidade" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             Especialidade
           </label>
           <select
+            id="filtroEspecialidade"
             value={selectedSpecialty}
             onChange={(e) => setSelectedSpecialty(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350"
+            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350"
           >
             <option value="">Todas as especialidades</option>
             <option value="Tecnico_Enfermagem">Enfermagem</option>
@@ -237,14 +239,15 @@ export default function ProntuariosAuditDashboard() {
         </div>
 
         {/* Turno */}
-        <div className="w-[120px] flex flex-col gap-1.5">
-          <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+        <div className="w-full sm:w-[120px] flex flex-col gap-1.5">
+          <label htmlFor="filtroTurno" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
             Turno
           </label>
           <select
+            id="filtroTurno"
             value={selectedTurno}
             onChange={(e) => setSelectedTurno(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350"
+            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350"
           >
             <option value="">Todos</option>
             <option value="Diurno">Diurno</option>
@@ -254,27 +257,29 @@ export default function ProntuariosAuditDashboard() {
         </div>
 
         {/* Datas */}
-        <div className="flex gap-2">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+        <div className="flex gap-2 w-full sm:w-auto">
+          <div className="flex flex-col gap-1.5 flex-1 sm:flex-none">
+            <label htmlFor="filtroDataDe" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
               De
             </label>
             <input
+              id="filtroDataDe"
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350"
+              className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350"
             />
           </div>
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+          <div className="flex flex-col gap-1.5 flex-1 sm:flex-none">
+            <label htmlFor="filtroDataAte" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
               Até
             </label>
             <input
+              id="filtroDataAte"
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350"
+              className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350"
             />
           </div>
         </div>
@@ -287,7 +292,10 @@ export default function ProntuariosAuditDashboard() {
         ) : filteredEvolutions.length === 0 ? (
           <div className="text-center py-10 text-xs font-bold text-slate-500">Nenhum prontuário encontrado com os filtros selecionados.</div>
         ) : (
-          <table className="w-full text-left border-collapse">
+          // A tabela rola dentro do próprio contêiner; sem isso ela empurra a
+          // largura da página e o corpo inteiro rola na horizontal no celular.
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-450">
                 <th className="py-3 px-4">Paciente / CPF</th>
@@ -376,6 +384,7 @@ export default function ProntuariosAuditDashboard() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

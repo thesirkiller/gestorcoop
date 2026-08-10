@@ -167,30 +167,32 @@ export default function ReconciliacaoMedicamentosPage() {
       {/* Filtros */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-end">
         {/* Pesquisa */}
-        <div className="flex-1 min-w-[200px] flex flex-col gap-1.5">
-          <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
-            <Search className="w-3.5 h-3.5" />
+        <div className="flex-1 w-full sm:min-w-[200px] flex flex-col gap-1.5">
+          <label htmlFor="auditoriaPesquisa" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+            <Search className="w-3.5 h-3.5" aria-hidden="true" />
             Pesquisa
           </label>
           <input
+            id="auditoriaPesquisa"
             type="text"
             placeholder="Buscar por Paciente, Medicamento ou Técnico..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350 w-full"
+            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350 w-full"
           />
         </div>
 
         {/* Tipo Desvio */}
-        <div className="w-[200px] flex flex-col gap-1.5">
-          <label className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
-            <Filter className="w-3.5 h-3.5" />
+        <div className="w-full sm:w-[200px] flex flex-col gap-1.5">
+          <label htmlFor="auditoriaFiltroDesvio" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+            <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             Filtrar Inconformidades
           </label>
           <select
+            id="auditoriaFiltroDesvio"
             value={filterDesvio}
             onChange={(e) => setFilterDesvio(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus:border-slate-350"
+            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350"
           >
             <option value="">Todos os status</option>
             <option value="Atraso">Atraso Crítico (&gt;1h)</option>
@@ -216,7 +218,9 @@ export default function ReconciliacaoMedicamentosPage() {
         ) : filtered.length === 0 ? (
           <div className="text-center py-10 text-xs font-bold text-slate-500">Nenhum desvio ou reconciliação registrada.</div>
         ) : (
-          <table className="w-full text-left border-collapse">
+          // Rolagem contida na tabela; sem isso a página inteira rola lateralmente no celular.
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[720px] text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-450">
                 <th className="py-3 px-4">Paciente</th>
@@ -288,6 +292,7 @@ export default function ReconciliacaoMedicamentosPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
