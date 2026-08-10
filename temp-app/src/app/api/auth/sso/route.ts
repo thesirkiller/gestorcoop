@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 import { cookies } from 'next/headers';
 
+import { COOKIE_SESSAO_COOPERADO } from '@/lib/sessao-cooperado';
+
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 
@@ -28,15 +30,35 @@ export async function GET(request: NextRequest) {
     // Limpar o token no Bubble para uso único
     await bubbleApi.clearSSOToken(user._id);
 
-    // Salvar sessão do gestor em cookie seguro (HTTP-only)
+    // O cookie emitido depende da área de destino. Antes, todo SSO gravava
+    // `gestor_session` — como o middleware só confere a PRESENÇA do cookie,
+    // qualquer usuário que obtivesse um token entrava no painel do gestor
+    // inteiro. Emitindo a sessão da área pedida, um cooperado que abre o
+    // prontuário não recebe de brinde acesso à gestão.
+    const ehDestinoCooperado = redirectPath.startsWith('/cooperado');
     const cookieStore = cookies();
-    cookieStore.set('gestor_session', user._id, {
+
+    // sameSite 'lax' funciona dentro do iframe do Bubble DESDE QUE o app seja
+    // servido num subdomínio de gestorcoop.app (ex.: prontuario.gestorcoop.app).
+    // Em domínio distinto (gestorcoop.pages.dev) o navegador trata como
+    // cross-site e não envia o cookie — o Safari bloqueia mesmo com 'none'.
+    const opcoesCookie = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
+      sameSite: 'lax' as const,
       maxAge: 60 * 60 * 12, // 12 horas
       path: '/',
-    });
+    };
+
+    if (ehDestinoCooperado) {
+      if (!user.fk_cooperado) {
+        console.warn(`User ${user._id} tentou abrir o prontuário sem fk_cooperado vinculado.`);
+        return NextResponse.redirect(new URL('/login?error=sem_cooperado_vinculado', request.url));
+      }
+      cookieStore.set(COOKIE_SESSAO_COOPERADO, user._id, opcoesCookie);
+    } else {
+      cookieStore.set('gestor_session', user._id, opcoesCookie);
+    }
 
     // Redireciona para o destino
     return NextResponse.redirect(new URL(redirectPath, request.url));
