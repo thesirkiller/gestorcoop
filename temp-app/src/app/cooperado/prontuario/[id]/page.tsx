@@ -426,12 +426,18 @@ export default function ProntuarioAtendimento() {
       {/* Modal Mandatório de Identificação do Paciente */}
       {showIdentificacaoModal && !identificado && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full text-center">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="tituloIdentificacao"
+            aria-describedby="descIdentificacao"
+            className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full text-center"
+          >
             <div className="mx-auto w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mb-4">
-              <User className="w-6 h-6" />
+              <User className="w-6 h-6" aria-hidden="true" />
             </div>
-            <h3 className="text-base font-black text-slate-900 mb-2">Identificação de Segurança</h3>
-            <p className="text-xs text-slate-500 mb-5 leading-relaxed">
+            <h3 id="tituloIdentificacao" className="text-base font-black text-slate-900 mb-2">Identificação de Segurança</h3>
+            <p id="descIdentificacao" className="text-xs text-slate-500 mb-5 leading-relaxed">
               Confirme visualmente que você está diante do paciente correto antes de qualquer evolução clínica:
             </p>
             
@@ -540,8 +546,10 @@ export default function ProntuarioAtendimento() {
               
               {/* Seleção do Turno */}
               <div>
-                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Turno de Enfermagem</label>
-                <div className="grid grid-cols-3 gap-2">
+                {/* Grupo de botões, não um campo: rotular via role/aria-labelledby.
+                    Um <label> solto aqui não se associa a nada. */}
+                <span id="rotuloTurno" className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Turno de Enfermagem</span>
+                <div role="group" aria-labelledby="rotuloTurno" className="grid grid-cols-3 gap-2">
                   {(['Diurno', 'Noturno', '24h'] as const).map((t) => (
                     <button
                       key={t}
@@ -640,11 +648,20 @@ export default function ProntuarioAtendimento() {
           {/* Modal Justificativa de Omissão */}
           {checkingAprazamento && checkingAprazamento.status === 'Pendente' && (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="tituloJustificativa"
+                className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full"
+              >
                 <div className="flex justify-between items-center mb-4">
-                  <h3 className="text-sm font-black text-slate-900">Justificativa de Omissão</h3>
-                  <button onClick={() => setCheckingAprazamento(null)} className="text-slate-400 hover:text-slate-700">
-                    <X className="w-4 h-4" />
+                  <h3 id="tituloJustificativa" className="text-sm font-black text-slate-900">Justificativa de Omissão</h3>
+                  <button
+                    onClick={() => setCheckingAprazamento(null)}
+                    aria-label="Fechar justificativa de omissão"
+                    className="text-slate-400 hover:text-slate-700 w-11 h-11 -m-2 flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                  >
+                    <X className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
                 
@@ -654,11 +671,12 @@ export default function ProntuarioAtendimento() {
                   </p>
                   
                   <div className="flex flex-col gap-1.5">
-                    <label className="font-bold text-slate-700">Motivo</label>
+                    <label htmlFor="justificativaMotivo" className="font-bold text-slate-700">Motivo</label>
                     <select
+                      id="justificativaMotivo"
                       value={justificativaMotivo}
                       onChange={(e) => setJustificativaMotivo(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-800 focus:outline-none"
+                      className="bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
                     >
                       <option value="Paciente recusou">Paciente recusou</option>
                       <option value="Medicamento ausente">Medicamento ausente</option>
@@ -669,13 +687,14 @@ export default function ProntuarioAtendimento() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="font-bold text-slate-700">Explicação / Detalhes</label>
+                    <label htmlFor="justificativaTexto" className="font-bold text-slate-700">Explicação / Detalhes</label>
                     <textarea
+                      id="justificativaTexto"
                       rows={3}
                       value={justificativaTexto}
                       onChange={(e) => setJustificativaTexto(e.target.value)}
                       placeholder="Descreva detalhadamente o ocorrido..."
-                      className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 placeholder-slate-400 focus:outline-none"
+                      className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
                     />
                   </div>
 
@@ -775,8 +794,8 @@ export default function ProntuarioAtendimento() {
 
             {/* Tela de Revisão & Edição de Texto */}
             <div className="flex flex-col gap-1.5 mt-2">
-              <label className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-600" />
+              <label htmlFor="revisaoEvolucao" className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-indigo-600" aria-hidden="true" />
                 Revisão Textual da Evolução
               </label>
 
@@ -788,12 +807,13 @@ export default function ProntuarioAtendimento() {
                 </div>
               ) : (
                 <textarea
+                  id="revisaoEvolucao"
                   rows={6}
                   disabled={isLocked}
                   value={transcriptionText}
                   onChange={(e) => setTranscriptionText(e.target.value)}
                   placeholder="A evolução estruturada aparecerá aqui automaticamente após gravar o áudio..."
-                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-300 focus:bg-white resize-none"
+                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 focus:bg-white resize-none"
                 />
               )}
             </div>
@@ -819,7 +839,7 @@ export default function ProntuarioAtendimento() {
                   placeholder="PIN (6 dígitos)"
                   value={pinCode}
                   onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
-                  className="bg-white border border-indigo-150 rounded-lg p-2.5 text-center text-sm font-black text-slate-800 w-28 focus:outline-none focus:border-indigo-500"
+                  className="bg-white border border-indigo-150 rounded-lg p-2.5 text-center text-sm font-black text-slate-800 w-28 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-indigo-500"
                 />
                 <button
                   onClick={handleAssinarProntuario}
