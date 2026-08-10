@@ -349,10 +349,11 @@ test('Mostra o erro do Bubble sem fechar o modal nem perder o preenchimento', as
   await page.getByRole('button', { name: 'Registrar' }).click();
 
   // A mensagem do Bubble chega à tela — foi o que o gestor viu em produção.
-  // O texto aparece duas vezes (banner da página e do modal), que compartilham
-  // o mesmo estado `errorMsg`; aqui interessa o de dentro do modal.
+  // O erro do modal mora no modal: aparece uma única vez, e não também no
+  // banner da página (que é reservado a falhas de carregamento da listagem).
   const modal = page.getByRole('dialog');
   await expect(modal.getByText('Field not found fk_paciente for type domicilio')).toBeVisible();
+  await expect(page.getByText('Field not found fk_paciente for type domicilio')).toHaveCount(1);
 
   // O modal continua aberto e nada do que foi digitado se perde
   await expect(modal).toBeVisible();
@@ -380,5 +381,6 @@ test('Cai na mensagem genérica quando a API não devolve motivo', async ({ page
 
   const modal = page.getByRole('dialog');
   await expect(modal.getByText('Erro ao registrar locação.')).toBeVisible();
+  await expect(page.getByText('Erro ao registrar locação.')).toHaveCount(1);
   await expect(modal).toBeVisible();
 });

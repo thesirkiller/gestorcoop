@@ -24,6 +24,18 @@ import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Pacien
 import { TipoCobrancaLocacao, RentabilidadeResultado } from '@/lib/equipamentos-financeiro';
 import { generateSerialNumber } from '@/lib/equipamentos-helpers';
 
+// Banner de erro renderizado dentro do modal que originou a falha, para que a
+// mensagem não apareça também no banner da página (que é só para a listagem).
+function ModalErrorBanner({ message }: { message: string }) {
+  if (!message) return null;
+  return (
+    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
+      <Info className="w-5 h-5 text-red-500 shrink-0" />
+      <span className="text-xs font-medium">{message}</span>
+    </div>
+  );
+}
+
 export default function GestorEquipamentos() {
   // Data States
   const [equipamentos, setEquipamentos] = useState<Equipamento[]>([]);
@@ -31,7 +43,10 @@ export default function GestorEquipamentos() {
   const [locacoes, setLocacoes] = useState<LocacaoEquipamento[]>([]);
   const [reservas, setReservas] = useState<ReservaEquipamento[]>([]);
   const [loading, setLoading] = useState(true);
+  // errorMsg: falhas do carregamento da listagem (banner da página).
+  // modalErrorMsg: falhas das ações feitas dentro de um modal (banner do próprio modal).
   const [errorMsg, setErrorMsg] = useState('');
+  const [modalErrorMsg, setModalErrorMsg] = useState('');
   const [fluxoV2Ativo, setFluxoV2Ativo] = useState(false);
 
   // Active Tab
@@ -299,6 +314,7 @@ export default function GestorEquipamentos() {
       setEquipPreco('');
       setEquipStatus('Disponível');
     }
+    setModalErrorMsg('');
     setIsEquipModalOpen(true);
   };
 
@@ -311,7 +327,7 @@ export default function GestorEquipamentos() {
     setRentDataFimPrevisto('');
     setRentObservacoes('');
     setPatientSearch('');
-    setErrorMsg('');
+    setModalErrorMsg('');
     setIsRentalModalOpen(true);
   };
 
@@ -321,6 +337,7 @@ export default function GestorEquipamentos() {
     setHistoricoEventos([]);
     setHistoricoOrdens([]);
     setRentabilidade(null);
+    setModalErrorMsg('');
     setHistoricoLoading(true);
 
     if (fluxoV2Ativo) {
@@ -342,7 +359,7 @@ export default function GestorEquipamentos() {
       }
     } catch (error) {
       console.error('Erro ao carregar histórico:', error);
-      setErrorMsg('Não foi possível carregar o histórico do equipamento.');
+      setModalErrorMsg('Não foi possível carregar o histórico do equipamento.');
     } finally {
       setHistoricoLoading(false);
     }
@@ -352,7 +369,7 @@ export default function GestorEquipamentos() {
     event.preventDefault();
     if (!reservaParaCancelar?._id) return;
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
     try {
       await axios.post(
         `/api/gestor/equipamentos/${reservaParaCancelar.fk_equipamento}/reservas/${reservaParaCancelar._id}/cancelar`,
@@ -363,7 +380,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (error) {
       const responseError = error as { response?: { data?: { error?: string } } };
-      setErrorMsg(responseError.response?.data?.error || 'Erro ao cancelar a reserva.');
+      setModalErrorMsg(responseError.response?.data?.error || 'Erro ao cancelar a reserva.');
     } finally {
       setSubmitting(false);
     }
@@ -373,6 +390,7 @@ export default function GestorEquipamentos() {
     setSelectedForMaintenance(equipamento);
     setMaintenanceReason('');
     setMaintenanceDetails('');
+    setModalErrorMsg('');
     setIsMaintenanceModalOpen(true);
   };
 
@@ -381,6 +399,7 @@ export default function GestorEquipamentos() {
     setReservePatientId('');
     setReserveDate('');
     setReserveValidity('');
+    setModalErrorMsg('');
     setIsReserveModalOpen(true);
   };
 
@@ -388,7 +407,7 @@ export default function GestorEquipamentos() {
     event.preventDefault();
     if (!selectedForReserve?._id) return;
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
     try {
       await axios.post(`/api/gestor/equipamentos/${selectedForReserve._id}/reservas`, {
         fk_paciente: reservePatientId,
@@ -399,7 +418,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (error) {
       const responseError = error as { response?: { data?: { error?: string } } };
-      setErrorMsg(responseError.response?.data?.error || 'Erro ao reservar o equipamento.');
+      setModalErrorMsg(responseError.response?.data?.error || 'Erro ao reservar o equipamento.');
     } finally {
       setSubmitting(false);
     }
@@ -409,6 +428,7 @@ export default function GestorEquipamentos() {
     setSelectedForInspection(equipamento);
     setInspectionResult('');
     setInspectionDestination('Aguardando higienização');
+    setModalErrorMsg('');
     setIsInspectionModalOpen(true);
   };
 
@@ -416,13 +436,14 @@ export default function GestorEquipamentos() {
     event.preventDefault();
     if (!selectedForInspection?._id) return;
     setSubmitting(true);
+    setModalErrorMsg('');
     try {
       await axios.post(`/api/gestor/equipamentos/${selectedForInspection._id}/conferencias`, { txt_resultado: inspectionResult, txt_status_destino: inspectionDestination });
       setIsInspectionModalOpen(false);
       fetchData();
     } catch (error) {
       const responseError = error as { response?: { data?: { error?: string } } };
-      setErrorMsg(responseError.response?.data?.error || 'Erro ao registrar a conferência.');
+      setModalErrorMsg(responseError.response?.data?.error || 'Erro ao registrar a conferência.');
     } finally { setSubmitting(false); }
   };
 
@@ -430,6 +451,7 @@ export default function GestorEquipamentos() {
     setSelectedForHygiene(equipamento);
     setHygieneMethod('');
     setHygieneResult('');
+    setModalErrorMsg('');
     setIsHygieneModalOpen(true);
   };
 
@@ -437,13 +459,14 @@ export default function GestorEquipamentos() {
     event.preventDefault();
     if (!selectedForHygiene?._id) return;
     setSubmitting(true);
+    setModalErrorMsg('');
     try {
       await axios.post(`/api/gestor/equipamentos/${selectedForHygiene._id}/higienizacoes`, { txt_metodo: hygieneMethod, txt_resultado: hygieneResult });
       setIsHygieneModalOpen(false);
       fetchData();
     } catch (error) {
       const responseError = error as { response?: { data?: { error?: string } } };
-      setErrorMsg(responseError.response?.data?.error || 'Erro ao registrar higienização.');
+      setModalErrorMsg(responseError.response?.data?.error || 'Erro ao registrar higienização.');
     } finally { setSubmitting(false); }
   };
 
@@ -451,7 +474,7 @@ export default function GestorEquipamentos() {
     event.preventDefault();
     if (!selectedForMaintenance?._id) return;
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
     try {
       await axios.post(`/api/gestor/equipamentos/${selectedForMaintenance._id}/manutencoes`, {
         txt_motivo: maintenanceReason,
@@ -462,7 +485,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (error) {
       const responseError = error as { response?: { data?: { error?: string } } };
-      setErrorMsg(responseError.response?.data?.error || 'Erro ao abrir a ordem de serviço.');
+      setModalErrorMsg(responseError.response?.data?.error || 'Erro ao abrir a ordem de serviço.');
     } finally {
       setSubmitting(false);
     }
@@ -514,7 +537,7 @@ export default function GestorEquipamentos() {
   const handleSubmitEquipamento = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
 
     try {
       let finalSerie = equipSerie.trim();
@@ -543,7 +566,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
-      setErrorMsg(error.response?.data?.error || 'Erro ao salvar equipamento.');
+      setModalErrorMsg(error.response?.data?.error || 'Erro ao salvar equipamento.');
     } finally {
       setSubmitting(false);
     }
@@ -553,7 +576,7 @@ export default function GestorEquipamentos() {
   const handleSubmitPaciente = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
 
     try {
       const payload = {
@@ -577,7 +600,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
-      setErrorMsg(error.response?.data?.error || 'Erro ao cadastrar cliente.');
+      setModalErrorMsg(error.response?.data?.error || 'Erro ao cadastrar cliente.');
     } finally {
       setSubmitting(false);
     }
@@ -587,7 +610,7 @@ export default function GestorEquipamentos() {
   const handleSubmitRental = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
 
     try {
       const payload = {
@@ -608,7 +631,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
-      setErrorMsg(error.response?.data?.error || 'Erro ao registrar locação.');
+      setModalErrorMsg(error.response?.data?.error || 'Erro ao registrar locação.');
     } finally {
       setSubmitting(false);
     }
@@ -628,6 +651,7 @@ export default function GestorEquipamentos() {
   const handleOpenReturnModal = (rental: LocacaoEquipamento) => {
     setSelectedRentalForReturn(rental);
     setReturnEquipStatus('Disponível');
+    setModalErrorMsg('');
     setIsReturnModalOpen(true);
   };
 
@@ -636,7 +660,7 @@ export default function GestorEquipamentos() {
     e.preventDefault();
     if (!selectedRentalForReturn?._id) return;
     setSubmitting(true);
-    setErrorMsg('');
+    setModalErrorMsg('');
 
     try {
       await axios.patch(`/api/gestor/locacoes/${selectedRentalForReturn._id}`, {
@@ -651,7 +675,7 @@ export default function GestorEquipamentos() {
       fetchData();
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
-      setErrorMsg(error.response?.data?.error || 'Erro ao finalizar devolução.');
+      setModalErrorMsg(error.response?.data?.error || 'Erro ao finalizar devolução.');
     } finally {
       setSubmitting(false);
     }
@@ -838,7 +862,10 @@ export default function GestorEquipamentos() {
 
           {activeTab === 'pacientes' && (
             <button
-              onClick={() => setIsPatientModalOpen(true)}
+              onClick={() => {
+                setModalErrorMsg('');
+                setIsPatientModalOpen(true);
+              }}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -1113,7 +1140,7 @@ export default function GestorEquipamentos() {
                                 onClick={() => {
                                   setReservaParaCancelar(r);
                                   setCancelReservaMotivo('');
-                                  setErrorMsg('');
+                                  setModalErrorMsg('');
                                 }}
                                 className="text-rose-600 hover:text-rose-800 inline-flex items-center gap-1 text-xs font-bold hover:underline transition-colors"
                               >
@@ -1264,6 +1291,7 @@ export default function GestorEquipamentos() {
               </button>
             </div>
             <div className="p-6 overflow-y-auto space-y-6">
+              <ModalErrorBanner message={modalErrorMsg} />
               {fluxoV2Ativo && (
                 <section>
                   <div className="flex items-center justify-between mb-3">
@@ -1400,6 +1428,7 @@ export default function GestorEquipamentos() {
               </button>
             </div>
             <form onSubmit={handleSubmitCancelReserva} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Motivo do cancelamento *</label>
                 <textarea
@@ -1438,6 +1467,7 @@ export default function GestorEquipamentos() {
               </button>
             </div>
             <form onSubmit={handleSubmitHygiene} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="hygieneMethod" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Método *</label>
                 <input id="hygieneMethod" required value={hygieneMethod} onChange={(event) => setHygieneMethod(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all" placeholder="Ex.: Limpeza química e troca de filtro" />
@@ -1470,6 +1500,7 @@ export default function GestorEquipamentos() {
               </button>
             </div>
             <form onSubmit={handleSubmitInspection} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="inspectionResult" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Resultado *</label>
                 <textarea id="inspectionResult" required value={inspectionResult} onChange={(event) => setInspectionResult(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 transition-all h-24 resize-none" placeholder="Estado geral do ativo, integridade dos acessórios, avarias..." />
@@ -1504,6 +1535,7 @@ export default function GestorEquipamentos() {
               <button onClick={() => setIsReserveModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleSubmitReserve} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="reservePatientId" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Cliente *</label>
                 <select id="reservePatientId" required value={reservePatientId} onChange={(event) => setReservePatientId(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all">
@@ -1547,6 +1579,7 @@ export default function GestorEquipamentos() {
               </button>
             </div>
             <form onSubmit={handleSubmitMaintenance} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="maintenanceReason" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Motivo *</label>
                 <select id="maintenanceReason" required value={maintenanceReason} onChange={(event) => setMaintenanceReason(event.target.value)} className="w-full bg-slate-50/50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all">
@@ -1591,6 +1624,7 @@ export default function GestorEquipamentos() {
             </div>
 
             <form onSubmit={handleSubmitEquipamento} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="equipNome" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome do Equipamento *</label>
                 <input
@@ -1756,6 +1790,7 @@ export default function GestorEquipamentos() {
             </div>
 
             <form onSubmit={handleSubmitPaciente} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="patNome" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Nome Completo *</label>
                 <input
@@ -1870,12 +1905,7 @@ export default function GestorEquipamentos() {
             </div>
 
             <form onSubmit={handleSubmitRental} className="p-6 space-y-4">
-              {errorMsg && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center gap-3">
-                  <Info className="w-5 h-5 text-red-500 shrink-0" />
-                  <span className="text-xs font-medium">{errorMsg}</span>
-                </div>
-              )}
+              <ModalErrorBanner message={modalErrorMsg} />
               <div>
                 <label htmlFor="patientSearch" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Selecionar Cliente *</label>
                 <div className="space-y-2">
@@ -2040,6 +2070,7 @@ export default function GestorEquipamentos() {
             </div>
 
             <form onSubmit={handleSubmitReturn} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
               <div className="bg-slate-50 border border-slate-200/60 p-4 rounded-xl text-xs space-y-1.5">
                 <div className="text-slate-400 font-bold uppercase tracking-wider text-[9px]">Resumo da Locação</div>
                 <div className="text-slate-800">
