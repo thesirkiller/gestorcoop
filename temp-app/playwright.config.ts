@@ -15,7 +15,18 @@ export default defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        // O prontuário grava áudio. Sem conceder o microfone e sem um
+        // dispositivo falso, getUserMedia rejeita, a gravação nunca começa e o
+        // teste de transcrição falha procurando um botão que só aparece com a
+        // gravação em curso. As flags fazem o Chrome aceitar automaticamente e
+        // tocar um tom sintético no lugar do microfone real.
+        permissions: ['microphone'],
+        launchOptions: {
+          args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
+        },
+      },
     },
   ],
   webServer: {

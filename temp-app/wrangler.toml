@@ -1,0 +1,9 @@
+# Configuration for Cloudflare Pages with Next-on-Pages / D1 Database
+name = "gestorcoop"
+compatibility_date = "2024-05-02"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "gestorcoop-db"
+database_id = "local" # O D1 usará sqlite local para ambiente de desenvolvimento
+migrations_dir = "migrations"
