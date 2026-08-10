@@ -555,7 +555,7 @@ export default function ProntuarioAtendimento() {
                       key={t}
                       disabled={isLocked}
                       onClick={() => setTurno(t)}
-                      className={`py-2 px-3 text-xs font-bold rounded-lg border transition-all ${
+                      className={`min-h-[44px] py-2 px-3 text-xs font-bold rounded-lg border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                         turno === t
                           ? 'bg-indigo-600 text-white border-indigo-600'
                           : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
@@ -610,22 +610,30 @@ export default function ProntuarioAtendimento() {
 
                         {/* Checagem Actions */}
                         {apraz.status === 'Pendente' ? (
-                          <div className="flex gap-1.5 shrink-0">
+                          // Par de maior risco da tela: registra administração de
+                          // medicamento. Eram 30x30px (p-2 + ícone de 14px) a 6px
+                          // um do outro, vermelho colado no verde, só ícone. Em
+                          // campo, no celular, isso é erro de dose esperando
+                          // acontecer. Agora 44x44 com separação de 12px, e o
+                          // rótulo aparece assim que a largura permite.
+                          <div className="flex gap-3 shrink-0">
                             <button
                               disabled={isLocked}
                               onClick={() => handleCheckMedicação(apraz, 'Nao_Administrado')}
-                              className="border border-red-200 text-red-650 hover:bg-red-50 p-2 rounded-lg transition-all"
-                              title="Não Administrado"
+                              className="border border-red-200 text-red-650 hover:bg-red-50 disabled:opacity-40 min-w-[44px] min-h-[44px] px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                              aria-label={`Registrar não administrado: ${apraz.medicamento}`}
                             >
-                              <X className="w-3.5 h-3.5" />
+                              <X className="w-4 h-4" aria-hidden="true" />
+                              <span className="text-[11px] font-bold whitespace-nowrap">Não deu</span>
                             </button>
                             <button
                               disabled={isLocked}
                               onClick={() => handleCheckMedicação(apraz, 'Administrado')}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white p-2 rounded-lg shadow transition-all"
-                              title="Checar Administração"
+                              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white min-w-[44px] min-h-[44px] px-3 rounded-lg shadow transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+                              aria-label={`Registrar administrado: ${apraz.medicamento}`}
                             >
-                              <Check className="w-3.5 h-3.5" />
+                              <Check className="w-4 h-4" aria-hidden="true" />
+                              <span className="text-[11px] font-bold whitespace-nowrap">Administrado</span>
                             </button>
                           </div>
                         ) : (
