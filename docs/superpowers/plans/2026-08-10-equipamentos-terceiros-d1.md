@@ -311,7 +311,7 @@ Conecta com o relatório por cliente pedido em 2026-08-10 (ver conversa; o roman
 
 ## Questões em aberto
 
-1. **Pro-rata na entrada e na devolução** — mês cheio ou proporcional? Depende dos contratos assinados. (Task 8)
-2. **`EQUIPAMENTOS_V2_ENABLED` em produção** — se estiver `true`, produção está quebrada agora. (Task 2)
+1. ~~**Pro-rata na entrada e na devolução**~~ — **FECHADO em 2026-08-10 por decisão do solicitante:** fica o proporcional por dias corridos já implementado em `calcularCustoPeriodo`, contando entrada e devolução como dias cobrados. Não reabrir sem uma fatura real que contradiga a regra. A função segue isolada, então trocar continua sendo mudança de um arquivo.
+2. ~~**`EQUIPAMENTOS_V2_ENABLED` em produção**~~ — **RESPONDIDO em 2026-08-10 pelos dados, sem precisar abrir o painel: a flag está `true` no Cloudflare Pages.** A primeira locação registrada após o deploy do schema saiu com `fk_domicilio` e `fk_movimentacao_implantacao` preenchidos, o que só ocorre no caminho V2. Em produção: `locacao_equipamento` 2 → 3, `domicilio` 0 → 1 (o primeiro registro do tipo), `movimentacao_equipamento` 106 → 110. O fluxo de implantação, quebrado desde sempre, está funcionando.
 3. ~~**Reajuste de contrato**~~ — **RESOLVIDO em 2026-08-10:** o reajuste é feito manualmente pelo gestor, que edita o valor no cadastro do equipamento. Portanto `custo_mensal_terceiro` continua sendo um campo único, sem histórico de vigência. O schema da Task 4 está confirmado.
 4. **Equipamento de terceiro em manutenção** — o custo continua correndo? Quem paga o conserto, cooperativa ou proprietário? Afeta o relatório de margem.
