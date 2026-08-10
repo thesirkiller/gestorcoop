@@ -225,3 +225,160 @@ test('Romaneio pré-seleciona apenas o item informado na query', async ({ page }
   await expect(documento.getByText('PIL-COMF-9988')).toBeVisible();
   await expect(documento.getByText('LUMI-MERC-5310')).toHaveCount(0);
 });
+
+// --- Registro de locação ---
+//
+// O cadastro de locação quebrou em produção em 2026-08-10: com EQUIPAMENTOS_V2_ENABLED
+// ligado, a rota chama obterOuCriarDomicilioAtivo, que busca o tipo `domicilio` no Bubble
+// por `fk_paciente` — campo que não existia lá. O Bubble devolvia 404 "Field not found
+// fk_paciente for type domicilio" e o gestor via a mensagem crua na tela.
+// O schema do Bubble foi corrigido; estes testes cobrem o lado do app.
+
+const mockEquipamentoDisponivel = {
+  _id: 'equip-3',
+  txt_nome: 'Concentrador de Oxigênio',
+  txt_marca: 'Philips',
+  txt_modelo: 'EverFlo',
+  txt_numero_serie: 'SN-AUTO-1784',
+  num_preco_padrao: 189.9,
+  txt_status: 'Disponível',
+  txt_codigo_interno: 'EQP-003',
+  txt_numero_patrimonio: 'PAT-003',
+};
+
+// Registrada depois de mockApis para vencer a rota anterior (no Playwright a última vence).
+async function mockCatalogoComDisponivel(page: Page) {
+  await page.route('**/api/gestor/equipamentos', (route) => {
+    if (route.request().method() === 'GET') {
+      route.fulfill({
+        json: {
+          success: true,
+          data: [...mockEquipamentos, mockEquipamentoDisponivel],
+          fluxoV2Ativo: true,
+        },
+      });
+    } else {
+      route.fulfill({ json: { success: true } });
+    }
+  });
+  await page.route('**/api/gestor/pacientes', (route) =>
+    route.fulfill({ json: { success: true, data: [mockCliente] } })
+  );
+}
+
+async function abrirModalDeLocacao(page: Page) {
+  await page.goto('/gestor/equipamentos');
+  await page.getByRole('button', { name: 'Nova Locação' }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByText('Registrar Nova Locação')).toBeVisible();
+}
+
+async function preencherLocacao(page: Page) {
+  await page.getByLabel('Cliente selecionado').selectOption('cli-1');
+  await page.locator('#rentEquipId').selectOption('equip-3');
+  await page.locator('#rentDataInicio').fill('2026-08-10');
+  await page.locator('#rentDataFimPrevisto').fill('2026-09-10');
+  await page.locator('#rentTipoCobranca').selectOption('Somente mensalidade');
+}
+
+test('Só oferece equipamentos com status Disponível na nova locação', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockCatalogoComDisponivel(page);
+  await abrirModalDeLocacao(page);
+
+  // equip-1 e equip-2 estão aguardando conferência e não podem ser implantados
+  const opcoes = page.locator('#rentEquipId option');
+  await expect(opcoes).toHaveCount(2); // placeholder + o único disponível
+  await expect(opcoes.nth(1)).toHaveText(/SN-AUTO-1784/);
+});
+
+test('Registra locação e envia o payload esperado', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockCatalogoComDisponivel(page);
+
+  let payload: any = null;
+  await page.route('**/api/gestor/locacoes', async (route) => {
+    if (route.request().method() === 'POST') {
+      payload = route.request().postDataJSON();
+      await route.fulfill({ json: { success: true, data: { _id: 'loc-nova' } } });
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } });
+    }
+  });
+
+  await abrirModalDeLocacao(page);
+  await preencherLocacao(page);
+
+  // O valor é pré-preenchido a partir do preço padrão do equipamento
+  await expect(page.locator('#rentValor')).toHaveValue('189.9');
+
+  await page.getByRole('button', { name: 'Registrar' }).click();
+
+  await expect.poll(() => payload).not.toBeNull();
+  expect(payload.fk_paciente).toBe('cli-1');
+  expect(payload.fk_equipamento).toBe('equip-3');
+  expect(payload.date_inicio).toBe('2026-08-10');
+  expect(payload.date_fim_previsto).toBe('2026-09-10');
+  expect(payload.num_valor_aluguel).toBe(189.9);
+  expect(payload.os_tipo_cobranca).toBe('Somente mensalidade');
+
+  // Sucesso fecha o modal
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('Mostra o erro do Bubble sem fechar o modal nem perder o preenchimento', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockCatalogoComDisponivel(page);
+
+  await page.route('**/api/gestor/locacoes', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 500,
+        json: { success: false, error: 'Field not found fk_paciente for type domicilio' },
+      });
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } });
+    }
+  });
+
+  await abrirModalDeLocacao(page);
+  await preencherLocacao(page);
+  await page.getByRole('button', { name: 'Registrar' }).click();
+
+  // A mensagem do Bubble chega à tela — foi o que o gestor viu em produção.
+  // O texto aparece duas vezes (banner da página e do modal), que compartilham
+  // o mesmo estado `errorMsg`; aqui interessa o de dentro do modal.
+  const modal = page.getByRole('dialog');
+  await expect(modal.getByText('Field not found fk_paciente for type domicilio')).toBeVisible();
+
+  // O modal continua aberto e nada do que foi digitado se perde
+  await expect(modal).toBeVisible();
+  await expect(page.getByLabel('Cliente selecionado')).toHaveValue('cli-1');
+  await expect(page.locator('#rentEquipId')).toHaveValue('equip-3');
+  await expect(page.locator('#rentValor')).toHaveValue('189.9');
+});
+
+test('Cai na mensagem genérica quando a API não devolve motivo', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+  await mockCatalogoComDisponivel(page);
+
+  await page.route('**/api/gestor/locacoes', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({ status: 500, json: {} });
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } });
+    }
+  });
+
+  await abrirModalDeLocacao(page);
+  await preencherLocacao(page);
+  await page.getByRole('button', { name: 'Registrar' }).click();
+
+  const modal = page.getByRole('dialog');
+  await expect(modal.getByText('Erro ao registrar locação.')).toBeVisible();
+  await expect(modal).toBeVisible();
+});
