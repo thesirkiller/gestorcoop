@@ -134,31 +134,31 @@ export default function ReconciliacaoMedicamentosPage() {
       {/* Grid Métricas de Reconciliação */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Índice de Pontualidade</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Índice de Pontualidade</span>
           <span className="text-2xl font-black text-slate-900">{complianceScore}%</span>
           <span className="text-[10px] text-slate-500 mt-1">Doses aplicadas no horário</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Atrasos de Dose (&gt; 1h)</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Atrasos de Dose (&gt; 1h)</span>
           <span className="text-2xl font-black text-amber-600">{countAtrasos}</span>
           <span className="text-[10px] text-slate-500 mt-1">Doses aplicadas fora do prazo</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Omissões Justificadas</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Omissões Justificadas</span>
           <span className="text-2xl font-black text-red-500">{countOmissoes}</span>
           <span className="text-[10px] text-slate-500 mt-1">Remédios não aplicados com justificativa</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Pendente Atrasado</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Pendente Atrasado</span>
           <span className="text-2xl font-black text-red-700 animate-pulse">{countPendenteAtrasado}</span>
           <span className="text-[10px] text-slate-500 mt-1">Passou do horário sem checar</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Aprazamentos</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total Aprazamentos</span>
           <span className="text-2xl font-black text-slate-900">{total}</span>
           <span className="text-[10px] text-slate-500 mt-1">Checagens monitoradas hoje</span>
         </div>

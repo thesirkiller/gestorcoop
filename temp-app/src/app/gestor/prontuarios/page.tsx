@@ -175,25 +175,25 @@ export default function ProntuariosAuditDashboard() {
       {/* Grid de Métricas Gerais de Auditoria */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total de Atendimentos</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total de Atendimentos</span>
           <span className="text-2xl font-black text-slate-900">{totalAtendimentos}</span>
           <span className="text-[10px] text-slate-500 mt-1">Sessões finalizadas no período</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Tempo Médio em Domicílio</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Tempo Médio em Domicílio</span>
           <span className="text-2xl font-black text-slate-900">{tempoMedioMinutos} min</span>
           <span className="text-[10px] text-slate-500 mt-1">Calculado por check-in/out</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Conformidade de Medicação</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Conformidade de Medicação</span>
           <span className="text-2xl font-black text-slate-900">{complianceRate}%</span>
           <span className="text-[10px] text-slate-500 mt-1">Checked vs. Prescrito</span>
         </div>
 
         <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Erros / Omissões Graves</span>
+          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Erros / Omissões Graves</span>
           <span className="text-2xl font-black text-red-600">
             {filteredEvolutions.reduce((acc, curr) => acc + (curr.aprazamentos?.filter(a => a.status === 'Nao_Administrado').length || 0), 0)}
           </span>
@@ -320,7 +320,7 @@ export default function ProntuariosAuditDashboard() {
                     <td className="py-3.5 px-4">
                       <div>
                         <p className="font-bold text-slate-900">{ev.paciente_nome}</p>
-                        <p className="text-[10px] text-slate-400 mt-0.5">{ev.paciente_cpf}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{ev.paciente_cpf}</p>
                       </div>
                     </td>
 
@@ -343,10 +343,10 @@ export default function ProntuariosAuditDashboard() {
                     <td className="py-3.5 px-4 text-slate-500">
                       <div className="flex flex-col gap-0.5">
                         <p className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
                           {new Date(ev.check_in).toLocaleDateString('pt-BR')}
                         </p>
-                        <p className="flex items-center gap-1 text-[10px] text-slate-400">
+                        <p className="flex items-center gap-1 text-[10px] text-slate-500">
                           <Clock className="w-3.5 h-3.5 text-slate-500" />
                           {new Date(ev.check_in).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} até {ev.check_out ? new Date(ev.check_out).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'em andamento'}
                         </p>

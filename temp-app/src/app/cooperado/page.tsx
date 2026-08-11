@@ -121,7 +121,7 @@ export default function CooperadoDashboard() {
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-3 shadow-sm">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Carga de Dados Diária</h2>
+            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Carga de Dados Diária</h2>
             <p className="text-xs text-slate-500 mt-0.5">
               {prefetechedAt ? `Última atualização: hoje às ${prefetechedAt}` : 'Nenhuma carga feita hoje'}
             </p>
@@ -133,7 +133,7 @@ export default function CooperadoDashboard() {
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all active:scale-95 ${
               isOnline && !loading
                 ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
-                : 'bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed'
+                : 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -186,7 +186,7 @@ export default function CooperadoDashboard() {
 
                   {/* Endereço */}
                   <div className="flex items-center gap-1 text-slate-500 text-xs">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                    <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                     <span className="truncate">{visit.endereco}</span>
                   </div>
                 </div>
@@ -202,7 +202,7 @@ export default function CooperadoDashboard() {
                   }`}>
                     {visit.status === 'Em_Andamento' ? 'Em andamento' : visit.status.toLowerCase()}
                   </span>
-                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                  <ChevronRight className="w-4 h-4 text-slate-500" />
                 </div>
               </Link>
             ))}

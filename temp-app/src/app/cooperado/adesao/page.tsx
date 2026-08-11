@@ -628,7 +628,7 @@ export default function AdesaoPage() {
                         name="nomeCompleto"
                         value={personalData.nomeCompleto}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Nome completo do cooperado"
                       />
                     </div>
@@ -639,7 +639,7 @@ export default function AdesaoPage() {
                         name="cpf"
                         value={personalData.cpf}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                         placeholder="000.000.000-00"
                       />
                     </div>
@@ -651,7 +651,7 @@ export default function AdesaoPage() {
                         name="email"
                         value={personalData.email}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="seuemail@exemplo.com"
                       />
                     </div>
@@ -662,7 +662,7 @@ export default function AdesaoPage() {
                         name="whatsapp"
                         value={personalData.whatsapp}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                         placeholder="(00) 00000-0000"
                       />
                     </div>
@@ -673,7 +673,7 @@ export default function AdesaoPage() {
                         name="telefoneReserva"
                         value={personalData.telefoneReserva}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                         placeholder="(00) 00000-0000"
                       />
                     </div>
@@ -685,7 +685,7 @@ export default function AdesaoPage() {
                         name="rg"
                         value={personalData.rg}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Apenas números"
                       />
                     </div>
@@ -697,7 +697,7 @@ export default function AdesaoPage() {
                           name="orgaoEmissor"
                           value={personalData.orgaoEmissor}
                           onChange={handlePersonalChange}
-                          className="flex-1 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          className="flex-1 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                           placeholder="Ex: SSP"
                         />
                         <select
@@ -719,7 +719,7 @@ export default function AdesaoPage() {
                         name="dataExpedicaoRG"
                         value={personalData.dataExpedicaoRG}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                       />
                     </div>
 
@@ -730,7 +730,7 @@ export default function AdesaoPage() {
                         name="dataNascimento"
                         value={personalData.dataNascimento}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                       />
                     </div>
                     <div>
@@ -769,7 +769,7 @@ export default function AdesaoPage() {
                         name="nomeMae"
                         value={personalData.nomeMae}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Nome completo da mãe"
                       />
                     </div>
@@ -780,7 +780,7 @@ export default function AdesaoPage() {
                         name="nomePai"
                         value={personalData.nomePai}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Nome completo do pai (opcional)"
                       />
                     </div>
@@ -823,7 +823,7 @@ export default function AdesaoPage() {
                         name="pis"
                         value={personalData.pis}
                         onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                         placeholder="000.00000.00-0"
                       />
                     </div>
@@ -847,7 +847,7 @@ export default function AdesaoPage() {
                           name="cep"
                           value={addressData.cep}
                           onChange={handleAddressChange}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
                           placeholder="00000-000"
                         />
                         {loading && (
@@ -862,7 +862,7 @@ export default function AdesaoPage() {
                         name="rua"
                         value={addressData.rua}
                         onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Avenida, Rua, Travessa..."
                       />
                     </div>
@@ -874,7 +874,7 @@ export default function AdesaoPage() {
                         name="numero"
                         value={addressData.numero}
                         onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Ex: 120"
                       />
                     </div>
@@ -885,7 +885,7 @@ export default function AdesaoPage() {
                         name="complemento"
                         value={addressData.complemento}
                         onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Apto, Sala, Quadra..."
                       />
                     </div>
@@ -896,7 +896,7 @@ export default function AdesaoPage() {
                         name="bairro"
                         value={addressData.bairro}
                         onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Bairro"
                       />
                     </div>
@@ -908,7 +908,7 @@ export default function AdesaoPage() {
                         name="cidade"
                         value={addressData.cidade}
                         onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
                         placeholder="Cidade"
                       />
                     </div>
