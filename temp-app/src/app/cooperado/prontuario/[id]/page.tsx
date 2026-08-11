@@ -11,6 +11,87 @@ import {
 } from 'lucide-react';
 import axios from 'axios';
 
+/**
+ * Onda sonora, isolada de propósito.
+ *
+ * O `onWaveformUpdate` do gravador roda dentro de um requestAnimationFrame, ou
+ * seja ~60x por segundo. Enquanto esse estado morava no componente de página,
+ * cada quadro de áudio re-renderizava a tela INTEIRA durante toda a gravação:
+ * cartão do paciente, alertas de alergia, a lista completa de aprazamentos, o
+ * textarea da evolução e os modais. Num Android mediano, em campo, isso é a
+ * diferença entre gravar e travar.
+ *
+ * Aqui o estado nasce e morre dentro destas 16 barrinhas: o pai não re-renderiza
+ * mais nenhuma vez por causa do áudio.
+ */
+const OndaSonora = React.memo(function OndaSonora({
+  recorder,
+  pausado,
+}: {
+  recorder: AudioRecorder;
+  pausado: boolean;
+}) {
+  const [barras, setBarras] = useState<number[]>(() => new Array(16).fill(0.1));
+
+  useEffect(() => {
+    recorder.onWaveformUpdate = (waveData) => {
+      setBarras(waveData.slice(0, 16).map((val) => Math.max(0.1, val)));
+    };
+    return () => {
+      recorder.onWaveformUpdate = null;
+    };
+  }, [recorder]);
+
+  return (
+    <div className="flex items-center justify-center gap-1.5 h-10 w-full px-4" aria-hidden="true">
+      {barras.map((h, i) => (
+        <div
+          key={i}
+          style={{ height: `${h * 100}%` }}
+          className={`w-1.5 rounded-full bg-indigo-600 transition-all duration-75 ${pausado ? 'opacity-40 animate-none' : 'animate-pulse'}`}
+        />
+      ))}
+    </div>
+  );
+});
+
+/**
+ * Cronômetro da sessão, isolado pelo mesmo motivo: o tick de 1 em 1 segundo
+ * re-renderizava a página toda enquanto o atendimento estivesse aberto — o que
+ * pode ser um plantão inteiro.
+ */
+const TempoDeSessao = React.memo(function TempoDeSessao({
+  inicioMs,
+  congeladoEm,
+}: {
+  inicioMs: number | null;
+  congeladoEm: number | null;
+}) {
+  const [segundos, setSegundos] = useState(0);
+
+  useEffect(() => {
+    if (inicioMs === null) return;
+    if (congeladoEm !== null) {
+      setSegundos(Math.max(0, Math.round((congeladoEm - inicioMs) / 1000)));
+      return;
+    }
+    const calcular = () => setSegundos(Math.max(0, Math.round((Date.now() - inicioMs) / 1000)));
+    calcular();
+    const id = setInterval(calcular, 1000);
+    return () => clearInterval(id);
+  }, [inicioMs, congeladoEm]);
+
+  const h = Math.floor(segundos / 3600).toString().padStart(2, '0');
+  const m = Math.floor((segundos % 3600) / 60).toString().padStart(2, '0');
+  const s = (segundos % 60).toString().padStart(2, '0');
+
+  return (
+    <p className="font-mono text-lg font-black text-slate-900 tracking-tight mt-0.5">
+      {`${h}:${m}:${s}`}
+    </p>
+  );
+});
+
 export default function ProntuarioAtendimento() {
   const params = useParams();
   const router = useRouter();
@@ -31,7 +112,6 @@ export default function ProntuarioAtendimento() {
   const [checkedOut, setCheckedOut] = useState(false);
   const [showIdentificacaoModal, setShowIdentificacaoModal] = useState(true);
   const [identificado, setIdentificado] = useState(false);
-  const [elapsedTime, setElapsedTime] = useState(0);
   
   // Turno de Enfermagem (obrigatório para Técnicos)
   const [turno, setTurno] = useState<'Diurno' | 'Noturno' | '24h'>('Diurno');
@@ -40,7 +120,6 @@ export default function ProntuarioAtendimento() {
   const [recorder] = useState(() => new AudioRecorder());
   const [isRecording, setIsRecording] = useState(false);
   const [isRecordingPaused, setIsRecordingPaused] = useState(false);
-  const [waveBars, setWaveBars] = useState<number[]>(new Array(16).fill(0.1));
   const [audioRecorded, setAudioRecorded] = useState<boolean>(false);
   const [transcribing, setTranscribing] = useState(false);
   const [transcriptionText, setTranscriptionText] = useState('');
@@ -57,8 +136,6 @@ export default function ProntuarioAtendimento() {
   const [loading, setLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
-  // Timers
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Carregar dados na inicialização
   useEffect(() => {
@@ -88,18 +165,8 @@ export default function ProntuarioAtendimento() {
 
     return () => {
       unsubscribeSync();
-      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [pacienteId]);
-
-  // Atualizar visualizador de onda sonora
-  useEffect(() => {
-    recorder.onWaveformUpdate = (waveData) => {
-      // Pega as primeiras 16 bandas para desenhar barras simples na UI
-      const reducedData = waveData.slice(0, 16).map(val => Math.max(0.1, val));
-      setWaveBars(reducedData);
-    };
-  }, [recorder]);
 
   const loadLocalDetails = async () => {
     try {
@@ -145,14 +212,6 @@ export default function ProntuarioAtendimento() {
           setCheckedOut(true);
         }
 
-        // Calcula tempo decorrido
-        const checkInTime = new Date(currentEv.check_in).getTime();
-        const checkOutTime = currentEv.check_out ? new Date(currentEv.check_out).getTime() : Date.now();
-        setElapsedTime(Math.round((checkOutTime - checkInTime) / 1000));
-
-        if (currentEv.status === 'Em_Andamento') {
-          startTick(checkInTime);
-        }
       }
     } catch (e) {
       console.error(e);
@@ -160,12 +219,10 @@ export default function ProntuarioAtendimento() {
     }
   };
 
-  const startTick = (checkInTimeMs: number) => {
-    if (timerRef.current) clearInterval(timerRef.current);
-    timerRef.current = setInterval(() => {
-      setElapsedTime(Math.round((Date.now() - checkInTimeMs) / 1000));
-    }, 1000);
-  };
+  // O cronômetro é derivado da evolução, não replicado em estado: enquanto
+  // `check_out` estiver vazio o filho conta sozinho; quando chegar, ele congela.
+  const inicioSessaoMs = evolucao?.check_in ? new Date(evolucao.check_in).getTime() : null;
+  const fimSessaoMs = evolucao?.check_out ? new Date(evolucao.check_out).getTime() : null;
 
   // Check-in
   const handleCheckIn = async () => {
@@ -195,7 +252,6 @@ export default function ProntuarioAtendimento() {
       // Salva ação na fila de sincronização
       await localDB.enqueueAction('CHECK_IN', { pacienteId, checkIn: checkInTime, evolucaoId: newEv.id });
       
-      startTick(Date.now());
     } catch (e) {
       console.error(e);
       setErrorText('Erro ao iniciar atendimento no banco local.');
@@ -390,7 +446,6 @@ export default function ProntuarioAtendimento() {
       setEvolucao(finalEv);
       setIsLocked(true);
       setCheckedOut(true);
-      if (timerRef.current) clearInterval(timerRef.current);
       
       // Enfileira ação de finalização
       await localDB.enqueueAction('SIGN_EVOLUCAO', {
@@ -410,13 +465,6 @@ export default function ProntuarioAtendimento() {
   };
 
   // Formatar tempo em segundos para HH:MM:SS
-  const formatTime = (secs: number) => {
-    const h = Math.floor(secs / 3600).toString().padStart(2, '0');
-    const m = Math.floor((secs % 3600) / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
-    return `${h}:${m}:${s}`;
-  };
-
   if (!paciente) {
     return <div className="text-center py-10 font-bold text-slate-500">Buscando prontuário...</div>;
   }
@@ -509,9 +557,7 @@ export default function ProntuarioAtendimento() {
           </div>
           <div>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tempo de Sessão</p>
-            <p className="font-mono text-lg font-black text-slate-900 tracking-tight mt-0.5">
-              {formatTime(elapsedTime)}
-            </p>
+            <TempoDeSessao inicioMs={inicioSessaoMs} congeladoEm={fimSessaoMs} />
           </div>
         </div>
 
@@ -739,15 +785,7 @@ export default function ProntuarioAtendimento() {
               
               {/* Onda Sonora Dinâmica */}
               {isRecording ? (
-                <div className="flex items-center justify-center gap-1.5 h-10 w-full px-4">
-                  {waveBars.map((h, i) => (
-                    <div
-                      key={i}
-                      style={{ height: `${h * 100}%` }}
-                      className={`w-1.5 rounded-full bg-indigo-600 transition-all duration-75 ${isRecordingPaused ? 'opacity-40 animate-none' : 'animate-pulse'}`}
-                    />
-                  ))}
-                </div>
+                <OndaSonora recorder={recorder} pausado={isRecordingPaused} />
               ) : audioRecorded ? (
                 <div className="flex items-center gap-2 text-indigo-700 font-extrabold text-xs bg-indigo-50 border border-indigo-100 py-2 px-4 rounded-xl">
                   <Check className="w-4 h-4 text-indigo-600" />
