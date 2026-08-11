@@ -121,7 +121,7 @@ export default function ReconciliacaoMedicamentosPage() {
       <div className="flex items-center gap-3">
         <Link
           href="/gestor/prontuarios"
-          className="bg-white border border-slate-200 hover:border-slate-350 p-2 rounded-lg text-slate-650 hover:text-slate-900 transition-all shadow-sm"
+          className="bg-white border border-slate-200 hover:border-slate-300 p-2 rounded-lg text-slate-600 hover:text-slate-900 transition-all shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
@@ -168,7 +168,7 @@ export default function ReconciliacaoMedicamentosPage() {
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-end">
         {/* Pesquisa */}
         <div className="flex-1 w-full sm:min-w-[200px] flex flex-col gap-1.5">
-          <label htmlFor="auditoriaPesquisa" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+          <label htmlFor="auditoriaPesquisa" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
             <Search className="w-3.5 h-3.5" aria-hidden="true" />
             Pesquisa
           </label>
@@ -178,13 +178,13 @@ export default function ReconciliacaoMedicamentosPage() {
             placeholder="Buscar por Paciente, Medicamento ou Técnico..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350 w-full"
+            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 w-full"
           />
         </div>
 
         {/* Tipo Desvio */}
         <div className="w-full sm:w-[200px] flex flex-col gap-1.5">
-          <label htmlFor="auditoriaFiltroDesvio" className="text-[10px] font-bold uppercase text-slate-450 tracking-wider flex items-center gap-1">
+          <label htmlFor="auditoriaFiltroDesvio" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             Filtrar Inconformidades
           </label>
@@ -192,7 +192,7 @@ export default function ReconciliacaoMedicamentosPage() {
             id="auditoriaFiltroDesvio"
             value={filterDesvio}
             onChange={(e) => setFilterDesvio(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-350"
+            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300"
           >
             <option value="">Todos os status</option>
             <option value="Atraso">Atraso Crítico (&gt;1h)</option>
@@ -222,7 +222,7 @@ export default function ReconciliacaoMedicamentosPage() {
           <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-450">
+              <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
                 <th className="py-3 px-4">Paciente</th>
                 <th className="py-3 px-4">Medicamento / Dose</th>
                 <th className="py-3 px-4">Horário Prescrito</th>

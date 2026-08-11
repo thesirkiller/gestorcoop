@@ -99,7 +99,7 @@ export default function ProntuarioDetalheGestor() {
       <div className="flex items-center gap-3">
         <Link
           href="/gestor/prontuarios"
-          className="bg-white border border-slate-200 hover:border-slate-350 p-2 rounded-lg text-slate-650 hover:text-slate-900 transition-all shadow-sm"
+          className="bg-white border border-slate-200 hover:border-slate-300 p-2 rounded-lg text-slate-600 hover:text-slate-900 transition-all shadow-sm"
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
@@ -203,7 +203,7 @@ export default function ProntuarioDetalheGestor() {
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-650" />
+                <FileText className="w-4 h-4 text-indigo-600" />
                 Relato da Evolução Clínica
               </h3>
               <span className="bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 text-[9px] uppercase font-bold tracking-wider px-2 py-0.5 rounded flex items-center gap-1">
@@ -232,7 +232,7 @@ export default function ProntuarioDetalheGestor() {
             {/* Texto Transcrição */}
             <div className="space-y-4 text-xs">
               <div className="flex flex-col gap-1">
-                <span className="font-bold text-slate-450 uppercase text-[9px] tracking-wider">Evolução Clínica Formatada (Revisada)</span>
+                <span className="font-bold text-slate-500 uppercase text-[9px] tracking-wider">Evolução Clínica Formatada (Revisada)</span>
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-3.5 text-slate-800 leading-relaxed font-sans whitespace-pre-line">
                   {ev.transcricao_revisada || 'Nenhum texto de evolução salvo.'}
                 </div>
@@ -253,14 +253,14 @@ export default function ProntuarioDetalheGestor() {
           {ev.tipo_profissional === 'Tecnico_Enfermagem' && ev.aprazamentos && (
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Pill className="w-4 h-4 text-indigo-650" />
+                <Pill className="w-4 h-4 text-indigo-600" />
                 Checagem Digital de Medicamentos (Turno)
               </h3>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
-                    <tr className="border-b border-slate-100 text-[10px] uppercase font-bold text-slate-450">
+                    <tr className="border-b border-slate-100 text-[10px] uppercase font-bold text-slate-500">
                       <th className="py-2 pb-3">Horário Previsto</th>
                       <th className="py-2 pb-3">Medicamento / Dose</th>
                       <th className="py-2 pb-3">Status Checagem</th>
@@ -299,7 +299,7 @@ export default function ProntuarioDetalheGestor() {
                               {a.status === 'Administrado' ? 'Administrado' : 'Não Administrado'}
                             </span>
                             {a.justificativa && (
-                              <p className="text-[10px] text-red-650 italic mt-1 max-w-[200px] truncate" title={a.justificativa}>
+                              <p className="text-[10px] text-red-700 italic mt-1 max-w-[200px] truncate" title={a.justificativa}>
                                 Justif.: {a.justificativa}
                               </p>
                             )}

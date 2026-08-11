@@ -121,14 +121,14 @@ export default function CooperadoLayout({ children }: { children: React.ReactNod
           <div className="flex justify-between items-center mb-1">
             <Link href="/cooperado" className="flex items-center gap-2">
               <Shield className="w-5 h-5 text-indigo-200" />
-              <span className="font-black tracking-tight text-lg">Gestor Copy</span>
+              <span className="font-black tracking-tight text-lg">GestorCoop</span>
             </Link>
             
             {/* Toggle de cargo para simulação de perfil */}
             <button
               onClick={handleToggleCargo}
               title="Trocar Perfil de Acesso (Simulação)"
-              className="bg-indigo-700/50 hover:bg-indigo-750 text-[10px] uppercase font-bold py-1 px-2.5 rounded-full border border-indigo-500 transition-all active:scale-95"
+              className="bg-indigo-700/50 hover:bg-indigo-700 text-[10px] uppercase font-bold py-1 px-2.5 rounded-full border border-indigo-500 transition-all active:scale-95"
             >
               {session ? cargoLabels[session.cargo] : 'Carregando...'}
             </button>
@@ -141,7 +141,7 @@ export default function CooperadoLayout({ children }: { children: React.ReactNod
             </div>
             
             {/* Conectividade */}
-            <div className="flex items-center gap-1.5 bg-indigo-750 px-2 py-1 rounded-md">
+            <div className="flex items-center gap-1.5 bg-indigo-700 px-2 py-1 rounded-md">
               {syncStatus.isOnline ? (
                 <>
                   <Wifi className="w-3.5 h-3.5 text-emerald-400" />
