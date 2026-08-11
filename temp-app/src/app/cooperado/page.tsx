@@ -150,7 +150,7 @@ export default function CooperadoDashboard() {
 
         {!prefetechedAt && isOnline && !loading && (
           <div className="bg-indigo-50/50 border border-indigo-100 text-indigo-700 text-[11px] p-2.5 rounded-lg">
-            🔔 **Atenção:** Baixe a agenda do dia antes de ir a campo para ter acesso a todos os prontuários e medicamentos offline.
+            🔔 <strong className="font-semibold">Atenção:</strong> Baixe a agenda do dia antes de ir a campo para ter acesso a todos os prontuários e medicamentos offline.
           </div>
         )}
       </div>
@@ -161,7 +161,7 @@ export default function CooperadoDashboard() {
         
         {visits.length === 0 ? (
           <div className="bg-white border border-slate-200 border-dashed rounded-xl p-8 text-center text-slate-500">
-            <Clock className="w-10 h-10 text-slate-350 mx-auto mb-2.5" />
+            <Clock className="w-10 h-10 text-slate-300 mx-auto mb-2.5" />
             <p className="text-sm font-bold text-slate-800">Nenhum atendimento carregado</p>
             <p className="text-xs text-slate-500 mt-1">Conecte-se à internet e clique em "Carregar Agenda" para baixar a sua escala.</p>
           </div>
@@ -198,7 +198,7 @@ export default function CooperadoDashboard() {
                       ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
                       : visit.status === 'Em_Andamento'
                         ? 'bg-blue-500/10 text-blue-700 border-blue-500/20'
-                        : 'bg-slate-500/10 text-slate-750 border-slate-500/20'
+                        : 'bg-slate-500/10 text-slate-700 border-slate-500/20'
                   }`}>
                     {visit.status === 'Em_Andamento' ? 'Em andamento' : visit.status.toLowerCase()}
                   </span>

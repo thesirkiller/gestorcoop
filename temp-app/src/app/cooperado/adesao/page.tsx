@@ -616,7 +616,7 @@ export default function AdesaoPage() {
               {/* STEP 1: Personal Data */}
               {currentStep === 1 && (
                 <div>
-                  <h2 className="text-xl font-bold text-slate-850 mb-6 flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <User className="w-6 h-6 text-indigo-600" />
                     Dados Pessoais
                   </h2>
@@ -834,7 +834,7 @@ export default function AdesaoPage() {
               {/* STEP 2: Address Data */}
               {currentStep === 2 && (
                 <div>
-                  <h2 className="text-xl font-bold text-slate-850 mb-6 flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
                     <MapPin className="w-6 h-6 text-indigo-600" />
                     Endereço Residencial
                   </h2>
@@ -932,7 +932,7 @@ export default function AdesaoPage() {
               {/* STEP 3: Professions */}
               {currentStep === 3 && (
                 <div>
-                  <h2 className="text-xl font-bold text-slate-850 mb-4 flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <Briefcase className="w-6 h-6 text-indigo-600" />
                     Atuação Profissional
                   </h2>
@@ -1062,7 +1062,7 @@ export default function AdesaoPage() {
               {/* STEP 4: Bank Accounts */}
               {currentStep === 4 && (
                 <div>
-                  <h2 className="text-xl font-bold text-slate-850 mb-4 flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <CreditCard className="w-6 h-6 text-indigo-600" />
                     Dados Bancários
                   </h2>
@@ -1179,7 +1179,7 @@ export default function AdesaoPage() {
               {/* STEP 5: Document Uploads */}
               {currentStep === 5 && (
                 <div>
-                  <h2 className="text-xl font-bold text-slate-850 mb-4 flex items-center gap-2">
+                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                     <FileText className="w-6 h-6 text-indigo-600" />
                     Upload de Documentos
                   </h2>
@@ -1192,7 +1192,7 @@ export default function AdesaoPage() {
                       {...getRootProps()}
                       className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${isDragActive
                           ? 'border-indigo-400 bg-indigo-950/20'
-                          : 'border-slate-200 bg-slate-50 hover:border-slate-350 hover:bg-slate-100/50'
+                          : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/50'
                         }`}
                     >
                       <input {...getInputProps()} />

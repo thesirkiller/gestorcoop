@@ -484,17 +484,17 @@ export default function ProntuarioAtendimento() {
             <h2 className="text-sm font-bold text-slate-900">{paciente.nome}</h2>
             <p className="text-xs text-slate-500 mt-0.5">CPF: {paciente.cpf} | Nasc.: {paciente.data_nascimento}</p>
           </div>
-          <span className="text-[10px] bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold px-2.5 py-0.5 rounded-full uppercase">
+          <span className="text-xs bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold px-2.5 py-0.5 rounded-full uppercase">
             {pacienteId === '1' ? 'Homecare' : 'Hospital'}
           </span>
         </div>
 
         {/* Warnings */}
         {paciente.warnings && paciente.warnings.length > 0 && (
-          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-[11px] text-red-800 flex items-start gap-2.5">
+          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-sm text-red-800 flex items-start gap-2.5">
             <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
             <div className="flex flex-col gap-0.5">
-              <span className="font-black uppercase tracking-wider text-[9px] text-red-650">Alertas Críticos</span>
+              <span className="font-black uppercase tracking-wider text-xs text-red-700">Alertas Críticos</span>
               <span>{paciente.warnings.join(', ')}</span>
             </div>
           </div>
@@ -598,11 +598,11 @@ export default function ProntuarioAtendimento() {
                               {apraz.medicamento}
                             </span>
                           </div>
-                          <p className="text-[10px] text-slate-500 leading-tight">
+                          <p className="text-sm text-slate-700 leading-snug">
                             Dosagem: {apraz.dosagem} | Via: {apraz.via_administracao}
                           </p>
                           {apraz.justificativa && (
-                            <p className="text-[10px] text-red-650 italic mt-0.5">
+                            <p className="text-sm text-red-700 not-italic mt-1">
                               Justificativa: {apraz.justificativa}
                             </p>
                           )}
@@ -620,11 +620,11 @@ export default function ProntuarioAtendimento() {
                             <button
                               disabled={isLocked}
                               onClick={() => handleCheckMedicação(apraz, 'Nao_Administrado')}
-                              className="border border-red-200 text-red-650 hover:bg-red-50 disabled:opacity-40 min-w-[44px] min-h-[44px] px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                              className="border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40 min-w-[44px] min-h-[44px] px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
                               aria-label={`Registrar não administrado: ${apraz.medicamento}`}
                             >
                               <X className="w-4 h-4" aria-hidden="true" />
-                              <span className="text-[11px] font-bold whitespace-nowrap">Não deu</span>
+                              <span className="text-sm font-semibold whitespace-nowrap">Não deu</span>
                             </button>
                             <button
                               disabled={isLocked}
@@ -633,11 +633,11 @@ export default function ProntuarioAtendimento() {
                               aria-label={`Registrar administrado: ${apraz.medicamento}`}
                             >
                               <Check className="w-4 h-4" aria-hidden="true" />
-                              <span className="text-[11px] font-bold whitespace-nowrap">Administrado</span>
+                              <span className="text-sm font-semibold whitespace-nowrap">Administrado</span>
                             </button>
                           </div>
                         ) : (
-                          <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-md border shrink-0 ${
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-md border shrink-0 ${
                             apraz.status === 'Administrado'
                               ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
                               : 'bg-red-500/10 text-red-700 border-red-500/20'
@@ -675,7 +675,9 @@ export default function ProntuarioAtendimento() {
                 
                 <div className="flex flex-col gap-4 text-xs">
                   <p className="text-slate-500">
-                    Por que o medicamento **{checkingAprazamento.medicamento}** não foi administrado?
+                    Por que o medicamento{' '}
+                    <strong className="font-semibold text-slate-900">{checkingAprazamento.medicamento}</strong>{' '}
+                    não foi administrado?
                   </p>
                   
                   <div className="flex flex-col gap-1.5">
@@ -709,10 +711,13 @@ export default function ProntuarioAtendimento() {
                   <button
                     onClick={handleJustificarNaoAdministrado}
                     disabled={!justificativaTexto.trim()}
-                    className={`w-full py-2.5 font-bold rounded-lg text-white shadow-md transition-all active:scale-[0.98] ${
+                    // `text-white` era incondicional e o estado desabilitado usava
+                    // `bg-slate-355`, classe que não existe no Tailwind: sem fundo,
+                    // o rótulo virava branco sobre o modal branco e sumia.
+                    className={`w-full min-h-[44px] py-2.5 font-bold rounded-lg shadow-md transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
                       justificativaTexto.trim()
-                        ? 'bg-indigo-600 hover:bg-indigo-700'
-                        : 'bg-slate-355 cursor-not-allowed'
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        : 'bg-slate-200 text-slate-500 cursor-not-allowed'
                     }`}
                   >
                     Gravar Justificativa
@@ -789,7 +794,7 @@ export default function ProntuarioAtendimento() {
                       
                       <button
                         onClick={handleStopRecord}
-                        className="w-12 h-12 rounded-full bg-red-650 hover:bg-red-700 text-white flex items-center justify-center shadow-lg transition-all active:scale-95"
+                        className="w-12 h-12 rounded-full bg-red-700 hover:bg-red-700 text-white flex items-center justify-center shadow-lg transition-all active:scale-95"
                         title="Finalizar e Salvar"
                       >
                         <Square className="w-4 h-4 fill-white" />
@@ -811,7 +816,7 @@ export default function ProntuarioAtendimento() {
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
                   <RotateCw className="w-6 h-6 text-indigo-600 animate-spin" />
                   <span className="font-bold text-slate-800">IA Transcrevendo & Formatando Evolução...</span>
-                  <span className="scale-95 text-[10px] text-slate-400">Whisper + GPT-4o-mini analisando termos clínicos.</span>
+                  <span className="scale-95 text-xs text-slate-400">Whisper + GPT-4o-mini analisando termos clínicos.</span>
                 </div>
               ) : (
                 <textarea
@@ -834,7 +839,7 @@ export default function ProntuarioAtendimento() {
                 <Lock className="w-4 h-4 text-indigo-600" />
                 Validação de Assinatura Eletrônica
               </h3>
-              <p className="text-[10px] text-slate-500 mt-0.5">
+              <p className="text-xs text-slate-500 mt-0.5">
                 Digite sua senha/PIN de segurança para assinar digitalmente e bloquear alterações.
               </p>
             </div>
@@ -847,7 +852,7 @@ export default function ProntuarioAtendimento() {
                   placeholder="PIN (6 dígitos)"
                   value={pinCode}
                   onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
-                  className="bg-white border border-indigo-150 rounded-lg p-2.5 text-center text-sm font-black text-slate-800 w-28 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-indigo-500"
+                  className="bg-white border border-indigo-200 rounded-lg p-2.5 text-center text-sm font-black text-slate-800 w-28 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-indigo-500"
                 />
                 <button
                   onClick={handleAssinarProntuario}
@@ -862,7 +867,7 @@ export default function ProntuarioAtendimento() {
                   <CheckSquare className="w-4 h-4 text-white" />
                   Prontuário Assinado Digitalmente
                 </p>
-                <p className="font-light opacity-80 text-[10px]">
+                <p className="font-light opacity-80 text-xs">
                   Bloqueado para edições. Documento indexado ao histórico clínico permanente.
                 </p>
               </div>
