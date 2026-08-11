@@ -490,15 +490,15 @@ export default function ProntuarioAtendimento() {
             </p>
             
             <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-left mb-6 text-xs flex flex-col gap-1.5">
-              <p className="text-slate-400">Nome do Paciente:</p>
+              <p className="text-slate-500">Nome do Paciente:</p>
               <p className="font-extrabold text-slate-950 text-sm">{paciente.nome}</p>
               <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-200/60">
                 <div>
-                  <p className="text-slate-400">CPF:</p>
+                  <p className="text-slate-500">CPF:</p>
                   <p className="font-bold text-slate-900">{paciente.cpf}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">Nascimento:</p>
+                  <p className="text-slate-500">Nascimento:</p>
                   <p className="font-bold text-slate-900">{paciente.data_nascimento}</p>
                 </div>
               </div>
@@ -552,11 +552,11 @@ export default function ProntuarioAtendimento() {
       {/* Seção 1: Check-in / Check-out Timer */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${checkedIn ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${checkedIn ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
             <Clock className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tempo de Sessão</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tempo de Sessão</p>
             <TempoDeSessao inicioMs={inicioSessaoMs} congeladoEm={fimSessaoMs} />
           </div>
         </div>
@@ -621,7 +621,7 @@ export default function ProntuarioAtendimento() {
                 </h4>
                 
                 {aprazamentos.length === 0 ? (
-                  <div className="text-center py-4 text-slate-400 text-xs">Sem prescrições médicas ativas carregadas.</div>
+                  <div className="text-center py-4 text-slate-500 text-xs">Sem prescrições médicas ativas carregadas.</div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {aprazamentos.map((apraz) => (
@@ -713,7 +713,7 @@ export default function ProntuarioAtendimento() {
                   <button
                     onClick={() => setCheckingAprazamento(null)}
                     aria-label="Fechar justificativa de omissão"
-                    className="text-slate-400 hover:text-slate-700 w-11 h-11 -m-2 flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    className="text-slate-500 hover:text-slate-700 w-11 h-11 -m-2 flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
                   >
                     <X className="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -730,6 +730,7 @@ export default function ProntuarioAtendimento() {
                     <label htmlFor="justificativaMotivo" className="font-bold text-slate-700">Motivo</label>
                     <select
                       id="justificativaMotivo"
+                      style={{ fontSize: 16 }}
                       value={justificativaMotivo}
                       onChange={(e) => setJustificativaMotivo(e.target.value)}
                       className="bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
@@ -746,11 +747,12 @@ export default function ProntuarioAtendimento() {
                     <label htmlFor="justificativaTexto" className="font-bold text-slate-700">Explicação / Detalhes</label>
                     <textarea
                       id="justificativaTexto"
+                      style={{ fontSize: 16 }}
                       rows={3}
                       value={justificativaTexto}
                       onChange={(e) => setJustificativaTexto(e.target.value)}
                       placeholder="Descreva detalhadamente o ocorrido..."
-                      className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
+                      className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
                     />
                   </div>
 
@@ -792,7 +794,7 @@ export default function ProntuarioAtendimento() {
                   <span>Áudio Relato Gravado com Sucesso ({durationSecs}s)</span>
                 </div>
               ) : (
-                <div className="text-slate-400 text-xs flex items-center gap-1">
+                <div className="text-slate-500 text-xs flex items-center gap-1">
                   <Volume2 className="w-4 h-4" />
                   <span>Pronto para capturar evolução clínica.</span>
                 </div>
@@ -854,17 +856,18 @@ export default function ProntuarioAtendimento() {
                 <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
                   <RotateCw className="w-6 h-6 text-indigo-600 animate-spin" />
                   <span className="font-bold text-slate-800">IA Transcrevendo & Formatando Evolução...</span>
-                  <span className="scale-95 text-xs text-slate-400">Whisper + GPT-4o-mini analisando termos clínicos.</span>
+                  <span className="scale-95 text-xs text-slate-500">Whisper + GPT-4o-mini analisando termos clínicos.</span>
                 </div>
               ) : (
                 <textarea
                   id="revisaoEvolucao"
+                  style={{ fontSize: 16 }}
                   rows={6}
                   disabled={isLocked}
                   value={transcriptionText}
                   onChange={(e) => setTranscriptionText(e.target.value)}
                   placeholder="A evolução estruturada aparecerá aqui automaticamente após gravar o áudio..."
-                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 focus:bg-white resize-none"
+                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 focus:bg-white resize-none"
                 />
               )}
             </div>
@@ -890,7 +893,8 @@ export default function ProntuarioAtendimento() {
                   placeholder="PIN (6 dígitos)"
                   value={pinCode}
                   onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
-                  className="bg-white border border-indigo-200 rounded-lg p-2.5 text-center text-sm font-black text-slate-800 w-28 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-indigo-500"
+                  style={{ fontSize: 16 }}
+                  className="bg-white border border-indigo-200 rounded-lg p-2.5 text-center font-black text-slate-800 w-28 min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-indigo-500"
                 />
                 <button
                   onClick={handleAssinarProntuario}

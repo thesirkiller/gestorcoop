@@ -1,18 +1,13 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import localFont from "next/font/local";
 import "./globals.css";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
-});
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
-});
+// NOTA: Geist e Geist Mono eram carregados aqui via next/font/local e expostos
+// como --font-geist-sans / --font-geist-mono. Nada consumia essas variáveis:
+// o tailwind.config não define `fontFamily` e nenhuma regra CSS as referencia.
+// Os dois arquivos .woff eram baixados e preloaded a cada visita sem nunca
+// renderizar um caractere. Removidos. O app usa a stack sans do sistema, que é
+// legítima para o registro `product` — e é o que ele já renderizava de fato.
 
 export const metadata: Metadata = {
   title: "GestorCoop - Gestão de Cooperados",
@@ -36,7 +31,7 @@ export default function RootLayout({
         )}
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className="antialiased"
       >
         {children}
       </body>

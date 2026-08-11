@@ -116,19 +116,19 @@ export default function ProntuarioDetalheGestor() {
         <div className="md:col-span-1 space-y-6">
           {/* Ficha Paciente */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Identificação do Paciente</h3>
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Identificação do Paciente</h3>
             <div className="space-y-2.5 text-xs text-slate-700">
               <div>
-                <p className="text-slate-400">Nome:</p>
+                <p className="text-slate-500">Nome:</p>
                 <p className="font-extrabold text-slate-950 text-sm mt-0.5">{ev.paciente_nome}</p>
               </div>
               <div className="grid grid-cols-2 gap-2 pt-1">
                 <div>
-                  <p className="text-slate-400">CPF:</p>
+                  <p className="text-slate-500">CPF:</p>
                   <p className="font-bold text-slate-900">{ev.paciente_cpf}</p>
                 </div>
                 <div>
-                  <p className="text-slate-400">ID Bubble:</p>
+                  <p className="text-slate-500">ID Bubble:</p>
                   <p className="font-mono text-[10px] text-slate-900">{ev.paciente_id}</p>
                 </div>
               </div>
@@ -137,18 +137,18 @@ export default function ProntuarioDetalheGestor() {
 
           {/* Ficha Atendimento */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Metadados da Visita</h3>
+            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Metadados da Visita</h3>
             <div className="space-y-3 text-xs text-slate-700">
               <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <User className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-500 flex items-center gap-1.5">
+                  <User className="w-4 h-4 text-slate-500" />
                   Profissional:
                 </span>
                 <span className="font-bold text-slate-900">{ev.profissional_nome || 'Dra. Ana Silva'}</span>
               </div>
 
               <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                <span className="text-slate-400">Especialidade:</span>
+                <span className="text-slate-500">Especialidade:</span>
                 <span className="font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded text-[10px]">
                   {specialtyLabels[ev.tipo_profissional]}
                 </span>
@@ -156,22 +156,22 @@ export default function ProntuarioDetalheGestor() {
 
               {ev.turno && (
                 <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                  <span className="text-slate-400">Turno Técnico:</span>
+                  <span className="text-slate-500">Turno Técnico:</span>
                   <span className="font-bold text-slate-900">{ev.turno}</span>
                 </div>
               )}
 
               <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-500 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-slate-500" />
                   Data de Execução:
                 </span>
                 <span className="font-bold text-slate-900">{new Date(ev.check_in).toLocaleDateString('pt-BR')}</span>
               </div>
 
               <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-500 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-slate-500" />
                   Entrada (Check-in):
                 </span>
                 <span className="font-mono text-slate-900">
@@ -180,8 +180,8 @@ export default function ProntuarioDetalheGestor() {
               </div>
 
               <div className="flex justify-between items-center py-1.5 border-b border-slate-50">
-                <span className="text-slate-400 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-slate-400" />
+                <span className="text-slate-500 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-slate-500" />
                   Saída (Check-out):
                 </span>
                 <span className="font-mono text-slate-900">
@@ -190,7 +190,7 @@ export default function ProntuarioDetalheGestor() {
               </div>
 
               <div className="flex justify-between items-center py-1.5">
-                <span className="text-slate-400">Duração Total:</span>
+                <span className="text-slate-500">Duração Total:</span>
                 <span className="font-bold font-mono text-indigo-700 text-sm">{getDurationMin()} minutos</span>
               </div>
             </div>
@@ -202,7 +202,7 @@ export default function ProntuarioDetalheGestor() {
           {/* Evolução e Áudio */}
           <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
             <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                 <FileText className="w-4 h-4 text-indigo-600" />
                 Relato da Evolução Clínica
               </h3>
@@ -240,7 +240,7 @@ export default function ProntuarioDetalheGestor() {
 
               {ev.transcricao_crua && (
                 <div className="flex flex-col gap-1 pt-2 border-t border-slate-100">
-                  <span className="font-bold text-slate-400 uppercase text-[9px] tracking-wider">Transcrição Crua Original (Whisper)</span>
+                  <span className="font-bold text-slate-500 uppercase text-[9px] tracking-wider">Transcrição Crua Original (Whisper)</span>
                   <p className="text-slate-500 italic leading-relaxed whitespace-pre-line bg-slate-50/50 border border-slate-200/40 p-3 rounded-lg">
                     "{ev.transcricao_crua}"
                   </p>
@@ -252,7 +252,7 @@ export default function ProntuarioDetalheGestor() {
           {/* Checagem de Enfermagem se aplicável */}
           {ev.tipo_profissional === 'Tecnico_Enfermagem' && ev.aprazamentos && (
             <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm space-y-4">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
                 <Pill className="w-4 h-4 text-indigo-600" />
                 Checagem Digital de Medicamentos (Turno)
               </h3>
@@ -271,7 +271,7 @@ export default function ProntuarioDetalheGestor() {
                   <tbody className="divide-y divide-slate-50">
                     {ev.aprazamentos.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="text-center py-4 text-slate-400">Nenhum medicamento checado neste turno.</td>
+                        <td colSpan={5} className="text-center py-4 text-slate-500">Nenhum medicamento checado neste turno.</td>
                       </tr>
                     ) : (
                       ev.aprazamentos.map((a: any) => (
