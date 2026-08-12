@@ -6,6 +6,11 @@ import { subscribeToSync, synchronizeQueue, SyncStatus } from '@/lib/sync-servic
 import { Wifi, WifiOff, RotateCw, Check, AlertCircle, LogOut, Shield, Moon, Sun } from 'lucide-react';
 import Link from 'next/link';
 import { useTema } from '@/lib/tema';
+// Importar aqui tem efeito colateral DE PROPÓSITO: a avaliação do módulo captura
+// o token do fragmento e instala o interceptador do axios. Precisa acontecer na
+// importação, não num efeito — no React os efeitos dos filhos rodam ANTES dos do
+// pai, então a agenda já teria disparado sua chamada sem credencial.
+import { fetchAutenticado, descartarToken } from '@/lib/api-cliente';
 
 interface ProfessionalSession {
   id: string;
@@ -50,14 +55,27 @@ export default function CooperadoLayout({ children }: { children: React.ReactNod
       }
 
       try {
-        const resposta = await fetch('/api/cooperado/me');
+        const resposta = await fetchAutenticado('/api/cooperado/me');
         if (!resposta.ok) {
           // 401 significa sessão expirada. Sem identidade não se assina nada:
           // limpamos o cache para a interface não seguir exibindo o profissional
           // anterior como se ele estivesse logado.
           if (resposta.status === 401 && typeof window !== 'undefined') {
             window.localStorage.removeItem('cooperado_session');
+            descartarToken();
             if (!cancelado) setSession(null);
+            // DE PROPÓSITO não redireciona para /login aqui. Duas razões:
+            //
+            // 1. Offline-first: `/me` responde 401 sempre que o Bubble estiver
+            //    fora do ar ou o celular sem rede. Mandar ao login nesse caso
+            //    expulsaria o profissional no meio do plantão, justamente o que
+            //    o modo offline existe para evitar.
+            // 2. Dentro do iframe, abrir a tela de login não resolve nada: quem
+            //    emite a sessão é o app do Bubble, e é por lá que se reentra.
+            //
+            // Sem sessão a interface fica sem identidade e as APIs recusam —
+            // que é o comportamento seguro. O middleware continua fechando toda
+            // rota de dados; o que passa livre é só a casca.
           }
           return;
         }
