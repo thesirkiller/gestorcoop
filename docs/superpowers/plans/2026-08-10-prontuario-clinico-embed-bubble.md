@@ -18,7 +18,7 @@
 | Tipografia e classes de cor mortas | ✅ Concluída (`146a9c0`) |
 | Performance da tela de atendimento | ✅ Concluída (`d75a29d`) |
 | Contraste AA, zoom do iOS, fontes mortas | ✅ Concluída (`d8c7256`) |
-| Modo escuro (`colorize`) | ⏸️ Não iniciado — Fase 1 |
+| Modo escuro (`colorize`) | ✅ Concluída no `/cooperado`; telas do gestor tokenizadas mas ainda claras (ver Task 4) |
 | Tipografia das telas do gestor | ⏸️ Não iniciado — Fase 2 |
 | Foco preso nos modais | ⏸️ Não iniciado — Fase 2 |
 | Backend: mocks, seed, lint | ⏸️ Não iniciado — Fase 3 |
@@ -68,11 +68,26 @@ Maior valor de uso real que resta. O app tem `turno: 'Noturno'` como funcionalid
 
 ⚠️ **Não saia espalhando `dark:` pelas classes.** A referência do impeccable veta explicitamente dark mode como inversão do claro.
 
-- [ ] **Step 1:** Introduzir duas camadas — primitivos (`--indigo-600`) e semânticos (`--color-surface`, `--color-ink`, `--color-muted`). No escuro, redefinir **só** a camada semântica.
-- [ ] **Step 2:** Profundidade vem de **luminosidade de superfície, não de sombra**: escala de 3 passos onde elevação maior é mais clara, mantendo matiz e croma da marca. Não recorrer a azul genérico.
-- [ ] **Step 3:** Reduzir levemente o peso do corpo no escuro (texto claro sobre fundo escuro lê mais pesado) e dessaturar os acentos.
-- [ ] **Step 4:** Migrar as seis telas das classes literais (`bg-white`, `text-slate-900`, `border-slate-200`) para os tokens. São ~2.300 linhas — trabalho de refatoração, não de tinta.
-- [ ] **Step 5:** Atenção ao `tailwind.config.ts`, que **redefine toda a rampa `indigo`** para um azul (`indigo-600 = #0066e0`), diferente do `#4f46e5` do `DESIGN.md`. "Indigo" no código não é indigo na tela; os tokens devem refletir o que realmente ships.
+- [x] **Step 1:** Duas camadas em `globals.css`: primitivos (`--brand-*`, `--slate-*`, `--ink-*`, nunca consumidos direto) e 61 semânticos `--c-*`. Só os semânticos são redefinidos em `[data-theme='escuro']`. O `tailwind.config.ts` mapeia os 61 para chaves de cor, então `bg-surface`, `text-muted`, `border-line` são utilitárias reais. **Zero `dark:` escrito.**
+- [x] **Step 2:** Elevação em 4 passos por luminosidade (`base < canvas < surface < raised`), matiz 258.4 da própria marca com croma 0.010–0.016. `--sh-card` e `--sh-raised` viram `none` no escuro; só `--sh-float` sobrevive, para o modal acima do scrim.
+- [x] **Step 3:** Acentos perdem croma 0.203 → 0.170 (−16%). O peso foi tratado de forma diferente do que a referência pedia — ver nota abaixo.
+- [x] **Step 4:** Seis telas migradas. 768 inserções / 344 remoções.
+- [x] **Step 5:** Os primitivos `--brand-*` espelham o `tailwind.config.ts`, não o `DESIGN.md` — carregam `#0066e0`. Renomeado de "indigo" para "brand" de propósito: chamar um azul de "indigo" é o que fez o time raciocinar com a cor errada.
+
+**Como o tema é escolhido:** `localStorage` → `?tema=` na URL → `auto` (escuro se `prefers-color-scheme` pedir **ou** hora local ∈ [19h, 7h)). Resolvido por script inline bloqueante em `app/layout.tsx`, sem FOUC. Lógica em `src/lib/tema.ts`, alternador no cabeçalho do cooperado.
+
+- `prefers-color-scheme` sozinho não basta: dentro do WebView ele reflete a configuração do celular, que a maioria deixa em claro para sempre. Às 3h no quarto do paciente a resposta certa é escuro de qualquer jeito.
+- Alternador sozinho não basta: caçar um controle numa tela branca em cheio, no escuro, é a pior versão de "tem modo escuro".
+- O `?tema=` existe porque de dentro do iframe não dá para ler a preferência do app hospedeiro. É o único canal que o Bubble tem.
+- **Relógio e não `turno`:** `turno` é campo do registro, escolhido depois do check-in, numa tela só; `/cooperado`, onde o profissional cai primeiro, não tem turno nenhum. E virar a UI inteira como efeito colateral de preencher um campo clínico é surpresa.
+
+**Contraste medido (134 pares, OKLCH/WCAG, todos passam nos dois temas).** Falhas do tema **claro** que existiam antes e foram corrigidas: "Administrado" 3,77 → 5,48 · "Sync Agora" 3,19 → 5,02 · chip "Online" 3,93 → 4,63 · tinta do botão desabilitado 3,86 → 4,55 · ícone de estado vazio 1,48 → 3,22. Conferi dois na mão e batem exato.
+
+⚠️ **Onde a referência não serviu.** Ela manda reduzir o peso do corpo para ~350 no escuro. Aqui isso é armadilha: a pilha é a sans do sistema e, em Roboto/Segoe, qualquer coisa abaixo de 400 cai no corte Light, que é **pior** num quarto escuro. A intenção foi aplicada onde realmente incomoda — `--w-strong` 700→600 e `--w-heavy` 800→700 no escuro, já que o módulo é quase todo bold/extrabold/black. Onde a plataforma não tem o corte intermediário, degrada para o peso original, nunca para mais fino.
+
+⚠️ **Não use modificador de opacidade nos tokens** (`bg-surface/50`). O valor é uma `var()`, não um canal — o Tailwind não injeta alpha. Onde a transparência é de propósito (scrim, anel de foco), o alpha já vem dentro do token.
+
+**Ainda claro no gestor.** As três telas de auditoria estão tokenizadas e renderizam idênticas em claro hoje, mas seguem claras até o `GestorShell` e os outros sete módulos migrarem. O bloqueio é o shell compartilhado, não estes arquivos — conteúdo escuro dentro de shell claro seria pior que nada.
 
 ---
 
@@ -126,4 +141,6 @@ A passada de tipografia foi aplicada por inteiro só na tela de campo, priorizan
 2. **Não confie na classe Tailwind estar certa por parecer certa.** 42 classes usadas no módulo não existiam (`slate-350/355/450/650/750/850`, `red-650`, `indigo-150/650/750`) porque o `extend` só acrescenta `250` e `850`. Elas não geram CSS e o elemento cai na cor herdada — foi assim que um botão desabilitado ficou branco sobre branco e o botão de omissão de medicamento perdeu o vermelho. Verifique contra o `tailwind.config.ts` antes de usar qualquer degrau fora da rampa padrão.
 3. **O breakpoint `xs` não existe neste projeto.** `hidden xs:inline` não revela nada em largura nenhuma.
 4. **O detector do impeccable subconta.** Emitiu 53 achados de tipografia onde o grep encontrou 61; os 8 omitidos ocorriam 2 linhas depois de outro hit igual no mesmo arquivo. Sempre cruze o detector com grep.
-5. **O dev server do Next não se recupera** de um crash de worker de SSR. Se as telas começarem a servir 500 sem motivo aparente no código, reinicie antes de investigar o JSX.
+5. **A lógica do tema está duplicada de propósito** entre o script inline de `app/layout.tsx` e `resolverTema` de `src/lib/tema.ts`. Script inline não importa módulo, e é ele que evita o flash branco antes da primeira pintura. Ao mexer numa, mexa na outra.
+6. **`bg-surface/50` não funciona.** Ver a nota de opacidade na Task 4.
+7. **O dev server do Next não se recupera** de um crash de worker de SSR. Se as telas começarem a servir 500 sem motivo aparente no código, reinicie antes de investigar o JSX.

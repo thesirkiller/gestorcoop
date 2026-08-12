@@ -48,7 +48,7 @@ const OndaSonora = React.memo(function OndaSonora({
         <div
           key={i}
           style={{ height: `${h * 100}%` }}
-          className={`w-1.5 rounded-full bg-indigo-600 transition-all duration-75 ${pausado ? 'opacity-40 animate-none' : 'animate-pulse'}`}
+          className={`w-1.5 rounded-full bg-accent transition-all duration-75 ${pausado ? 'opacity-40 animate-none' : 'animate-pulse'}`}
         />
       ))}
     </div>
@@ -86,7 +86,7 @@ const TempoDeSessao = React.memo(function TempoDeSessao({
   const s = (segundos % 60).toString().padStart(2, '0');
 
   return (
-    <p className="font-mono text-lg font-black text-slate-900 tracking-tight mt-0.5">
+    <p className="font-mono text-lg font-heavy text-ink tracking-tight mt-0.5">
       {`${h}:${m}:${s}`}
     </p>
   );
@@ -466,40 +466,40 @@ export default function ProntuarioAtendimento() {
 
   // Formatar tempo em segundos para HH:MM:SS
   if (!paciente) {
-    return <div className="text-center py-10 font-bold text-slate-500">Buscando prontuário...</div>;
+    return <div className="text-center py-10 font-strong text-muted">Buscando prontuário...</div>;
   }
 
   return (
     <div className="flex flex-col gap-4">
       {/* Modal Mandatório de Identificação do Paciente */}
       {showIdentificacaoModal && !identificado && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="tituloIdentificacao"
             aria-describedby="descIdentificacao"
-            className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full text-center"
+            className="bg-raised rounded-2xl border border-line shadow-float p-6 max-w-sm w-full text-center"
           >
-            <div className="mx-auto w-12 h-12 bg-amber-50 text-amber-600 rounded-xl flex items-center justify-center mb-4">
+            <div className="mx-auto w-12 h-12 bg-warn-soft text-warn-ink rounded-xl flex items-center justify-center mb-4">
               <User className="w-6 h-6" aria-hidden="true" />
             </div>
-            <h3 id="tituloIdentificacao" className="text-base font-black text-slate-900 mb-2">Identificação de Segurança</h3>
-            <p id="descIdentificacao" className="text-xs text-slate-500 mb-5 leading-relaxed">
+            <h3 id="tituloIdentificacao" className="text-base font-heavy text-ink mb-2">Identificação de Segurança</h3>
+            <p id="descIdentificacao" className="text-xs text-muted mb-5 leading-relaxed">
               Confirme visualmente que você está diante do paciente correto antes de qualquer evolução clínica:
             </p>
-            
-            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-left mb-6 text-xs flex flex-col gap-1.5">
-              <p className="text-slate-500">Nome do Paciente:</p>
-              <p className="font-extrabold text-slate-950 text-sm">{paciente.nome}</p>
-              <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-slate-200/60">
+
+            <div className="bg-canvas border border-line-soft rounded-xl p-4 text-left mb-6 text-xs flex flex-col gap-1.5">
+              <p className="text-muted">Nome do Paciente:</p>
+              <p className="font-heavy text-ink text-sm">{paciente.nome}</p>
+              <div className="grid grid-cols-2 gap-2 mt-2 pt-2 border-t border-line">
                 <div>
-                  <p className="text-slate-500">CPF:</p>
-                  <p className="font-bold text-slate-900">{paciente.cpf}</p>
+                  <p className="text-muted">CPF:</p>
+                  <p className="font-strong text-ink">{paciente.cpf}</p>
                 </div>
                 <div>
-                  <p className="text-slate-500">Nascimento:</p>
-                  <p className="font-bold text-slate-900">{paciente.data_nascimento}</p>
+                  <p className="text-muted">Nascimento:</p>
+                  <p className="font-strong text-ink">{paciente.data_nascimento}</p>
                 </div>
               </div>
             </div>
@@ -507,7 +507,7 @@ export default function ProntuarioAtendimento() {
             <div className="flex gap-2">
               <button
                 onClick={() => router.push('/cooperado')}
-                className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs py-2.5 rounded-lg transition-all"
+                className="flex-1 bg-chip hover:bg-chip-hover text-ink-body font-strong text-xs py-2.5 rounded-lg transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 Voltar à Agenda
               </button>
@@ -516,7 +516,7 @@ export default function ProntuarioAtendimento() {
                   setIdentificado(true);
                   setShowIdentificacaoModal(false);
                 }}
-                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 rounded-lg shadow-md transition-all active:scale-[0.98]"
+                className="flex-1 bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs py-2.5 rounded-lg shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 Confirmar
               </button>
@@ -526,23 +526,23 @@ export default function ProntuarioAtendimento() {
       )}
 
       {/* Identificação de Cabeçalho Clínico */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-2.5">
+      <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-2.5">
         <div className="flex justify-between items-start">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">{paciente.nome}</h2>
-            <p className="text-xs text-slate-500 mt-0.5">CPF: {paciente.cpf} | Nasc.: {paciente.data_nascimento}</p>
+            <h2 className="text-sm font-strong text-ink">{paciente.nome}</h2>
+            <p className="text-xs text-muted mt-0.5">CPF: {paciente.cpf} | Nasc.: {paciente.data_nascimento}</p>
           </div>
-          <span className="text-xs bg-indigo-50 border border-indigo-100 text-indigo-700 font-extrabold px-2.5 py-0.5 rounded-full uppercase">
+          <span className="text-xs bg-accent-soft border border-accent-line text-accent-soft-ink font-heavy px-2.5 py-0.5 rounded-full uppercase">
             {pacienteId === '1' ? 'Homecare' : 'Hospital'}
           </span>
         </div>
 
         {/* Warnings */}
         {paciente.warnings && paciente.warnings.length > 0 && (
-          <div className="bg-red-50 border border-red-100 rounded-lg p-3 text-sm text-red-800 flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+          <div className="bg-crit-soft border border-crit-line rounded-lg p-3 text-sm text-crit-ink flex items-start gap-2.5">
+            <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
             <div className="flex flex-col gap-0.5">
-              <span className="font-black uppercase tracking-wider text-xs text-red-700">Alertas Críticos</span>
+              <span className="font-heavy uppercase tracking-wider text-xs">Alertas Críticos</span>
               <span>{paciente.warnings.join(', ')}</span>
             </div>
           </div>
@@ -550,13 +550,13 @@ export default function ProntuarioAtendimento() {
       </div>
 
       {/* Seção 1: Check-in / Check-out Timer */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between">
+      <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${checkedIn ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-100 text-slate-500'}`}>
-            <Clock className="w-5 h-5" />
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${checkedIn ? 'bg-accent-soft text-accent-ink' : 'bg-chip text-muted'}`}>
+            <Clock className="w-5 h-5" aria-hidden="true" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Tempo de Sessão</p>
+            <p className="text-xs font-strong text-muted uppercase tracking-wider">Tempo de Sessão</p>
             <TempoDeSessao inicioMs={inicioSessaoMs} congeladoEm={fimSessaoMs} />
           </div>
         </div>
@@ -564,20 +564,20 @@ export default function ProntuarioAtendimento() {
         {!checkedIn && (
           <button
             onClick={handleCheckIn}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all active:scale-[0.98]"
+            className="bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs px-4 py-2.5 rounded-xl shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
           >
             Iniciar Check-in
           </button>
         )}
 
         {checkedIn && !checkedOut && (
-          <span className="text-xs font-extrabold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-lg animate-pulse">
+          <span className="text-xs font-heavy text-accent-soft-ink bg-accent-soft border border-accent-line px-3 py-1 rounded-lg animate-pulse">
             Sessão Ativa
           </span>
         )}
 
         {checkedOut && (
-          <span className="text-xs font-extrabold text-slate-600 bg-slate-100 border border-slate-200 px-3 py-1 rounded-lg">
+          <span className="text-xs font-heavy text-idle-ink bg-idle-soft border border-idle-line px-3 py-1 rounded-lg">
             Finalizada
           </span>
         )}
@@ -588,23 +588,23 @@ export default function ProntuarioAtendimento() {
           
           {/* Módulo de Enfermagem: Turnos e Prescrições */}
           {sessionCargo === 'Tecnico_Enfermagem' && (
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-4">
-              
+            <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-4">
+
               {/* Seleção do Turno */}
               <div>
                 {/* Grupo de botões, não um campo: rotular via role/aria-labelledby.
                     Um <label> solto aqui não se associa a nada. */}
-                <span id="rotuloTurno" className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-1.5">Turno de Enfermagem</span>
+                <span id="rotuloTurno" className="text-xs font-strong text-muted uppercase tracking-wider block mb-1.5">Turno de Enfermagem</span>
                 <div role="group" aria-labelledby="rotuloTurno" className="grid grid-cols-3 gap-2">
                   {(['Diurno', 'Noturno', '24h'] as const).map((t) => (
                     <button
                       key={t}
                       disabled={isLocked}
                       onClick={() => setTurno(t)}
-                      className={`min-h-[44px] py-2 px-3 text-xs font-bold rounded-lg border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                      className={`min-h-[44px] py-2 px-3 text-xs font-strong rounded-lg border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                         turno === t
-                          ? 'bg-indigo-600 text-white border-indigo-600'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                          ? 'bg-accent text-on-accent border-accent'
+                          : 'bg-surface border-line text-ink-body hover:border-line-strong'
                       }`}
                     >
                       {t}
@@ -614,14 +614,14 @@ export default function ProntuarioAtendimento() {
               </div>
 
               {/* Aprazamento de Medicamentos */}
-              <div className="border-t border-slate-100 pt-3">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                  <Pill className="w-4 h-4 text-indigo-600" />
+              <div className="border-t border-line-soft pt-3">
+                <h4 className="text-xs font-strong text-muted uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <Pill className="w-4 h-4 text-accent-ink" aria-hidden="true" />
                   Aprazamento & Checagem Digital
                 </h4>
-                
+
                 {aprazamentos.length === 0 ? (
-                  <div className="text-center py-4 text-slate-500 text-xs">Sem prescrições médicas ativas carregadas.</div>
+                  <div className="text-center py-4 text-muted text-xs">Sem prescrições médicas ativas carregadas.</div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {aprazamentos.map((apraz) => (
@@ -629,26 +629,26 @@ export default function ProntuarioAtendimento() {
                         key={apraz.id}
                         className={`border rounded-xl p-3 flex justify-between items-center transition-all ${
                           apraz.status === 'Administrado'
-                            ? 'bg-emerald-500/5 border-emerald-200/50'
+                            ? 'bg-pos-soft border-pos-line'
                             : apraz.status === 'Nao_Administrado'
-                              ? 'bg-red-500/5 border-red-200/50'
-                              : 'bg-white border-slate-200'
+                              ? 'bg-crit-soft border-crit-line'
+                              : 'bg-surface border-line'
                         }`}
                       >
                         <div className="flex flex-col gap-1 min-w-0 flex-1 pr-2.5">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-xs font-black bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
+                            <span className="font-mono text-xs font-heavy bg-chip text-ink-body px-1.5 py-0.5 rounded">
                               {new Date(apraz.horario_previsto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                             </span>
-                            <span className="font-extrabold text-slate-900 text-xs truncate">
+                            <span className="font-heavy text-ink text-xs truncate">
                               {apraz.medicamento}
                             </span>
                           </div>
-                          <p className="text-sm text-slate-700 leading-snug">
+                          <p className="text-sm text-ink-body leading-snug">
                             Dosagem: {apraz.dosagem} | Via: {apraz.via_administracao}
                           </p>
                           {apraz.justificativa && (
-                            <p className="text-sm text-red-700 not-italic mt-1">
+                            <p className="text-sm text-crit-ink not-italic mt-1">
                               Justificativa: {apraz.justificativa}
                             </p>
                           )}
@@ -666,7 +666,7 @@ export default function ProntuarioAtendimento() {
                             <button
                               disabled={isLocked}
                               onClick={() => handleCheckMedicação(apraz, 'Nao_Administrado')}
-                              className="border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40 min-w-[44px] min-h-[44px] px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+                              className="bg-surface border border-crit-line text-crit-ink hover:bg-crit-soft disabled:opacity-40 min-w-[44px] min-h-[44px] px-3 rounded-lg transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                               aria-label={`Registrar não administrado: ${apraz.medicamento}`}
                             >
                               <X className="w-4 h-4" aria-hidden="true" />
@@ -675,7 +675,7 @@ export default function ProntuarioAtendimento() {
                             <button
                               disabled={isLocked}
                               onClick={() => handleCheckMedicação(apraz, 'Administrado')}
-                              className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white min-w-[44px] min-h-[44px] px-3 rounded-lg shadow transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40"
+                              className="bg-pos-solid hover:bg-pos-solid-hover disabled:opacity-40 text-on-pos min-w-[44px] min-h-[44px] px-3 rounded-lg shadow-card transition-all flex items-center justify-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                               aria-label={`Registrar administrado: ${apraz.medicamento}`}
                             >
                               <Check className="w-4 h-4" aria-hidden="true" />
@@ -685,8 +685,8 @@ export default function ProntuarioAtendimento() {
                         ) : (
                           <span className={`text-xs font-semibold px-2 py-1 rounded-md border shrink-0 ${
                             apraz.status === 'Administrado'
-                              ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
-                              : 'bg-red-500/10 text-red-700 border-red-500/20'
+                              ? 'bg-pos-soft text-pos-ink border-pos-line'
+                              : 'bg-crit-soft text-crit-ink border-crit-line'
                           }`}>
                             {apraz.status === 'Administrado' ? 'Checado' : 'Omitido'}
                           </span>
@@ -701,39 +701,39 @@ export default function ProntuarioAtendimento() {
 
           {/* Modal Justificativa de Omissão */}
           {checkingAprazamento && checkingAprazamento.status === 'Pendente' && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4">
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
               <div
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="tituloJustificativa"
-                className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full"
+                className="bg-raised rounded-2xl border border-line shadow-float p-6 max-w-sm w-full"
               >
                 <div className="flex justify-between items-center mb-4">
-                  <h3 id="tituloJustificativa" className="text-sm font-black text-slate-900">Justificativa de Omissão</h3>
+                  <h3 id="tituloJustificativa" className="text-sm font-heavy text-ink">Justificativa de Omissão</h3>
                   <button
                     onClick={() => setCheckingAprazamento(null)}
                     aria-label="Fechar justificativa de omissão"
-                    className="text-slate-500 hover:text-slate-700 w-11 h-11 -m-2 flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+                    className="text-muted hover:text-ink w-11 h-11 -m-2 flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                   >
                     <X className="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
-                
+
                 <div className="flex flex-col gap-4 text-xs">
-                  <p className="text-slate-500">
+                  <p className="text-muted">
                     Por que o medicamento{' '}
-                    <strong className="font-semibold text-slate-900">{checkingAprazamento.medicamento}</strong>{' '}
+                    <strong className="font-semibold text-ink">{checkingAprazamento.medicamento}</strong>{' '}
                     não foi administrado?
                   </p>
-                  
+
                   <div className="flex flex-col gap-1.5">
-                    <label htmlFor="justificativaMotivo" className="font-bold text-slate-700">Motivo</label>
+                    <label htmlFor="justificativaMotivo" className="font-strong text-ink-body">Motivo</label>
                     <select
                       id="justificativaMotivo"
                       style={{ fontSize: 16 }}
                       value={justificativaMotivo}
                       onChange={(e) => setJustificativaMotivo(e.target.value)}
-                      className="bg-slate-50 border border-slate-200 rounded-lg p-2 font-semibold text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
+                      className="bg-canvas border border-line rounded-lg p-2 font-semibold text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-raised"
                     >
                       <option value="Paciente recusou">Paciente recusou</option>
                       <option value="Medicamento ausente">Medicamento ausente</option>
@@ -744,7 +744,7 @@ export default function ProntuarioAtendimento() {
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label htmlFor="justificativaTexto" className="font-bold text-slate-700">Explicação / Detalhes</label>
+                    <label htmlFor="justificativaTexto" className="font-strong text-ink-body">Explicação / Detalhes</label>
                     <textarea
                       id="justificativaTexto"
                       style={{ fontSize: 16 }}
@@ -752,7 +752,7 @@ export default function ProntuarioAtendimento() {
                       value={justificativaTexto}
                       onChange={(e) => setJustificativaTexto(e.target.value)}
                       placeholder="Descreva detalhadamente o ocorrido..."
-                      className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-slate-800 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1"
+                      className="bg-canvas border border-line rounded-lg p-2.5 text-ink-body placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-raised"
                     />
                   </div>
 
@@ -761,11 +761,13 @@ export default function ProntuarioAtendimento() {
                     disabled={!justificativaTexto.trim()}
                     // `text-white` era incondicional e o estado desabilitado usava
                     // `bg-slate-355`, classe que não existe no Tailwind: sem fundo,
-                    // o rótulo virava branco sobre o modal branco e sumia.
-                    className={`w-full min-h-[44px] py-2.5 font-bold rounded-lg shadow-md transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 ${
+                    // o rótulo virava branco sobre o modal branco e sumia. Agora os
+                    // dois estados vêm de token, e `disabled-ink` sobre `disabled`
+                    // foi medido em 4,55:1 no claro e 4,56:1 no escuro.
+                    className={`w-full min-h-[44px] py-2.5 font-strong rounded-lg shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                       justificativaTexto.trim()
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
-                        : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                        ? 'bg-accent hover:bg-accent-hover text-on-accent'
+                        : 'bg-disabled text-disabled-ink cursor-not-allowed'
                     }`}
                   >
                     Gravar Justificativa
@@ -776,26 +778,26 @@ export default function ProntuarioAtendimento() {
           )}
 
           {/* Seção 2: Gravação de Áudio e Relato */}
-          <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-3">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-              <Mic className="w-4 h-4 text-indigo-600" />
+          <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-3">
+            <h3 className="text-xs font-strong text-muted uppercase tracking-wider flex items-center gap-1.5">
+              <Mic className="w-4 h-4 text-accent-ink" aria-hidden="true" />
               Evolução por Comando de Voz
             </h3>
 
             {/* Widget de Gravação */}
-            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 text-center flex flex-col items-center gap-4 relative overflow-hidden">
-              
+            <div className="bg-canvas border border-line-soft rounded-xl p-4 text-center flex flex-col items-center gap-4 relative overflow-hidden">
+
               {/* Onda Sonora Dinâmica */}
               {isRecording ? (
                 <OndaSonora recorder={recorder} pausado={isRecordingPaused} />
               ) : audioRecorded ? (
-                <div className="flex items-center gap-2 text-indigo-700 font-extrabold text-xs bg-indigo-50 border border-indigo-100 py-2 px-4 rounded-xl">
-                  <Check className="w-4 h-4 text-indigo-600" />
+                <div className="flex items-center gap-2 text-accent-soft-ink font-heavy text-xs bg-accent-soft border border-accent-line py-2 px-4 rounded-xl">
+                  <Check className="w-4 h-4" aria-hidden="true" />
                   <span>Áudio Relato Gravado com Sucesso ({durationSecs}s)</span>
                 </div>
               ) : (
-                <div className="text-slate-500 text-xs flex items-center gap-1">
-                  <Volume2 className="w-4 h-4" />
+                <div className="text-muted text-xs flex items-center gap-1">
+                  <Volume2 className="w-4 h-4" aria-hidden="true" />
                   <span>Pronto para capturar evolução clínica.</span>
                 </div>
               )}
@@ -807,37 +809,37 @@ export default function ProntuarioAtendimento() {
                     <button
                       onClick={handleStartRecord}
                       disabled={isLocked}
-                      className="w-12 h-12 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shadow-lg hover:shadow-indigo-600/30 transition-all active:scale-95"
+                      className="w-12 h-12 rounded-full bg-accent hover:bg-accent-hover text-on-accent flex items-center justify-center shadow-raised transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                       title="Gravar áudio"
                     >
-                      <Mic className="w-5 h-5" />
+                      <Mic className="w-5 h-5" aria-hidden="true" />
                     </button>
                   ) : (
                     <>
                       {isRecordingPaused ? (
                         <button
                           onClick={handleResumeRecord}
-                          className="w-10 h-10 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 transition-all"
+                          className="w-10 h-10 rounded-full bg-accent-soft border border-accent-line text-accent-ink flex items-center justify-center hover:bg-accent-line transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                           title="Retomar Gravação"
                         >
-                          <Play className="w-4 h-4" />
+                          <Play className="w-4 h-4" aria-hidden="true" />
                         </button>
                       ) : (
                         <button
                           onClick={handlePauseRecord}
-                          className="w-10 h-10 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center hover:bg-slate-200 transition-all"
+                          className="w-10 h-10 rounded-full bg-chip text-ink-body flex items-center justify-center hover:bg-chip-hover transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                           title="Pausar Gravação"
                         >
-                          <Clock className="w-4 h-4 animate-spin" />
+                          <Clock className="w-4 h-4 animate-spin" aria-hidden="true" />
                         </button>
                       )}
-                      
+
                       <button
                         onClick={handleStopRecord}
-                        className="w-12 h-12 rounded-full bg-red-700 hover:bg-red-700 text-white flex items-center justify-center shadow-lg transition-all active:scale-95"
+                        className="w-12 h-12 rounded-full bg-crit-solid hover:bg-crit-solid-hover text-on-crit flex items-center justify-center shadow-raised transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                         title="Finalizar e Salvar"
                       >
-                        <Square className="w-4 h-4 fill-white" />
+                        <Square className="w-4 h-4 fill-current" aria-hidden="true" />
                       </button>
                     </>
                   )}
@@ -847,16 +849,16 @@ export default function ProntuarioAtendimento() {
 
             {/* Tela de Revisão & Edição de Texto */}
             <div className="flex flex-col gap-1.5 mt-2">
-              <label htmlFor="revisaoEvolucao" className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-600" aria-hidden="true" />
+              <label htmlFor="revisaoEvolucao" className="text-xs font-strong text-muted uppercase tracking-wider flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-accent-ink" aria-hidden="true" />
                 Revisão Textual da Evolução
               </label>
 
               {transcribing ? (
-                <div className="bg-slate-50 border border-slate-100 rounded-xl p-6 text-center text-xs text-slate-500 flex flex-col items-center gap-2">
-                  <RotateCw className="w-6 h-6 text-indigo-600 animate-spin" />
-                  <span className="font-bold text-slate-800">IA Transcrevendo & Formatando Evolução...</span>
-                  <span className="scale-95 text-xs text-slate-500">Whisper + GPT-4o-mini analisando termos clínicos.</span>
+                <div className="bg-canvas border border-line-soft rounded-xl p-6 text-center text-xs text-muted flex flex-col items-center gap-2">
+                  <RotateCw className="w-6 h-6 text-accent-ink animate-spin" aria-hidden="true" />
+                  <span className="font-strong text-ink">IA Transcrevendo & Formatando Evolução...</span>
+                  <span className="scale-95 text-xs text-muted">Whisper + GPT-4o-mini analisando termos clínicos.</span>
                 </div>
               ) : (
                 <textarea
@@ -867,20 +869,20 @@ export default function ProntuarioAtendimento() {
                   value={transcriptionText}
                   onChange={(e) => setTranscriptionText(e.target.value)}
                   placeholder="A evolução estruturada aparecerá aqui automaticamente após gravar o áudio..."
-                  className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-800 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 focus:bg-white resize-none"
+                  className="bg-canvas border border-line rounded-xl p-3 text-xs text-ink-body placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong resize-none"
                 />
               )}
             </div>
           </div>
 
           {/* Seção 3: Assinatura Eletrônica e Fechamento */}
-          <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-4 shadow-sm flex flex-col gap-4">
+          <div className="bg-accent-soft border border-accent-line rounded-xl p-4 shadow-card flex flex-col gap-4">
             <div>
-              <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-xs font-strong text-ink flex items-center gap-1.5">
+                <Lock className="w-4 h-4 text-accent-ink" aria-hidden="true" />
                 Validação de Assinatura Eletrônica
               </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="text-xs text-muted mt-0.5">
                 Digite sua senha/PIN de segurança para assinar digitalmente e bloquear alterações.
               </p>
             </div>
@@ -894,30 +896,30 @@ export default function ProntuarioAtendimento() {
                   value={pinCode}
                   onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
                   style={{ fontSize: 16 }}
-                  className="bg-white border border-indigo-200 rounded-lg p-2.5 text-center font-black text-slate-800 w-28 min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-indigo-500"
+                  className="bg-surface border border-accent-line rounded-lg p-2.5 text-center font-heavy text-ink w-28 min-h-[44px] placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-accent-soft focus:border-accent"
                 />
                 <button
                   onClick={handleAssinarProntuario}
-                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs py-2.5 rounded-lg shadow-md transition-all active:scale-[0.98]"
+                  className="flex-1 bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs py-2.5 rounded-lg shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 >
                   Assinar e Finalizar
                 </button>
               </div>
             ) : (
-              <div className="bg-indigo-600 text-white p-3.5 rounded-xl text-center text-xs font-bold flex flex-col gap-1">
+              <div className="bg-accent text-on-accent p-3.5 rounded-xl text-center text-xs font-strong flex flex-col gap-1">
                 <p className="flex items-center justify-center gap-1.5">
-                  <CheckSquare className="w-4 h-4 text-white" />
+                  <CheckSquare className="w-4 h-4" aria-hidden="true" />
                   Prontuário Assinado Digitalmente
                 </p>
-                <p className="font-light opacity-80 text-xs">
+                <p className="font-normal text-on-accent-muted text-xs">
                   Bloqueado para edições. Documento indexado ao histórico clínico permanente.
                 </p>
               </div>
             )}
 
             {errorText && (
-              <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-2.5 rounded-lg flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0" />
+              <div className="bg-crit-soft border border-crit-line text-crit-ink text-xs p-2.5 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" aria-hidden="true" />
                 <span>{errorText}</span>
               </div>
             )}
@@ -925,12 +927,12 @@ export default function ProntuarioAtendimento() {
 
         </div>
       )}
-      
+
       {/* Botão de retorno se concluído */}
       {checkedOut && (
         <button
           onClick={() => router.push('/cooperado')}
-          className="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs py-3 rounded-xl shadow-md transition-all"
+          className="w-full bg-invert hover:bg-invert-hover text-on-invert font-strong text-xs py-3 rounded-xl shadow-raised transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
         >
           Voltar para a Agenda
         </button>

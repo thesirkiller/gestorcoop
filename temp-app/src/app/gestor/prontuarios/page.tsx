@@ -148,23 +148,23 @@ export default function ProntuariosAuditDashboard() {
       {/* Título da Página */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" />
+          <h1 className="text-xl font-strong text-ink tracking-tight flex items-center gap-2">
+            <FileText className="w-5 h-5 text-accent-ink" />
             Auditoria de Prontuários Multidisciplinares
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Conformidade de evoluções, aprazamentos e tempos de permanência em domicílio.</p>
+          <p className="text-xs text-muted mt-1">Conformidade de evoluções, aprazamentos e tempos de permanência em domicílio.</p>
         </div>
         
         <div className="flex gap-2">
           <Link
             href="/gestor/prontuarios/auditoria"
-            className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold py-2 px-4 rounded-lg border border-indigo-100 transition-all"
+            className="bg-accent-soft hover:bg-accent-line text-accent-soft-ink text-xs font-strong py-2 px-4 rounded-lg border border-accent-line transition-all"
           >
             Reconciliação de Medicamentos
           </Link>
           <button
             onClick={exportToCSV}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold py-2 px-4 rounded-lg flex items-center gap-1.5 shadow transition-all"
+            className="bg-accent hover:bg-accent-hover text-on-accent text-xs font-strong py-2 px-4 rounded-lg flex items-center gap-1.5 shadow-card transition-all"
           >
             <Download className="w-4 h-4" />
             Exportar CSV
@@ -174,38 +174,38 @@ export default function ProntuariosAuditDashboard() {
 
       {/* Grid de Métricas Gerais de Auditoria */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total de Atendimentos</span>
-          <span className="text-2xl font-black text-slate-900">{totalAtendimentos}</span>
-          <span className="text-[10px] text-slate-500 mt-1">Sessões finalizadas no período</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Total de Atendimentos</span>
+          <span className="text-2xl font-heavy text-ink">{totalAtendimentos}</span>
+          <span className="text-[10px] text-muted mt-1">Sessões finalizadas no período</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Tempo Médio em Domicílio</span>
-          <span className="text-2xl font-black text-slate-900">{tempoMedioMinutos} min</span>
-          <span className="text-[10px] text-slate-500 mt-1">Calculado por check-in/out</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Tempo Médio em Domicílio</span>
+          <span className="text-2xl font-heavy text-ink">{tempoMedioMinutos} min</span>
+          <span className="text-[10px] text-muted mt-1">Calculado por check-in/out</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Conformidade de Medicação</span>
-          <span className="text-2xl font-black text-slate-900">{complianceRate}%</span>
-          <span className="text-[10px] text-slate-500 mt-1">Checked vs. Prescrito</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Conformidade de Medicação</span>
+          <span className="text-2xl font-heavy text-ink">{complianceRate}%</span>
+          <span className="text-[10px] text-muted mt-1">Checked vs. Prescrito</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Erros / Omissões Graves</span>
-          <span className="text-2xl font-black text-red-600">
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Erros / Omissões Graves</span>
+          <span className="text-2xl font-heavy text-crit-ink">
             {filteredEvolutions.reduce((acc, curr) => acc + (curr.aprazamentos?.filter(a => a.status === 'Nao_Administrado').length || 0), 0)}
           </span>
-          <span className="text-[10px] text-slate-500 mt-1">Justificativas pendentes de revisão</span>
+          <span className="text-[10px] text-muted mt-1">Justificativas pendentes de revisão</span>
         </div>
       </div>
 
       {/* Seção Filtros */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-end">
+      <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-wrap gap-4 items-end">
         {/* Pesquisa Geral */}
         <div className="flex-1 w-full sm:min-w-[200px] flex flex-col gap-1.5">
-          <label htmlFor="filtroPesquisa" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+          <label htmlFor="filtroPesquisa" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
             <Search className="w-3.5 h-3.5" aria-hidden="true" />
             Pesquisa rápida
           </label>
@@ -215,13 +215,13 @@ export default function ProntuariosAuditDashboard() {
             placeholder="Buscar por Paciente, CPF ou Profissional..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 w-full"
+            className="border border-line rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong w-full"
           />
         </div>
 
         {/* Especialidade */}
         <div className="w-full sm:w-[180px] flex flex-col gap-1.5">
-          <label htmlFor="filtroEspecialidade" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+          <label htmlFor="filtroEspecialidade" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             Especialidade
           </label>
@@ -229,7 +229,7 @@ export default function ProntuariosAuditDashboard() {
             id="filtroEspecialidade"
             value={selectedSpecialty}
             onChange={(e) => setSelectedSpecialty(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300"
+            className="border border-line bg-surface rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong"
           >
             <option value="">Todas as especialidades</option>
             <option value="Tecnico_Enfermagem">Enfermagem</option>
@@ -240,14 +240,14 @@ export default function ProntuariosAuditDashboard() {
 
         {/* Turno */}
         <div className="w-full sm:w-[120px] flex flex-col gap-1.5">
-          <label htmlFor="filtroTurno" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+          <label htmlFor="filtroTurno" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
             Turno
           </label>
           <select
             id="filtroTurno"
             value={selectedTurno}
             onChange={(e) => setSelectedTurno(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300"
+            className="border border-line bg-surface rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong"
           >
             <option value="">Todos</option>
             <option value="Diurno">Diurno</option>
@@ -259,7 +259,7 @@ export default function ProntuariosAuditDashboard() {
         {/* Datas */}
         <div className="flex gap-2 w-full sm:w-auto">
           <div className="flex flex-col gap-1.5 flex-1 sm:flex-none">
-            <label htmlFor="filtroDataDe" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+            <label htmlFor="filtroDataDe" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
               De
             </label>
             <input
@@ -267,11 +267,11 @@ export default function ProntuariosAuditDashboard() {
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300"
+              className="border border-line rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong"
             />
           </div>
           <div className="flex flex-col gap-1.5 flex-1 sm:flex-none">
-            <label htmlFor="filtroDataAte" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+            <label htmlFor="filtroDataAte" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
               Até
             </label>
             <input
@@ -279,25 +279,25 @@ export default function ProntuariosAuditDashboard() {
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300"
+              className="border border-line rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong"
             />
           </div>
         </div>
       </div>
 
       {/* Tabela de Prontuários (Visualização Auditoria) */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-surface border border-line rounded-xl shadow-card overflow-hidden">
         {loading ? (
-          <div className="text-center py-10 text-xs font-bold text-slate-500">Filtrando registros...</div>
+          <div className="text-center py-10 text-xs font-strong text-muted">Filtrando registros...</div>
         ) : filteredEvolutions.length === 0 ? (
-          <div className="text-center py-10 text-xs font-bold text-slate-500">Nenhum prontuário encontrado com os filtros selecionados.</div>
+          <div className="text-center py-10 text-xs font-strong text-muted">Nenhum prontuário encontrado com os filtros selecionados.</div>
         ) : (
           // A tabela rola dentro do próprio contêiner; sem isso ela empurra a
           // largura da página e o corpo inteiro rola na horizontal no celular.
           <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <tr className="bg-canvas border-b border-line-soft text-[10px] font-heavy uppercase tracking-wider text-muted">
                 <th className="py-3 px-4">Paciente / CPF</th>
                 <th className="py-3 px-4">Profissional</th>
                 <th className="py-3 px-4">Especialidade</th>
@@ -308,19 +308,19 @@ export default function ProntuariosAuditDashboard() {
                 <th className="py-3 px-4 text-right">Ação</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-line-soft text-xs">
               {filteredEvolutions.map((ev) => {
                 const durationMin = ev.check_out && ev.check_in
                   ? Math.round((new Date(ev.check_out).getTime() - new Date(ev.check_in).getTime()) / 60000)
                   : 0;
 
                 return (
-                  <tr key={ev.id} className="hover:bg-slate-50/40 text-slate-700">
+                  <tr key={ev.id} className="hover:bg-surface-hover text-ink-body">
                     {/* Paciente */}
                     <td className="py-3.5 px-4">
                       <div>
-                        <p className="font-bold text-slate-900">{ev.paciente_nome}</p>
-                        <p className="text-[10px] text-slate-500 mt-0.5">{ev.paciente_cpf}</p>
+                        <p className="font-strong text-ink">{ev.paciente_nome}</p>
+                        <p className="text-[10px] text-muted mt-0.5">{ev.paciente_cpf}</p>
                       </div>
                     </td>
 
@@ -330,40 +330,40 @@ export default function ProntuariosAuditDashboard() {
                     </td>
 
                     {/* Especialidade */}
-                    <td className="py-3.5 px-4 font-semibold text-slate-500">
+                    <td className="py-3.5 px-4 font-semibold text-muted">
                       {specialtyLabels[ev.tipo_profissional]}
                     </td>
 
                     {/* Turno */}
-                    <td className="py-3.5 px-4 text-slate-500 font-mono">
+                    <td className="py-3.5 px-4 text-muted font-mono">
                       {ev.turno || 'N/A'}
                     </td>
 
                     {/* Data / Hora */}
-                    <td className="py-3.5 px-4 text-slate-500">
+                    <td className="py-3.5 px-4 text-muted">
                       <div className="flex flex-col gap-0.5">
                         <p className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                          <Calendar className="w-3.5 h-3.5 text-muted" />
                           {new Date(ev.check_in).toLocaleDateString('pt-BR')}
                         </p>
-                        <p className="flex items-center gap-1 text-[10px] text-slate-500">
-                          <Clock className="w-3.5 h-3.5 text-slate-500" />
+                        <p className="flex items-center gap-1 text-[10px] text-muted">
+                          <Clock className="w-3.5 h-3.5 text-muted" />
                           {new Date(ev.check_in).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} até {ev.check_out ? new Date(ev.check_out).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : 'em andamento'}
                         </p>
                       </div>
                     </td>
 
                     {/* Duração */}
-                    <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900">
+                    <td className="py-3.5 px-4 text-right font-mono font-strong text-ink">
                       {durationMin} min
                     </td>
 
                     {/* Status */}
                     <td className="py-3.5 px-4 text-center">
-                      <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded-full border ${
+                      <span className={`text-[9px] uppercase tracking-wider font-heavy px-2 py-0.5 rounded-full border ${
                         ev.status === 'Finalizado'
-                          ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
-                          : 'bg-amber-500/10 text-amber-700 border-amber-500/20 animate-pulse'
+                          ? 'bg-pos-soft text-pos-ink border-pos-line'
+                          : 'bg-warn-soft text-warn-ink border-warn-line animate-pulse'
                       }`}>
                         {ev.status === 'Finalizado' ? 'Assinado' : 'Em Andamento'}
                       </span>
@@ -373,7 +373,7 @@ export default function ProntuariosAuditDashboard() {
                     <td className="py-3.5 px-4 text-right">
                       <Link
                         href={`/gestor/prontuarios/${ev.id}`}
-                        className="inline-flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/80 px-2.5 py-1 rounded-md border border-indigo-100 transition-all active:scale-[0.98]"
+                        className="inline-flex items-center gap-1 text-xs font-strong text-accent-soft-ink bg-accent-soft hover:bg-accent-line px-2.5 py-1 rounded-md border border-accent-line transition-all active:scale-[0.98]"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         Auditar
