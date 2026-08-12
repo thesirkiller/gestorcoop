@@ -2,22 +2,293 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================================
+   CAMADA 1 — PRIMITIVOS
+   ----------------------------------------------------------------------------
+   Os degraus de cor crus. Nunca use estes diretamente num componente.
+   Eles existem para que a camada semântica tenha de onde escolher.
+
+   ATENÇÃO: a rampa chamada `indigo` no `tailwind.config.ts` NÃO é indigo.
+   O `extend` a sobrescreve inteira por um azul: `indigo-600` = #0066e0, e não
+   o #4f46e5 que o DESIGN.md declara. Os primitivos abaixo são o que realmente
+   chega na tela, medidos do config, não o que a especificação diz. Por isso o
+   nome aqui é `--brand-*` e não `--indigo-*`: o nome errado foi o que fez a
+   equipe raciocinar com a cor errada.
+
+   Matiz da marca em OKLCH: 258.4 (brand-600 = oklch(53.75% 0.203 258.4)).
+   É esse matiz que tinge os neutros do tema escuro — com croma de 0.010 a 0.020,
+   pequeno o bastante para ler como neutro coeso e não como "dark mode azulado".
+   ========================================================================== */
 :root {
+  /* Marca — espelho exato de theme.extend.colors.indigo do tailwind.config.ts */
+  --brand-50: #f0f7ff;
+  --brand-100: #e0efff;
+  --brand-200: #badcff;
+  --brand-250: #99ccff;
+  --brand-300: #7abaff;
+  --brand-400: #4da2ff;
+  --brand-500: #1c82ff;
+  --brand-600: #0066e0;
+  --brand-700: #004eb8;
+  --brand-800: #003b8f;
+  --brand-850: #002c6b;
+  --brand-900: #00204d;
+  --brand-950: #001029;
+
+  /* Neutros — rampa slate do Tailwind, os degraus que o módulo usava */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-500: #64748b;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+
+  /* Neutros tingidos do escuro — oklch(L 0.010–0.020 258.4) */
+  --ink-950: #080a0e;
+  --ink-900: #111419;
+  --ink-850: #1c2127;
+  --ink-800: #262b32;
+  --ink-750: #292e36;
+  --ink-700: #30363e;
+  --ink-600: #3e444d;
+  --ink-500: #4f5661;
+  --ink-400: #656c77;
+  --ink-300: #9399a1;
+  --ink-200: #a5abb4;
+  --ink-100: #d6d9de;
+  --ink-50: #f2f3f6;
+}
+
+/* ============================================================================
+   CAMADA 2 — SEMÂNTICOS
+   ----------------------------------------------------------------------------
+   O que os componentes consomem, sempre via utilitário Tailwind
+   (`bg-surface`, `text-muted`, `border-line`, ...). No tema escuro SÓ esta
+   camada é redefinida; os primitivos não mudam.
+
+   Escala de elevação (a profundidade vem de luminosidade, não de sombra):
+     base    < canvas  < surface < raised
+     0.145L    0.190L    0.245L    0.300L      (no escuro)
+     #f1f5f9   #f8fafc   #ffffff   #ffffff     (no claro)
+   Elevação maior = mais claro, mesmo matiz e croma da marca.
+
+   Todos os pares de contraste foram medidos, não estimados. Corpo ≥ 4,5:1,
+   componentes de UI ≥ 3:1, nos DOIS temas.
+   ========================================================================== */
+:root {
+  color-scheme: light;
+
+  /* Superfícies e estrutura */
+  --c-base: var(--slate-100);
+  --c-canvas: var(--slate-50);
+  --c-surface: #ffffff;
+  --c-raised: #ffffff;
+  --c-surface-hover: var(--slate-50);
+  --c-chip: var(--slate-100);
+  --c-chip-hover: var(--slate-200);
+  --c-line: var(--slate-200);
+  --c-line-soft: var(--slate-100);
+  --c-line-strong: var(--slate-300);
+  --c-scrim: rgb(15 23 42 / 0.6);
+
+  /* Tinta */
+  --c-ink: var(--slate-900);        /* 17.85:1 sobre surface */
+  --c-ink-body: var(--slate-700);   /* 10.35:1 sobre surface */
+  --c-muted: #657082;               /*  5.01:1 sobre surface · 4.57:1 sobre base */
+  --c-faint: #87909f;               /*  3.22:1 — só ícone decorativo */
+
+  /* Botão neutro sólido */
+  --c-invert: var(--slate-800);
+  --c-invert-hover: var(--slate-900);
+  --c-on-invert: #ffffff;
+
+  /* Desabilitado */
+  --c-disabled: var(--slate-200);
+  --c-disabled-ink: #616874;        /* 4.55:1 — era slate-500, 3.86:1 */
+
+  /* Marca */
+  --c-accent: var(--brand-600);
+  --c-accent-hover: var(--brand-700);
+  --c-on-accent: #ffffff;           /* 5.28:1 sobre accent */
+  /* Era brand-100, que dava 4,52:1 sobre o accent — passava por 0,02. */
+  --c-on-accent-muted: var(--brand-50); /* 4.89:1 sobre accent */
+  --c-accent-ink: var(--brand-700); /* 7.55:1 sobre surface */
+  --c-accent-soft: var(--brand-50);
+  --c-accent-line: var(--brand-100);
+  --c-accent-soft-ink: var(--brand-700);
+  --c-accent-deep: var(--brand-600);
+  --c-accent-deeper: var(--brand-700);
+  --c-accent-band-line: rgb(122 186 255 / 0.35);
+  --c-focus: rgb(28 130 255 / 0.45);
+
+  /* Estado: positivo / administrado / concluído */
+  --c-pos-soft: #ecfdf5;
+  --c-pos-line: #a7f3d0;
+  --c-pos-ink: #047857;
+  --c-pos-solid: #047857;           /* era emerald-600: branco dava 3.77:1 */
+  --c-pos-solid-hover: #065f46;
+  --c-on-pos: #ffffff;
+  --c-pos-on-accent: #6be0ac;       /* era emerald-400: 3.93:1 na faixa da marca */
+
+  /* Estado: atenção / pendente / atraso */
+  --c-warn-soft: #fffbeb;
+  --c-warn-line: #fde68a;
+  --c-warn-ink: #b45309;
+  --c-warn-solid: #b45309;          /* era amber-600: branco dava 3.19:1 */
+  --c-warn-solid-hover: #92400e;
+  --c-on-warn: #ffffff;
+  --c-warn-on-accent: #fbbf24;
+
+  /* Estado: crítico / omissão / alerta clínico */
+  --c-crit-soft: #fef2f2;
+  --c-crit-line: #fecaca;
+  --c-crit-ink: #b91c1c;
+  --c-crit-solid: #b91c1c;
+  --c-crit-solid-hover: #991b1b;
+  --c-on-crit: #ffffff;
+
+  /* Estado: informação / sincronizando */
+  --c-info-soft: #eff6ff;
+  --c-info-line: #dbeafe;
+  --c-info-ink: #1d4ed8;
+  --c-info-solid: #1d4ed8;
+  --c-info-solid-hover: #1e40af;
+  --c-on-info: #ffffff;
+
+  /* Estado: neutro / inativo */
+  --c-idle-soft: var(--slate-100);
+  --c-idle-line: var(--slate-300);
+  --c-idle-ink: var(--slate-700);
+
+  /* Peso tipográfico. Ver nota em [data-theme='escuro']. */
+  --w-strong: 700;
+  --w-heavy: 800;
+
+  /* Sombra. No claro ela separa; no escuro quem separa é a luminosidade. */
+  --sh-card: 0 1px 2px 0 rgb(15 23 42 / 0.05);
+  --sh-raised: 0 4px 6px -1px rgb(15 23 42 / 0.1), 0 2px 4px -2px rgb(15 23 42 / 0.1);
+  --sh-float: 0 20px 25px -5px rgb(15 23 42 / 0.15), 0 8px 10px -6px rgb(15 23 42 / 0.1);
+
+  /* Compat: o body ainda consome estas duas. Os valores do claro são os que já
+     shipavam — nada muda no tema atual. */
   --background: #ffffff;
   --foreground: #171717;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+[data-theme='escuro'] {
+  color-scheme: dark;
+
+  --c-base: var(--ink-950);
+  --c-canvas: var(--ink-900);
+  --c-surface: var(--ink-850);
+  --c-raised: var(--ink-750);
+  --c-surface-hover: #23282f;
+  --c-chip: var(--ink-700);
+  --c-chip-hover: var(--ink-600);
+  --c-line: #343a42;
+  --c-line-soft: var(--ink-800);
+  --c-line-strong: var(--ink-500);
+  --c-scrim: rgb(2 6 23 / 0.72);
+
+  --c-ink: var(--ink-50);           /* 14.60:1 sobre surface */
+  --c-ink-body: var(--ink-100);     /* 11.45:1 sobre surface */
+  --c-muted: var(--ink-200);        /*  7.01:1 sobre surface · 5.27:1 sobre chip */
+  --c-faint: var(--ink-400);        /*  3.06:1 — só ícone decorativo */
+
+  --c-invert: #dce0e5;
+  --c-invert-hover: #f0f2f5;
+  --c-on-invert: #0d1116;
+
+  --c-disabled: #2c3138;
+  --c-disabled-ink: var(--ink-300); /* 4.56:1 */
+
+  /* Acentos dessaturados: croma 0.203 -> 0.170 (-16%), luminosidade acima da
+     do claro para não afundar no fundo escuro. */
+  --c-accent: #276cd1;              /* oklch(54.5% 0.170 258.4) · branco 5.06:1 */
+  --c-accent-hover: #2d72d7;        /* oklch(56.5% 0.170 258.4) · branco 4.67:1 */
+  --c-on-accent: #ffffff;
+  --c-on-accent-muted: #ebf9ff;     /* 4.70:1 sobre accent · 11.54:1 sobre accent-deep */
+  --c-accent-ink: #8cbcff;          /* 8.30:1 sobre surface */
+  --c-accent-soft: #1d2c42;
+  --c-accent-line: #2e4870;
+  --c-accent-soft-ink: #9cc6ff;     /* 8.00:1 sobre accent-soft */
+  --c-accent-deep: #103367;
+  --c-accent-deeper: #08254f;
+  --c-accent-band-line: rgb(140 188 255 / 0.28);
+  --c-focus: rgb(140 188 255 / 0.6);
+
+  --c-pos-soft: #103123;
+  --c-pos-line: #0f553b;
+  --c-pos-ink: #81dab0;             /* 9.71:1 sobre surface */
+  --c-pos-solid: #008758;           /* branco 4.56:1 · 3.55:1 contra o card */
+  --c-pos-solid-hover: #007b4d;
+  --c-on-pos: #ffffff;
+  --c-pos-on-accent: #81dab0;
+
+  --c-warn-soft: #39260d;
+  --c-warn-line: #633f0b;
+  --c-warn-ink: #f0b877;
+  --c-warn-solid: #a76500;          /* branco 4.66:1 */
+  --c-warn-solid-hover: #9a5900;
+  --c-on-warn: #ffffff;
+  --c-warn-on-accent: #f0b877;
+
+  --c-crit-soft: #3f201e;
+  --c-crit-line: #6c3531;
+  --c-crit-ink: #ffa9a1;            /* 8.83:1 sobre surface */
+  --c-crit-solid: #b8514b;          /* branco 4.86:1 */
+  --c-crit-solid-hover: #aa4540;
+  --c-on-crit: #ffffff;
+
+  --c-info-soft: #1c2a42;
+  --c-info-line: #2d4772;
+  --c-info-ink: #9cc5ff;
+  --c-info-solid: #4474c4;
+  --c-info-solid-hover: #3868b7;
+  --c-on-info: #ffffff;
+
+  --c-idle-soft: #252a32;
+  --c-idle-line: #414853;
+  --c-idle-ink: #bfc5cd;
+
+  /* Texto claro sobre fundo escuro lê mais pesado do que o inverso. A referência
+     pede reduzir o peso do CORPO (400 -> ~350); aqui isso seria um tiro no pé:
+     a stack é a sans do sistema, e em Roboto/Segoe qualquer valor abaixo de 400
+     cai no corte Light — pior de ler num quarto escuro do que os 40 pontos de
+     excesso que estamos corrigindo. O que dá para fazer com segurança, e é o que
+     realmente incomoda nestas telas, é demover os pesos extremos: o módulo é
+     quase todo bold/extrabold/black. `font-strong` e `font-heavy` descem um
+     degrau no escuro e, onde a plataforma não tem o corte intermediário,
+     degradam para o peso original — nunca para um mais fino. */
+  --w-strong: 600;
+  --w-heavy: 700;
+
+  /* No escuro a profundidade vem da escala de superfície. Sombra só no que
+     flutua sobre o scrim. */
+  --sh-card: none;
+  --sh-raised: none;
+  --sh-float: 0 24px 48px -12px rgb(0 0 0 / 0.65);
+
+  /* Overscroll e área fora do quadro do app seguem o degrau mais baixo. */
+  --background: var(--c-base);
+  --foreground: var(--c-ink);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* O anel de foco do Tailwind desenha o offset em branco por padrão (definido no
+   seletor universal do preflight, então herança não resolve). No escuro isso
+   vira um halo branco em volta de cada campo. */
+*,
+::before,
+::after {
+  --tw-ring-offset-color: var(--c-canvas);
 }
 
 @layer utilities {

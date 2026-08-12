@@ -121,54 +121,54 @@ export default function ReconciliacaoMedicamentosPage() {
       <div className="flex items-center gap-3">
         <Link
           href="/gestor/prontuarios"
-          className="bg-white border border-slate-200 hover:border-slate-300 p-2 rounded-lg text-slate-600 hover:text-slate-900 transition-all shadow-sm"
+          className="bg-surface border border-line hover:border-line-strong p-2 rounded-lg text-ink-body hover:text-ink transition-all shadow-card"
         >
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <div>
-          <h1 className="text-lg font-bold text-slate-900 leading-tight">Reconciliação e Auditoria de Aprazamento</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Cruzamento de prescrição médica vs. administração real.</p>
+          <h1 className="text-lg font-strong text-ink leading-tight">Reconciliação e Auditoria de Aprazamento</h1>
+          <p className="text-xs text-muted mt-0.5">Cruzamento de prescrição médica vs. administração real.</p>
         </div>
       </div>
 
       {/* Grid Métricas de Reconciliação */}
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Índice de Pontualidade</span>
-          <span className="text-2xl font-black text-slate-900">{complianceScore}%</span>
-          <span className="text-[10px] text-slate-500 mt-1">Doses aplicadas no horário</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Índice de Pontualidade</span>
+          <span className="text-2xl font-heavy text-ink">{complianceScore}%</span>
+          <span className="text-[10px] text-muted mt-1">Doses aplicadas no horário</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Atrasos de Dose (&gt; 1h)</span>
-          <span className="text-2xl font-black text-amber-600">{countAtrasos}</span>
-          <span className="text-[10px] text-slate-500 mt-1">Doses aplicadas fora do prazo</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Atrasos de Dose (&gt; 1h)</span>
+          <span className="text-2xl font-heavy text-warn-ink">{countAtrasos}</span>
+          <span className="text-[10px] text-muted mt-1">Doses aplicadas fora do prazo</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Omissões Justificadas</span>
-          <span className="text-2xl font-black text-red-500">{countOmissoes}</span>
-          <span className="text-[10px] text-slate-500 mt-1">Remédios não aplicados com justificativa</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Omissões Justificadas</span>
+          <span className="text-2xl font-heavy text-crit-ink">{countOmissoes}</span>
+          <span className="text-[10px] text-muted mt-1">Remédios não aplicados com justificativa</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Pendente Atrasado</span>
-          <span className="text-2xl font-black text-red-700 animate-pulse">{countPendenteAtrasado}</span>
-          <span className="text-[10px] text-slate-500 mt-1">Passou do horário sem checar</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Pendente Atrasado</span>
+          <span className="text-2xl font-heavy text-crit-ink animate-pulse">{countPendenteAtrasado}</span>
+          <span className="text-[10px] text-muted mt-1">Passou do horário sem checar</span>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col gap-1">
-          <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total Aprazamentos</span>
-          <span className="text-2xl font-black text-slate-900">{total}</span>
-          <span className="text-[10px] text-slate-500 mt-1">Checagens monitoradas hoje</span>
+        <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-1">
+          <span className="text-[10px] uppercase font-strong text-muted tracking-wider">Total Aprazamentos</span>
+          <span className="text-2xl font-heavy text-ink">{total}</span>
+          <span className="text-[10px] text-muted mt-1">Checagens monitoradas hoje</span>
         </div>
       </div>
 
       {/* Filtros */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-wrap gap-4 items-end">
+      <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-wrap gap-4 items-end">
         {/* Pesquisa */}
         <div className="flex-1 w-full sm:min-w-[200px] flex flex-col gap-1.5">
-          <label htmlFor="auditoriaPesquisa" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+          <label htmlFor="auditoriaPesquisa" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
             <Search className="w-3.5 h-3.5" aria-hidden="true" />
             Pesquisa
           </label>
@@ -178,13 +178,13 @@ export default function ReconciliacaoMedicamentosPage() {
             placeholder="Buscar por Paciente, Medicamento ou Técnico..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="border border-slate-200 rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300 w-full"
+            className="border border-line rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong w-full"
           />
         </div>
 
         {/* Tipo Desvio */}
         <div className="w-full sm:w-[200px] flex flex-col gap-1.5">
-          <label htmlFor="auditoriaFiltroDesvio" className="text-[10px] font-bold uppercase text-slate-500 tracking-wider flex items-center gap-1">
+          <label htmlFor="auditoriaFiltroDesvio" className="text-[10px] font-strong uppercase text-muted tracking-wider flex items-center gap-1">
             <Filter className="w-3.5 h-3.5" aria-hidden="true" />
             Filtrar Inconformidades
           </label>
@@ -192,7 +192,7 @@ export default function ReconciliacaoMedicamentosPage() {
             id="auditoriaFiltroDesvio"
             value={filterDesvio}
             onChange={(e) => setFilterDesvio(e.target.value)}
-            className="border border-slate-200 bg-white rounded-lg p-2 text-xs text-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40 focus-visible:ring-offset-1 focus:border-slate-300"
+            className="border border-line bg-surface rounded-lg p-2 text-xs text-ink-body focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong"
           >
             <option value="">Todos os status</option>
             <option value="Atraso">Atraso Crítico (&gt;1h)</option>
@@ -204,7 +204,7 @@ export default function ReconciliacaoMedicamentosPage() {
 
         <button
           onClick={loadAuditoria}
-          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-100 p-2 rounded-lg text-xs font-bold flex items-center gap-1 transition-all active:scale-[0.98]"
+          className="bg-accent-soft hover:bg-accent-line text-accent-soft-ink border border-accent-line p-2 rounded-lg text-xs font-strong flex items-center gap-1 transition-all active:scale-[0.98]"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
           Atualizar Painel
@@ -212,17 +212,17 @@ export default function ReconciliacaoMedicamentosPage() {
       </div>
 
       {/* Grid de Discrepâncias */}
-      <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+      <div className="bg-surface border border-line rounded-xl shadow-card overflow-hidden">
         {loading ? (
-          <div className="text-center py-10 text-xs font-bold text-slate-500">Recalculando reconciliação...</div>
+          <div className="text-center py-10 text-xs font-strong text-muted">Recalculando reconciliação...</div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-10 text-xs font-bold text-slate-500">Nenhum desvio ou reconciliação registrada.</div>
+          <div className="text-center py-10 text-xs font-strong text-muted">Nenhum desvio ou reconciliação registrada.</div>
         ) : (
           // Rolagem contida na tabela; sem isso a página inteira rola lateralmente no celular.
           <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <tr className="bg-canvas border-b border-line-soft text-[10px] font-heavy uppercase tracking-wider text-muted">
                 <th className="py-3 px-4">Paciente</th>
                 <th className="py-3 px-4">Medicamento / Dose</th>
                 <th className="py-3 px-4">Horário Prescrito</th>
@@ -232,19 +232,19 @@ export default function ReconciliacaoMedicamentosPage() {
                 <th className="py-3 px-4">Detalhes</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+            <tbody className="divide-y divide-line-soft text-xs text-ink-body">
               {filtered.map((d) => (
-                <tr key={d.id} className="hover:bg-slate-50/40">
+                <tr key={d.id} className="hover:bg-surface-hover">
                   {/* Paciente */}
-                  <td className="py-3 px-4 font-bold text-slate-900">
+                  <td className="py-3 px-4 font-strong text-ink">
                     {d.pacienteNome}
                   </td>
                   
                   {/* Medicamento */}
                   <td className="py-3 px-4">
                     <div>
-                      <p className="font-bold text-slate-950">{d.medicamento}</p>
-                      <p className="text-[10px] text-slate-500 mt-0.5">{d.dosagem}</p>
+                      <p className="font-strong text-ink">{d.medicamento}</p>
+                      <p className="text-[10px] text-muted mt-0.5">{d.dosagem}</p>
                     </div>
                   </td>
 
@@ -254,7 +254,7 @@ export default function ReconciliacaoMedicamentosPage() {
                   </td>
 
                   {/* Checado */}
-                  <td className="py-3 px-4 font-mono text-slate-500">
+                  <td className="py-3 px-4 font-mono text-muted">
                     {d.horarioExecutado 
                       ? new Date(d.horarioExecutado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
                       : 'N/A'
@@ -262,18 +262,18 @@ export default function ReconciliacaoMedicamentosPage() {
                   </td>
 
                   {/* Responsável */}
-                  <td className="py-3 px-4 font-semibold text-slate-500">
+                  <td className="py-3 px-4 font-semibold text-muted">
                     {d.profissionalNome}
                   </td>
 
                   {/* Status Desvio */}
                   <td className="py-3 px-4">
-                    <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded border ${
+                    <span className={`text-[9px] uppercase tracking-wider font-heavy px-2 py-0.5 rounded border ${
                       d.tipoDesvio === 'Conforme'
-                        ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
+                        ? 'bg-pos-soft text-pos-ink border-pos-line'
                         : d.tipoDesvio === 'Atraso'
-                          ? 'bg-amber-500/10 text-amber-700 border-amber-500/20'
-                          : 'bg-red-500/10 text-red-700 border-red-500/20'
+                          ? 'bg-warn-soft text-warn-ink border-warn-line'
+                          : 'bg-crit-soft text-crit-ink border-crit-line'
                     }`}>
                       {d.tipoDesvio === 'Omissao_Com_Justificativa' 
                         ? 'Omissão de Dose' 
@@ -285,7 +285,7 @@ export default function ReconciliacaoMedicamentosPage() {
                   </td>
 
                   {/* Detalhes */}
-                  <td className="py-3 px-4 text-slate-500 italic max-w-[200px] truncate" title={d.detalheDesvio}>
+                  <td className="py-3 px-4 text-muted italic max-w-[200px] truncate" title={d.detalheDesvio}>
                     {d.detalheDesvio}
                   </td>
                 </tr>

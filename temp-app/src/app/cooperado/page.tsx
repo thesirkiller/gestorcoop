@@ -118,11 +118,11 @@ export default function CooperadoDashboard() {
   return (
     <div className="flex flex-col gap-4">
       {/* Prefetch & Update Section */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-col gap-3 shadow-sm">
+      <div className="bg-surface border border-line rounded-xl p-4 flex flex-col gap-3 shadow-card">
         <div className="flex justify-between items-center">
           <div>
-            <h2 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Carga de Dados Diária</h2>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <h2 className="text-xs font-strong text-muted uppercase tracking-wider">Carga de Dados Diária</h2>
+            <p className="text-xs text-muted mt-0.5">
               {prefetechedAt ? `Última atualização: hoje às ${prefetechedAt}` : 'Nenhuma carga feita hoje'}
             </p>
           </div>
@@ -130,10 +130,10 @@ export default function CooperadoDashboard() {
           <button
             onClick={handlePrefetch}
             disabled={!isOnline || loading}
-            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-all active:scale-95 ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-strong rounded-lg border transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               isOnline && !loading
-                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
-                : 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed'
+                ? 'bg-accent-soft border-accent-line text-accent-soft-ink hover:bg-accent-line'
+                : 'bg-disabled border-line text-disabled-ink cursor-not-allowed'
             }`}
           >
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
@@ -142,14 +142,14 @@ export default function CooperadoDashboard() {
         </div>
 
         {error && (
-          <div className="bg-red-50 border border-red-100 text-red-700 text-xs p-2.5 rounded-lg flex items-center gap-2">
+          <div className="bg-crit-soft border border-crit-line text-crit-ink text-xs p-2.5 rounded-lg flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
           </div>
         )}
 
         {!prefetechedAt && isOnline && !loading && (
-          <div className="bg-indigo-50/50 border border-indigo-100 text-indigo-700 text-[11px] p-2.5 rounded-lg">
+          <div className="bg-accent-soft border border-accent-line text-accent-soft-ink text-[11px] p-2.5 rounded-lg">
             🔔 <strong className="font-semibold">Atenção:</strong> Baixe a agenda do dia antes de ir a campo para ter acesso a todos os prontuários e medicamentos offline.
           </div>
         )}
@@ -157,13 +157,13 @@ export default function CooperadoDashboard() {
 
       {/* Lista de Atendimentos */}
       <div className="flex flex-col gap-2">
-        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider px-1">Atendimentos de Hoje</h3>
-        
+        <h3 className="text-xs font-strong text-muted uppercase tracking-wider px-1">Atendimentos de Hoje</h3>
+
         {visits.length === 0 ? (
-          <div className="bg-white border border-slate-200 border-dashed rounded-xl p-8 text-center text-slate-500">
-            <Clock className="w-10 h-10 text-slate-300 mx-auto mb-2.5" />
-            <p className="text-sm font-bold text-slate-800">Nenhum atendimento carregado</p>
-            <p className="text-xs text-slate-500 mt-1">Conecte-se à internet e clique em "Carregar Agenda" para baixar a sua escala.</p>
+          <div className="bg-surface border border-line border-dashed rounded-xl p-8 text-center text-muted">
+            <Clock className="w-10 h-10 text-faint mx-auto mb-2.5" aria-hidden="true" />
+            <p className="text-sm font-strong text-ink">Nenhum atendimento carregado</p>
+            <p className="text-xs text-muted mt-1">Conecte-se à internet e clique em "Carregar Agenda" para baixar a sua escala.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-2.5">
@@ -171,38 +171,38 @@ export default function CooperadoDashboard() {
               <Link
                 key={visit.pacienteId}
                 href={`/cooperado/prontuario/${visit.pacienteId}`}
-                className="bg-white border border-slate-200 rounded-xl p-4 flex justify-between items-center hover:border-slate-300 transition-all shadow-sm active:bg-slate-50"
+                className="bg-surface border border-line rounded-xl p-4 flex justify-between items-center hover:border-line-strong transition-all shadow-card active:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
               >
                 <div className="flex flex-col gap-1.5 flex-1 min-w-0 pr-3">
                   {/* Paciente e Horário */}
                   <div className="flex items-center gap-2">
-                    <span className="bg-slate-100 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-md">
+                    <span className="bg-chip text-ink-body text-[10px] font-heavy px-2 py-0.5 rounded-md">
                       {visit.horario}
                     </span>
-                    <h4 className="font-bold text-slate-900 truncate text-sm">
+                    <h4 className="font-strong text-ink truncate text-sm">
                       {visit.pacienteNome}
                     </h4>
                   </div>
 
                   {/* Endereço */}
-                  <div className="flex items-center gap-1 text-slate-500 text-xs">
-                    <MapPin className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  <div className="flex items-center gap-1 text-muted text-xs">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span className="truncate">{visit.endereco}</span>
                   </div>
                 </div>
 
                 {/* Status & Direção */}
                 <div className="flex items-center gap-2">
-                  <span className={`text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-0.5 rounded-full border ${
+                  <span className={`text-[10px] uppercase tracking-wider font-heavy px-2.5 py-0.5 rounded-full border ${
                     visit.status === 'Concluído'
-                      ? 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20'
+                      ? 'bg-pos-soft text-pos-ink border-pos-line'
                       : visit.status === 'Em_Andamento'
-                        ? 'bg-blue-500/10 text-blue-700 border-blue-500/20'
-                        : 'bg-slate-500/10 text-slate-700 border-slate-500/20'
+                        ? 'bg-info-soft text-info-ink border-info-line'
+                        : 'bg-idle-soft text-idle-ink border-idle-line'
                   }`}>
                     {visit.status === 'Em_Andamento' ? 'Em andamento' : visit.status.toLowerCase()}
                   </span>
-                  <ChevronRight className="w-4 h-4 text-slate-500" />
+                  <ChevronRight className="w-4 h-4 text-muted" aria-hidden="true" />
                 </div>
               </Link>
             ))}
