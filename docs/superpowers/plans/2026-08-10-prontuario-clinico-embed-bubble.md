@@ -22,7 +22,8 @@
 | Tipografia das telas do gestor | ⏸️ Não iniciado — Fase 2 |
 | Foco preso nos modais | ⏸️ Não iniciado — Fase 2 |
 | Backend: mocks, seed, lint | ⏸️ Não iniciado — Fase 3 |
-| Infra do embed | ⏸️ **Bloqueia o embed** — Fase 0 |
+| Sessão dentro do iframe, sem subdomínio | ✅ Concluída — Fase 0, Task 1 |
+| Infra do embed | ⏸️ Resta **só** definir `ASSINATURA_SECRET` no Pages — Fase 0, Task 2 |
 
 **`$impeccable audit`: 10/20 → 15/20** (Acceptable → Good).
 
@@ -40,18 +41,29 @@
 
 ## FASE 0 — Infra que bloqueia o embed
 
-Sem estes dois itens o módulo não funciona embutido, por mais polida que a interface esteja.
+**Decisão de 2026-08-12: não haverá subdomínio.** A sessão passou a ter duas formas para funcionar mesmo cross-site. Sobrou **uma** variável de ambiente para configurar.
 
-### Task 1: Subdomínio de `gestorcoop.app`
+### Task 1: Sessão em duas formas, sem subdomínio ✅
 
-- [ ] **Step 1:** Publicar o app num subdomínio (ex.: `prontuario.gestorcoop.app`) como custom domain do Cloudflare Pages.
-- [ ] **Step 2:** Motivo, para não ser revertido por engano: a sessão é cookie `SameSite=Lax`. Num iframe onde `gestorcoop.app` embute `gestorcoop.pages.dev`, os dois são **sites diferentes** e o cookie **não é enviado** — a sessão não existe lá dentro. `SameSite=None` transformaria em cookie de terceiro, que o Safari bloqueia por padrão. Com subdomínio do mesmo registrable domain o iframe é same-site e o cookie flui em todo navegador.
-- [ ] **Step 3:** Conferir `EMBED_ORIGEM` nas variáveis do Pages; o middleware usa esse valor no `frame-ancestors` e cai em `https://gestorcoop.app` por padrão.
+O problema era: cookie `SameSite=Lax` não é enviado quando `gestorcoop.app` embute `gestorcoop.pages.dev` — são sites diferentes. `SameSite=None` viraria cookie de terceiro, que o Safari bloqueia. Não existe solução por cookie sem domínio same-site.
 
-### Task 2: `ASSINATURA_SECRET`
+- [x] **Step 1:** `src/lib/sessao-token.ts` — token HMAC-SHA256 com expiração de 12h, base64url, comparação em tempo constante.
+- [x] **Step 2:** O SSO continua gravando o cookie **e** devolve o token no **fragmento** da URL (`#s=...`). Fragmento não é enviado ao servidor, não entra em log de acesso nem no `Referer`. O cliente guarda e limpa a barra de endereços.
+- [x] **Step 3:** `obterSessaoCooperado` aceita cookie **ou** `Authorization: Bearer`, nessa ordem. Onde o cookie chega, ele vence — é a fonte mais forte por ser `httpOnly`.
+- [x] **Step 4:** `src/lib/api-cliente.ts` captura o token na importação do módulo (não em efeito: no React os efeitos dos filhos rodam antes dos do pai, e a agenda dispararia sem credencial), instala interceptador global do axios e expõe `fetchAutenticado`.
+- [x] **Step 5:** Conferir `EMBED_ORIGEM` nas variáveis do Pages; o middleware usa no `frame-ancestors` e cai em `https://gestorcoop.app` por padrão.
+
+⚠️ **Por que o token é assinado, e o cookie não precisava ser.** O cookie guarda o `user._id` cru — só é seguro por ser `httpOnly`, que impede o cliente de lê-lo ou forjá-lo. Um valor equivalente entregue ao cliente seria trivialmente falsificável: bastaria trocar o id no `sessionStorage` para gravar evolução em nome de outro profissional. Há teste cobrindo exatamente esse ataque (`tests/e2e/sessao-iframe.spec.ts`).
+
+⚠️ **Assimetria deliberada no middleware.** Rota de **API** exige credencial; rota de **página** passa livre. Dentro do iframe o token só chega ao cliente depois que o documento carrega, então bloquear a página impediria o próprio embed de inicializar. As telas são todas `'use client'` e não renderizam nada do paciente no servidor — a casca é vazia, e todo dado continua atrás de API autenticada. **Se alguma tela de `/cooperado` passar a renderizar dado no servidor, esta decisão precisa ser revista junto.**
+
+⚠️ **O layout não redireciona para `/login` em 401.** Tentou-se; quebra o offline-first. `/me` responde 401 sempre que o Bubble estiver fora ou o celular sem rede, e o redirect expulsaria o profissional no meio do plantão. Dentro do iframe a tela de login também não resolve nada: quem emite sessão é o app do Bubble.
+
+### Task 2: `ASSINATURA_SECRET` — única pendência de infra
 
 - [ ] **Step 1:** Definir `ASSINATURA_SECRET` nas variáveis de ambiente do Pages.
-- [ ] **Step 2:** Sem ela `gerarSeloAssinatura` **lança de propósito** (`src/lib/sessao-cooperado.ts`). Gravar qualquer valor no lugar reproduziria a assinatura decorativa que foi removida. Falhar é o comportamento correto.
+- [ ] **Step 2:** Agora ela serve a **dois** usos, com separação de domínio por prefixo no HMAC: o selo de assinatura da evolução e o token de sessão. Reaproveitada de propósito, para o deploy não precisar de uma segunda variável.
+- [ ] **Step 3:** Sem ela `gerarSeloAssinatura` e `assinarTokenSessao` **lançam de propósito**. No SSO isso vira redirect para `/login?error=assinatura_nao_configurada` — falha alta e explícita, em vez de entregar uma sessão que só funciona fora do iframe e responde 401 em toda chamada lá dentro.
 
 ### Task 3: Ligação a partir do Bubble
 

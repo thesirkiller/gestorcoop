@@ -3,6 +3,7 @@ import { bubbleApi } from '@/lib/bubble';
 import { cookies } from 'next/headers';
 
 import { COOKIE_SESSAO_COOPERADO } from '@/lib/sessao-cooperado';
+import { assinarTokenSessao } from '@/lib/sessao-token';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -38,10 +39,11 @@ export async function GET(request: NextRequest) {
     const ehDestinoCooperado = redirectPath.startsWith('/cooperado');
     const cookieStore = cookies();
 
-    // sameSite 'lax' funciona dentro do iframe do Bubble DESDE QUE o app seja
-    // servido num subdomínio de gestorcoop.app (ex.: prontuario.gestorcoop.app).
-    // Em domínio distinto (gestorcoop.pages.dev) o navegador trata como
-    // cross-site e não envia o cookie — o Safari bloqueia mesmo com 'none'.
+    // sameSite 'lax' só chega ao iframe do Bubble se o app for servido num
+    // domínio same-site de gestorcoop.app. Como não haverá subdomínio, o cookie
+    // continua sendo emitido (vale quando o app é primeira-parte: aba própria,
+    // WebView abrindo a URL direto) e o token assinado abaixo cobre o caso
+    // cross-site. Ver `src/lib/sessao-token.ts`.
     const opcoesCookie = {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -50,18 +52,35 @@ export async function GET(request: NextRequest) {
       path: '/',
     };
 
+    const destino = new URL(redirectPath, request.url);
+
     if (ehDestinoCooperado) {
       if (!user.fk_cooperado) {
         console.warn(`User ${user._id} tentou abrir o prontuário sem fk_cooperado vinculado.`);
         return NextResponse.redirect(new URL('/login?error=sem_cooperado_vinculado', request.url));
       }
       cookieStore.set(COOKIE_SESSAO_COOPERADO, user._id, opcoesCookie);
+
+      // O token vai no FRAGMENTO, não na query: fragmento não é enviado ao
+      // servidor, não entra em log de acesso nem no cabeçalho `Referer` de
+      // requisições que saiam da página. O cliente o guarda e limpa a barra de
+      // endereços em seguida (`src/lib/api-cliente.ts`).
+      let token: string;
+      try {
+        token = await assinarTokenSessao(user._id);
+      } catch (erro) {
+        // Falhar aqui é melhor que entregar uma sessão que só funciona fora do
+        // iframe: dentro dele o profissional veria a tela carregar e toda
+        // chamada de dados responder 401, sem explicação.
+        console.error('Não foi possível emitir o token de sessão do cooperado:', erro);
+        return NextResponse.redirect(new URL('/login?error=assinatura_nao_configurada', request.url));
+      }
+      destino.hash = `s=${token}`;
     } else {
       cookieStore.set('gestor_session', user._id, opcoesCookie);
     }
 
-    // Redireciona para o destino
-    return NextResponse.redirect(new URL(redirectPath, request.url));
+    return NextResponse.redirect(destino);
   } catch (error) {
     console.error('Erro no fluxo SSO:', error);
     return NextResponse.redirect(new URL('/login?error=internal_error', request.url));

@@ -1,5 +1,6 @@
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
 import { bubbleApi } from '@/lib/bubble';
+import { tokenDoCabecalho, verificarTokenSessao } from '@/lib/sessao-token';
 
 /**
  * Sessão do cooperado no módulo de prontuário.
@@ -36,13 +37,33 @@ export class SemSessaoError extends Error {
 }
 
 /**
- * Resolve a sessão a partir do cookie. Devolve `null` quando não há cookie ou
- * quando o user não tem cooperado vinculado — nesse segundo caso a pessoa até
- * consegue logar, mas não pode assinar evolução, e é melhor tratar como sem
- * sessão do que gravar um prontuário órfão.
+ * Resolve o `user._id` da requisição. Duas fontes, nesta ordem:
+ *
+ *   1. cookie httpOnly — vale quando o app é primeira-parte. É o caminho
+ *      preferido: o cliente não consegue ler nem forjar o valor.
+ *   2. `Authorization: Bearer <token>` — o token ASSINADO de `sessao-token.ts`,
+ *      necessário dentro do iframe cross-site do Bubble, onde o navegador não
+ *      envia o cookie. Diferente do cookie, o valor passa pelo cliente, então
+ *      só é aceito com HMAC conferido e prazo válido.
+ *
+ * O cookie vem primeiro de propósito: onde ele chega, é a fonte mais forte.
+ */
+async function resolverUserId(): Promise<string | null> {
+  const doCookie = cookies().get(COOKIE_SESSAO_COOPERADO)?.value;
+  if (doCookie) return doCookie;
+
+  const token = tokenDoCabecalho(headers().get('authorization'));
+  return token ? verificarTokenSessao(token) : null;
+}
+
+/**
+ * Resolve a sessão. Devolve `null` quando não há credencial ou quando o user
+ * não tem cooperado vinculado — nesse segundo caso a pessoa até consegue logar,
+ * mas não pode assinar evolução, e é melhor tratar como sem sessão do que
+ * gravar um prontuário órfão.
  */
 export async function obterSessaoCooperado(): Promise<SessaoCooperado | null> {
-  const userId = cookies().get(COOKIE_SESSAO_COOPERADO)?.value;
+  const userId = await resolverUserId();
   if (!userId) return null;
 
   try {
