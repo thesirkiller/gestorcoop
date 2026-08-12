@@ -67,6 +67,9 @@ export default function GestorEquipamentos() {
   const [isReserveModalOpen, setIsReserveModalOpen] = useState(false);
   const [isInspectionModalOpen, setIsInspectionModalOpen] = useState(false);
   const [isHygieneModalOpen, setIsHygieneModalOpen] = useState(false);
+  const [isEditNotesModalOpen, setIsEditNotesModalOpen] = useState(false);
+  const [selectedRentalForNotes, setSelectedRentalForNotes] = useState<LocacaoEquipamento | null>(null);
+  const [rentNotesText, setRentNotesText] = useState('');
 
   // Editing items
   const [editingEquipamento, setEditingEquipamento] = useState<Equipamento | null>(null);
@@ -681,6 +684,37 @@ export default function GestorEquipamentos() {
     }
   };
 
+  // Open Edit Notes Dialog
+  const handleOpenEditNotesModal = (rental: LocacaoEquipamento) => {
+    setSelectedRentalForNotes(rental);
+    setRentNotesText(rental.txt_observacoes || '');
+    setModalErrorMsg('');
+    setIsEditNotesModalOpen(true);
+  };
+
+  // Submit Edit Notes
+  const handleSubmitEditNotes = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedRentalForNotes?._id) return;
+    setSubmitting(true);
+    setModalErrorMsg('');
+
+    try {
+      await axios.patch(`/api/gestor/locacoes/${selectedRentalForNotes._id}`, {
+        txt_observacoes: rentNotesText,
+      });
+
+      setIsEditNotesModalOpen(false);
+      setSelectedRentalForNotes(null);
+      fetchData();
+    } catch (err) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setModalErrorMsg(error.response?.data?.error || 'Erro ao salvar observações.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <div className="text-slate-800 font-sans relative">
       {/* Header */}
@@ -920,6 +954,22 @@ export default function GestorEquipamentos() {
                             <td className="px-6 py-4">
                               <div className="font-semibold text-slate-800">{equip?.txt_nome || 'N/A'}</div>
                               <div className="text-[10px] text-slate-400">S/N: {equip?.txt_numero_serie || '-'}</div>
+                              {l.txt_observacoes ? (
+                                <div 
+                                  className="text-[10px] text-indigo-600/80 bg-indigo-50/50 border border-indigo-100/50 rounded px-1.5 py-0.5 mt-1 inline-block max-w-[200px] truncate cursor-pointer hover:bg-indigo-100/80 transition-colors"
+                                  onClick={() => handleOpenEditNotesModal(l)}
+                                  title={`Observações: ${l.txt_observacoes}. Clique para editar.`}
+                                >
+                                  Obs: {l.txt_observacoes}
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => handleOpenEditNotesModal(l)}
+                                  className="text-[10px] text-indigo-500 hover:text-indigo-700 font-medium underline mt-1 block"
+                                >
+                                  + Add Observação
+                                </button>
+                              )}
                             </td>
                             <td className="px-6 py-4 font-semibold text-slate-900">
                               {formatCurrency(l.num_total_estimado ?? l.num_valor_aluguel)}
@@ -941,26 +991,44 @@ export default function GestorEquipamentos() {
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right">
-                              {l.txt_status === 'Ativo' && (
-                                <div className="inline-flex items-center gap-1.5">
-                                  <a
-                                    href={`/gestor/equipamentos/romaneio?cliente=${l.fk_paciente}&itens=${l._id}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    title="Gerar romaneio de entrega apenas deste equipamento"
-                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold transition-all min-h-[32px]"
-                                  >
-                                    <Printer className="w-3.5 h-3.5" />
-                                    Romaneio
-                                  </a>
+                              <div className="inline-flex items-center gap-1.5 justify-end w-full">
+                                {l.txt_status === 'Ativo' ? (
+                                  <>
+                                    <a
+                                      href={`/gestor/equipamentos/romaneio?cliente=${l.fk_paciente}&itens=${l._id}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      title="Gerar romaneio de entrega apenas deste equipamento"
+                                      className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold transition-all min-h-[32px]"
+                                    >
+                                      <Printer className="w-3.5 h-3.5" />
+                                      Romaneio
+                                    </a>
+                                    <button
+                                      onClick={() => handleOpenEditNotesModal(l)}
+                                      title="Editar observações da locação"
+                                      className="inline-flex items-center justify-center p-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-slate-500/20"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => handleOpenReturnModal(l)}
+                                      className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    >
+                                      Devolver
+                                    </button>
+                                  </>
+                                ) : (
                                   <button
-                                    onClick={() => handleOpenReturnModal(l)}
-                                    className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-indigo-600 hover:text-indigo-800 text-xs font-bold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                                    onClick={() => handleOpenEditNotesModal(l)}
+                                    title="Editar observações da locação"
+                                    className="inline-flex items-center justify-center gap-1 px-3 py-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 text-xs font-semibold transition-all min-h-[32px] focus:outline-none focus:ring-2 focus:ring-slate-500/20"
                                   >
-                                    Devolver
+                                    <Edit3 className="w-3 h-3" />
+                                    Editar Obs
                                   </button>
-                                </div>
-                              )}
+                                )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2149,6 +2217,110 @@ export default function GestorEquipamentos() {
                 >
                   {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
                   Confirmar Devolução
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT LEASE NOTES MODAL */}
+      {isEditNotesModalOpen && selectedRentalForNotes && (
+        <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+          <div role="dialog" aria-modal="true" aria-labelledby="editNotesModalTitle" className="bg-white rounded-xl max-w-lg w-full shadow-lg border border-slate-200/80 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h2 id="editNotesModalTitle" className="text-base font-bold text-slate-900">Editar Observações da Locação</h2>
+              <button
+                onClick={() => {
+                  setIsEditNotesModalOpen(false);
+                  setSelectedRentalForNotes(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitEditNotes} className="p-6 space-y-4">
+              <ModalErrorBanner message={modalErrorMsg} />
+              
+              <div className="bg-slate-50 border border-slate-200/60 rounded-lg p-3 text-xs text-slate-600 space-y-1">
+                <div>
+                  <span className="font-bold text-slate-700">Cliente: </span>
+                  {pacientes.find(p => p._id === selectedRentalForNotes.fk_paciente)?.txt_nome || 'N/A'}
+                </div>
+                <div>
+                  <span className="font-bold text-slate-700">Equipamento: </span>
+                  {equipamentos.find(e => e._id === selectedRentalForNotes.fk_equipamento)?.txt_nome || 'N/A'}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="editNotesText" className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                  Observações / Itens Enviados
+                </label>
+                <textarea
+                  id="editNotesText"
+                  value={rentNotesText}
+                  onChange={(e) => setRentNotesText(e.target.value)}
+                  className="w-full bg-slate-50/50 hover:bg-white focus:bg-white border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-sm text-slate-800 focus:outline-none h-32 resize-none transition-all"
+                  placeholder="Ex: Enviou bateria extra, carregador de tomada, manual de instruções..."
+                />
+              </div>
+
+              {/* Quick tags for insertion */}
+              <div>
+                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                  Inserção Rápida
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'Enviou bateria extra',
+                    'Enviou carregador',
+                    'Enviou cabo de força',
+                    'Enviou manual de instruções',
+                    'Enviou kit sobressalente',
+                    'Equipamento com avaria leve',
+                  ].map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => {
+                        setRentNotesText(prev => {
+                          const trimPrev = prev.trim();
+                          if (!trimPrev) return tag;
+                          // If there's already content, append with a comma or new line
+                          return trimPrev.endsWith('.') || trimPrev.endsWith(',') 
+                            ? `${trimPrev} ${tag}`
+                            : `${trimPrev}, ${tag}`;
+                        });
+                      }}
+                      className="text-[10px] bg-slate-50 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 border border-slate-200 rounded px-2.5 py-1.5 text-slate-600 font-medium transition-all"
+                    >
+                      + {tag.replace('Enviou ', '')}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditNotesModalOpen(false);
+                    setSelectedRentalForNotes(null);
+                  }}
+                  className="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+                >
+                  {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                  Salvar Observações
                 </button>
               </div>
             </form>
