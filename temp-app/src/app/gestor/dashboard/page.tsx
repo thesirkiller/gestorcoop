@@ -21,7 +21,9 @@ import {
   Check,
   ChevronDown,
   ExternalLink,
+  FolderOpen,
 } from 'lucide-react';
+import ModalDocumentosCooperado from './_components/ModalDocumentosCooperado';
 
 interface Cooperado {
   _id: string;
@@ -58,6 +60,32 @@ export default function GestorDashboard() {
   const [selectedCooperado, setSelectedCooperado] = useState<Cooperado | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
+
+  // Documentos Modal State
+  const [docsModalCooperado, setDocsModalCooperado] = useState<Cooperado | null>(null);
+  const [isDocsModalOpen, setIsDocsModalOpen] = useState(false);
+
+  const openDocsModal = (coop: Cooperado) => {
+    setDocsModalCooperado(coop);
+    setIsDocsModalOpen(true);
+  };
+
+  const handleDocumentsChanged = (updatedUrls: string[]) => {
+    if (!docsModalCooperado) return;
+    const coopId = docsModalCooperado._id;
+
+    setCooperados((prev) =>
+      prev.map((c) => (c._id === coopId ? { ...c, fks_pasta: updatedUrls } : c))
+    );
+
+    if (selectedCooperado && selectedCooperado._id === coopId) {
+      setSelectedCooperado((prev) => (prev ? { ...prev, fks_pasta: updatedUrls } : null));
+    }
+
+    if (docsModalCooperado && docsModalCooperado._id === coopId) {
+      setDocsModalCooperado((prev) => (prev ? { ...prev, fks_pasta: updatedUrls } : null));
+    }
+  };
 
   // New states for filters, links and loading feedback
   const [selectedProfession, setSelectedProfession] = useState('');
@@ -518,6 +546,18 @@ export default function GestorDashboard() {
                             <Eye className="w-4 h-4" />
                           </button>
 
+                          {/* Gerenciar Documentos & Fotos (Grade 2x2) */}
+                          <button
+                            onClick={() => openDocsModal(coop)}
+                            className="bg-white hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-600 px-2.5 py-1.5 rounded-lg transition-all shadow-sm flex items-center gap-1.5 text-xs font-semibold"
+                            title="Ver Documentos e Fotos em Grade 2x2"
+                          >
+                            <FolderOpen className="w-4 h-4 text-indigo-600" />
+                            <span className="hidden xl:inline text-[11px]">
+                              Doc ({coop.fks_pasta?.length || 0})
+                            </span>
+                          </button>
+
                           {/* Geração e Cópia do Termo */}
                           {!isApproved && (
                             <>
@@ -812,10 +852,33 @@ export default function GestorDashboard() {
                 </div>
 
                 <div>
-                  <h3 className="font-bold text-slate-800 text-sm mb-3 flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                    <FileText className="w-4 h-4 text-indigo-600" /> Documentos & Assinaturas
-                  </h3>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-3">
+                    <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-indigo-600" /> Documentos & Assinaturas
+                    </h3>
+                    <button
+                      onClick={() => openDocsModal(selectedCooperado)}
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
+                    >
+                      <FolderOpen className="w-3.5 h-3.5" />
+                      Galeria (Grade 2x2)
+                    </button>
+                  </div>
+
                   <div className="flex flex-col gap-2">
+                    {/* Botão de destaque para gerenciar documentos no modal 2x2 */}
+                    <button
+                      onClick={() => openDocsModal(selectedCooperado)}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white p-2.5 rounded-lg text-xs font-bold transition-all flex items-center justify-between w-full shadow-sm mb-1"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <FolderOpen className="w-3.5 h-3.5" /> Gerenciar Documentos & Fotos em Grade 2x2
+                      </span>
+                      <span className="bg-indigo-800/60 px-2 py-0.5 rounded text-[10px]">
+                        {(selectedCooperado.fks_pasta || []).length + (selectedCooperado.file_termo_assinado ? 1 : 0)} arquivo(s)
+                      </span>
+                    </button>
+
                     {selectedCooperado.txt_termo_status && (
                       <div className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-lg flex items-center justify-between text-xs mb-1">
                         <span className="text-slate-700 font-semibold font-sans">Status do Termo:</span>
@@ -942,6 +1005,23 @@ export default function GestorDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal Dedicado de Documentos & Fotos (Grade 2x2) */}
+      {isDocsModalOpen && docsModalCooperado && (
+        <ModalDocumentosCooperado
+          isOpen={isDocsModalOpen}
+          onClose={() => {
+            setIsDocsModalOpen(false);
+            setDocsModalCooperado(null);
+          }}
+          cooperadoId={docsModalCooperado._id}
+          cooperadoNome={docsModalCooperado.txt_nomeCompleto}
+          cooperadoCpf={docsModalCooperado.txt_CPF}
+          initialDocuments={docsModalCooperado.fks_pasta || []}
+          termoAssinadoUrl={docsModalCooperado.file_termo_assinado}
+          onDocumentsChange={handleDocumentsChanged}
+        />
       )}
     </div>
   );
