@@ -384,3 +384,92 @@ test('Cai na mensagem genérica quando a API não devolve motivo', async ({ page
   await expect(page.getByText('Erro ao registrar locação.')).toHaveCount(1);
   await expect(modal).toBeVisible();
 });
+
+test('Cadastra um novo cliente com sucesso via modal', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+
+  let postPayload: any = null;
+  await page.route('**/api/gestor/pacientes', async (route) => {
+    if (route.request().method() === 'POST') {
+      postPayload = route.request().postDataJSON();
+      await route.fulfill({
+        json: {
+          success: true,
+          data: {
+            _id: 'cli-new-1',
+            txt_nome: 'Carlos Drummond de Andrade',
+            txt_endereco: 'Rua das Flores, 123 - Centro, Itabira - MG',
+            txt_tipo: 'Homecare',
+          },
+        },
+      });
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } });
+    }
+  });
+
+  await page.goto('/gestor/equipamentos');
+  await page.getByRole('button', { name: 'Cadastro de Clientes' }).click();
+
+  // Clica no botão para abrir o modal de cadastro
+  await page.getByRole('button', { name: 'Cadastrar Cliente' }).click();
+
+  const modal = page.getByRole('dialog');
+  await expect(modal).toBeVisible();
+  await expect(modal.getByText('Cadastrar Cliente')).toBeVisible();
+
+  // Preenche os dados do paciente
+  await page.fill('#patNome', 'Carlos Drummond de Andrade');
+  await page.fill('#patCPF', '123.456.789-00');
+  await page.fill('#patWhatsapp', '(11) 98765-4321');
+  await page.fill('#patEndereco', 'Rua das Flores, 123 - Centro, Itabira - MG');
+
+  // Submete o formulário
+  await modal.getByRole('button', { name: 'Cadastrar' }).click();
+
+  // Modal deve ser fechado
+  await expect(modal).not.toBeVisible();
+
+  // Valida que o payload enviado para a API continha os dados corretos
+  expect(postPayload).toEqual({
+    txt_nome: 'Carlos Drummond de Andrade',
+    txt_cpf: '123.456.789-00',
+    txt_whatsapp: '(11) 98765-4321',
+    txt_endereco: 'Rua das Flores, 123 - Centro, Itabira - MG',
+    txt_email: '',
+    txt_tipo: 'Homecare',
+  });
+});
+
+test('Exibe mensagem de erro dentro do modal ao falhar o cadastro de cliente', async ({ page }) => {
+  await autenticar(page);
+  await mockApis(page);
+
+  await page.route('**/api/gestor/pacientes', async (route) => {
+    if (route.request().method() === 'POST') {
+      await route.fulfill({
+        status: 400,
+        json: { success: false, error: 'Nome e Endereço de Entrega são obrigatórios.' },
+      });
+    } else {
+      await route.fulfill({ json: { success: true, data: [] } });
+    }
+  });
+
+  await page.goto('/gestor/equipamentos');
+  await page.getByRole('button', { name: 'Cadastro de Clientes' }).click();
+  await page.getByRole('button', { name: 'Cadastrar Cliente' }).click();
+
+  const modal = page.getByRole('dialog');
+  await page.fill('#patNome', 'Paciente Incompleto');
+  await page.fill('#patCPF', '123.456.789-00');
+  await page.fill('#patWhatsapp', '(11) 98765-4321');
+  await page.fill('#patEndereco', 'Endereço Inválido');
+
+  await modal.getByRole('button', { name: 'Cadastrar' }).click();
+
+  // Valida que a mensagem de erro é exibida dentro do modal e o modal continua aberto
+  await expect(modal.getByText('Nome e Endereço de Entrega são obrigatórios.')).toBeVisible();
+  await expect(modal).toBeVisible();
+});
