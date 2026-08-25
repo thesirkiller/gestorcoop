@@ -177,6 +177,32 @@ async function main() {
     warn('sem locacao_equipamento existente — cenário de suspensão pulado');
   }
 
+  // ---------- Paciente + Domicílio: criação e vínculo ----------
+  console.log('\n== Cenário 7: Paciente + Domicílio V2 ==');
+  const enderecoTeste = 'Av Paulista, 1500 - Bela Vista, São Paulo - SP';
+  const paciente = await bubbleApi.createPaciente({
+    txt_nome: `PACIENTE HOMOLOG ${ts}`,
+    txt_cpf: '000.000.000-00',
+    txt_whatsapp: '11999999999',
+    txt_endereco: enderecoTeste,
+    txt_email: 'homolog@gestorcoop.app',
+    txt_tipo: 'Homecare',
+  });
+  track('locais_de_trabalho_pacientes', paciente._id);
+  ok(!!paciente._id, 'paciente criado no Bubble');
+  const pacRaw = await raw('locais_de_trabalho_pacientes', paciente._id!);
+  ok(pacRaw?.txt_nome === `PACIENTE HOMOLOG ${ts}`, `nome do paciente gravado ("${pacRaw?.txt_nome}")`);
+  ok(!!pacRaw?.geo_local, 'endereço geo_local do paciente gravado');
+
+  const domicilios = await bubbleApi.getDomiciliosPorPaciente(paciente._id!);
+  const domAtivo = domicilios.find((d) => d.bool_ativo);
+  if (domAtivo?._id) {
+    track('domicilio', domAtivo._id);
+    ok(true, `domicílio ativo criado e vinculado automaticamente ao paciente (id: ${domAtivo._id})`);
+  } else {
+    warn('domicílio automático não retornado na listagem por paciente');
+  }
+
   console.log(`\n=== RESUMO: ${pass} ✅ / ${fail} ❌ / ${warns.length} ⚠️ ===`);
   warns.forEach((w) => console.log(`  ⚠️  ${w}`));
 }

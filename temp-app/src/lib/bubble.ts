@@ -899,10 +899,18 @@ export const bubbleApi = {
     const payload: any = {
       txt_nome: data.txt_nome,
       geo_local: data.txt_endereco,
-      os_tipo: data.txt_tipo || 'Homecare'
     };
     const response = await bubbleClient.post('/obj/locais_de_trabalho_pacientes', payload);
     const createdId = response.data.id || response.data.response?.id;
+
+    if (equipamentosV2Ativo && createdId && data.txt_endereco) {
+      try {
+        await this.obterOuCriarDomicilioAtivo(createdId, data.txt_endereco);
+      } catch (domErr) {
+        console.warn('Aviso: Não foi possível criar domicílio inicial:', domErr);
+      }
+    }
+
     return {
       _id: createdId,
       txt_nome: data.txt_nome,
@@ -916,7 +924,6 @@ export const bubbleApi = {
     const payload: any = {};
     if (data.txt_nome !== undefined) payload.txt_nome = data.txt_nome;
     if (data.txt_endereco !== undefined) payload.geo_local = data.txt_endereco;
-    if (data.txt_tipo !== undefined) payload.os_tipo = data.txt_tipo;
     if (data.fks_equipamentos !== undefined) payload.fks_equipamentos = data.fks_equipamentos;
     if (data.fks_locacoes !== undefined) payload.fks_locacoes = data.fks_locacoes;
     await bubbleClient.patch(`/obj/locais_de_trabalho_pacientes/${id}`, payload);
