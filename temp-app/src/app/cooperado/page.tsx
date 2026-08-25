@@ -75,6 +75,9 @@ export default function CooperadoDashboard() {
         if (lastPrefetch) {
           setPrefetchedAt(new Date(lastPrefetch).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
         }
+      } else {
+        // Banco local vazio: busca automaticamente da API
+        handlePrefetch();
       }
     } catch (e) {
       console.error('Erro ao ler banco local:', e);

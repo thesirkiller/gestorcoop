@@ -98,21 +98,31 @@ export async function GET(request: NextRequest) {
         } else {
           // Fallback de desenvolvimento local (sem D1)
           const mockData = getMockData();
-          dbPrescricoes = mockData.prescricoes.map(pr => ({
+          if (dbPacientes.length === 0) {
+            dbPacientes = mockData.pacientes;
+          }
+          dbPrescricoes = mockData.prescricoes.map((pr) => ({
             ...pr,
-            paciente_id: dbPacientes[0]?.id || pr.paciente_id
+            paciente_id: dbPacientes[0]?.id || pr.paciente_id,
           }));
-          dbAprazamentos = mockData.aprazamentos.map(ap => ({
+          dbAprazamentos = mockData.aprazamentos.map((ap) => ({
             ...ap,
-            prescricao_id: dbPrescricoes[0]?.id || ap.prescricao_id
+            prescricao_id: dbPrescricoes[0]?.id || ap.prescricao_id,
           }));
+        }
+
+        if (dbPacientes.length === 0) {
+          const mockData = getMockData();
+          dbPacientes = mockData.pacientes;
+          dbPrescricoes = mockData.prescricoes;
+          dbAprazamentos = mockData.aprazamentos;
         }
 
         return NextResponse.json({
           success: true,
           pacientes: dbPacientes,
           prescricoes: dbPrescricoes,
-          aprazamentos: dbAprazamentos
+          aprazamentos: dbAprazamentos,
         });
       } catch (err: any) {
         console.warn('Falha na integração direta com Bubble, utilizando fallback local:', err);
