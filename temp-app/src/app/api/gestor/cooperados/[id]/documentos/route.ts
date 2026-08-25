@@ -39,12 +39,24 @@ export async function GET(
 ) {
   try {
     const cooperadoId = params.id;
-    const cooperado = (await bubbleApi.getCooperado(cooperadoId)) as {
-      _id: string;
-      txt_nomeCompleto?: string;
-      fks_pasta?: string[];
-      file_termo_assinado?: string;
-    };
+    let cooperado: any = null;
+    try {
+      cooperado = await bubbleApi.getCooperado(cooperadoId);
+    } catch {
+      // Fallback para IDs mockados
+      if (cooperadoId.startsWith('coop_') || process.env.NODE_ENV === 'development') {
+        cooperado = {
+          _id: cooperadoId,
+          txt_nomeCompleto: cooperadoId === 'coop_1' ? 'Juliana Ramos dos Santos' : cooperadoId === 'coop_2' ? 'Marcos Vinícius de Oliveira' : 'Dra. Beatriz Helena Meirelles',
+          fks_pasta: [
+            'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=80',
+            'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=800&auto=format&fit=crop&q=80',
+            'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+          ],
+          file_termo_assinado: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
+        };
+      }
+    }
 
     if (!cooperado) {
       return NextResponse.json({ success: false, error: 'Cooperado não encontrado' }, { status: 404 });
@@ -53,7 +65,7 @@ export async function GET(
     const pastaUrls: string[] = cooperado.fks_pasta || [];
     const termoAssinadoUrl = cooperado.file_termo_assinado;
 
-    const documents = pastaUrls.map((url) =>
+    const documents = pastaUrls.map((url: string) =>
       parseDocumentInfo(url, url === termoAssinadoUrl)
     );
 
@@ -74,7 +86,7 @@ export async function GET(
     const err = error as { message?: string };
     console.error('Erro ao buscar documentos do cooperado:', err);
     return NextResponse.json(
-      { success: false, error: err.message || 'Erro ao carregar documentos' },
+      { success: false, error: err.message || 'Erro ao buscar documentos' },
       { status: 500 }
     );
   }
