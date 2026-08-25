@@ -19,19 +19,57 @@ import {
   LogOut,
   ChevronDown,
   LayoutGrid,
+  Stethoscope,
+  ShieldAlert,
+  Truck,
 } from 'lucide-react';
 
-// Navegação única do painel do gestor. O fluxo do cooperado (adesão) fica
-// fora de propósito: é público, sem autenticação, e não usa este shell.
-const NAV_ITEMS = [
-  { href: '/gestor/dashboard', label: 'Adesões', icon: Users },
-  { href: '/gestor/financeiro', label: 'Financeiro', icon: DollarSign },
-  { href: '/gestor/termos', label: 'Termos', icon: FileText },
-  { href: '/gestor/equipamentos', label: 'Equipamentos', icon: Boxes },
-  { href: '/gestor/manutencao', label: 'Manutenção', icon: Wrench },
-  { href: '/gestor/baixas', label: 'Baixas', icon: Archive },
-  { href: '/gestor/equipamentos-relatorios', label: 'Relatórios', icon: BarChart3 },
+export interface NavItem {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string;
+}
+
+export interface NavSection {
+  title: string;
+  items: NavItem[];
+}
+
+export const NAV_SECTIONS: NavSection[] = [
+  {
+    title: 'Clínico & Pacientes',
+    items: [
+      { href: '/gestor/prontuarios', label: 'Prontuários', icon: Stethoscope, badge: '360°' },
+      { href: '/gestor/prontuarios/auditoria', label: 'Auditoria Clínica', icon: ShieldAlert },
+    ],
+  },
+  {
+    title: 'Cooperados',
+    items: [
+      { href: '/gestor/dashboard', label: 'Adesões', icon: Users },
+      { href: '/gestor/termos', label: 'Termos', icon: FileText },
+    ],
+  },
+  {
+    title: 'Equipamentos',
+    items: [
+      { href: '/gestor/equipamentos', label: 'Equipamentos', icon: Boxes },
+      { href: '/gestor/equipamentos/romaneio', label: 'Romaneios', icon: Truck },
+      { href: '/gestor/manutencao', label: 'Manutenção', icon: Wrench },
+      { href: '/gestor/baixas', label: 'Baixas', icon: Archive },
+      { href: '/gestor/equipamentos-relatorios', label: 'Relatórios', icon: BarChart3 },
+    ],
+  },
+  {
+    title: 'Financeiro',
+    items: [
+      { href: '/gestor/financeiro', label: 'Financeiro', icon: DollarSign },
+    ],
+  },
 ];
+
+const ALL_NAV_ITEMS = NAV_SECTIONS.flatMap((section) => section.items);
 
 const SIDEBAR_COLLAPSED_KEY = 'gc_sidebar_collapsed';
 
@@ -93,7 +131,10 @@ export default function GestorShell({ children }: { children: React.ReactNode })
     }
   };
 
-  const activeItem = NAV_ITEMS.find((item) => pathname?.startsWith(item.href));
+  // Encontra item ativo (com match exato ou mais longo primeiro para evitar overlap entre /prontuarios e /prontuarios/auditoria)
+  const activeItem = [...ALL_NAV_ITEMS]
+    .sort((a, b) => b.href.length - a.href.length)
+    .find((item) => pathname === item.href || pathname?.startsWith(item.href + '/'));
 
   const initials = (me?.nome || 'G')
     .split(' ')
@@ -118,31 +159,60 @@ export default function GestorShell({ children }: { children: React.ReactNode })
         )}
       </div>
 
-      {/* Itens */}
-      <nav className="flex-1 py-4 px-3 flex flex-col gap-1 overflow-y-auto">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const isActive = pathname?.startsWith(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              title={collapsed ? item.label : undefined}
-              className={`flex items-center rounded-lg text-sm font-semibold transition-all duration-200 ${collapsed ? 'justify-center px-0 py-3' : 'gap-3 px-4 py-2.5'} ${
-                isActive
-                  ? 'bg-indigo-50 text-indigo-700'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-indigo-600' : 'text-slate-450'}`} />
-              <span
-                className={`overflow-hidden whitespace-nowrap transition-all duration-300 ${collapsed ? 'w-0 opacity-0 hidden' : 'opacity-100'}`}
-              >
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
+      {/* Itens Organizados por Categoria */}
+      <nav className="flex-1 py-3 px-3 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+        {NAV_SECTIONS.map((section, sIdx) => (
+          <div key={section.title} className="flex flex-col gap-1">
+            {!collapsed ? (
+              <div className="px-3 pt-1 pb-1">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {section.title}
+                </span>
+              </div>
+            ) : sIdx > 0 ? (
+              <div className="border-t border-slate-100 my-1 mx-2" />
+            ) : null}
+
+            {section.items.map((item) => {
+              const Icon = item.icon;
+              const isItemActive =
+                pathname === item.href ||
+                (pathname?.startsWith(item.href + '/') &&
+                  (!activeItem || activeItem.href === item.href));
+
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  title={collapsed ? item.label : undefined}
+                  className={`flex items-center rounded-xl text-sm font-semibold transition-all duration-200 ${
+                    collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2'
+                  } ${
+                    isItemActive
+                      ? 'bg-indigo-50 text-indigo-700 font-bold'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <Icon
+                    className={`w-4 h-4 shrink-0 transition-colors ${
+                      isItemActive ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'
+                    }`}
+                  />
+                  {!collapsed && (
+                    <div className="flex items-center justify-between flex-1 min-w-0">
+                      <span className="truncate">{item.label}</span>
+                      {item.badge && (
+                        <span className="bg-indigo-100 text-indigo-700 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full uppercase tracking-tight">
+                          {item.badge}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
+        ))}
       </nav>
 
       {/* Toggle colapsar (desktop) */}
@@ -151,9 +221,9 @@ export default function GestorShell({ children }: { children: React.ReactNode })
           type="button"
           onClick={toggleCollapsed}
           aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
-          className={`w-full flex items-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-800 text-sm font-semibold transition-all ${collapsed ? 'justify-center py-3' : 'gap-3 px-4 py-2.5'}`}
+          className={`w-full flex items-center rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-800 text-sm font-semibold transition-all ${collapsed ? 'justify-center py-2.5' : 'gap-3 px-3.5 py-2'}`}
         >
-          {collapsed ? <ChevronsRight className="w-5 h-5" /> : <ChevronsLeft className="w-5 h-5 shrink-0" />}
+          {collapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4 shrink-0" />}
           {!collapsed && <span>Recolher menu</span>}
         </button>
       </div>
@@ -203,9 +273,11 @@ export default function GestorShell({ children }: { children: React.ReactNode })
             >
               <Menu className="w-5 h-5" />
             </button>
-            <span className="text-sm font-bold text-slate-500 uppercase tracking-wider">
-              {activeItem?.label || 'Painel'}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-slate-700 tracking-tight">
+                {activeItem?.label || 'Painel'}
+              </span>
+            </div>
           </div>
 
           {/* Usuário */}
