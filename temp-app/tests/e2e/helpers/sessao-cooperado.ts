@@ -15,7 +15,7 @@ import { Page } from '@playwright/test';
  */
 export async function autenticarCooperado(page: Page) {
   await page.context().addCookies([
-    { name: 'cooperado_session', value: 'user-e2e-coop', url: 'http://localhost:3000' },
+    { name: 'cooperado_session', value: 'user-e2e-coop', url: 'http://localhost:3005' },
   ]);
 
   // O middleware só confere a presença do cookie; quem resolve o cooperado de

@@ -9,7 +9,7 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: [['list']],
   use: {
-    baseURL: 'http://localhost:3000',
+    baseURL: 'http://localhost:3005',
     trace: 'retain-on-failure',
   },
   projects: [
@@ -17,11 +17,6 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        // O prontuário grava áudio. Sem conceder o microfone e sem um
-        // dispositivo falso, getUserMedia rejeita, a gravação nunca começa e o
-        // teste de transcrição falha procurando um botão que só aparece com a
-        // gravação em curso. As flags fazem o Chrome aceitar automaticamente e
-        // tocar um tom sintético no lugar do microfone real.
         permissions: ['microphone'],
         launchOptions: {
           args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'],
@@ -30,9 +25,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
-    url: 'http://localhost:3000',
-    reuseExistingServer: !process.env.CI,
+    command: 'npm run dev -- -p 3005',
+    url: 'http://localhost:3005',
+    reuseExistingServer: false,
     timeout: 120_000,
   },
 });

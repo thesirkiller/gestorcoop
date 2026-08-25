@@ -5,7 +5,7 @@ async function autenticar(page: Page) {
     {
       name: 'gestor_session',
       value: 'user-e2e-1',
-      url: 'http://localhost:3000',
+      url: 'http://localhost:3005',
     },
   ]);
 }

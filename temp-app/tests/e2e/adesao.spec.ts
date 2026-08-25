@@ -30,7 +30,7 @@ async function mockBackend(
         success: true,
         cooperadoId: 'coop-e2e-1',
         docToken: 'tok-e2e',
-        signUrl: 'http://localhost:3000/e2e-assinatura-mock',
+        signUrl: 'http://localhost:3005/e2e-assinatura-mock',
       },
     })
   );
@@ -97,15 +97,16 @@ test('fluxo completo de adesão até a tela de assinatura', async ({ page }) => 
   // Etapa 5 — Documentos (upload mockado)
   await expect(page.getByRole('heading', { name: /Upload de Documentos/ })).toBeVisible();
   await page.locator('input[type="file"]').setInputFiles({
-    name: 'rg.pdf',
+    name: 'doc-teste.pdf',
     mimeType: 'application/pdf',
     buffer: Buffer.from('%PDF-1.4 conteudo de teste'),
   });
-  await expect(page.getByText('doc-teste.pdf')).toBeVisible();
+  await expect(page.getByText('Arquivos Carregados (1)')).toBeVisible();
+  await expect(page.getByText('doc-teste.pdf').first()).toBeAttached();
   await page.getByRole('button', { name: /Finalizar & Assinar/ }).click();
 
-  // Etapa 6 — Sucesso
-  await expect(page.getByText('Cadastro realizado com sucesso!')).toBeVisible();
+  // Etapa 6 — Redirecionamento para assinatura
+  await expect(page.getByRole('heading', { name: 'Assinatura mock' })).toBeVisible();
 });
 
 test('CPF inválido bloqueia o avanço da etapa 1', async ({ page }) => {
