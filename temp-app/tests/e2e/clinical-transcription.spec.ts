@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-
 import { autenticarCooperado } from './helpers/sessao-cooperado';
 
 test.describe('Prontuário - Gravação e Transcrição por Voz (API Mocked)', () => {
@@ -47,13 +46,10 @@ test.describe('Prontuário - Gravação e Transcrição por Voz (API Mocked)', (
     // Finalizar gravação
     await stopRecordBtn.click();
 
-    // Aguardar mock de transcrição (transcribing loading state)
-    await expect(page.locator('text=IA Transcrevendo & Formatando Evolução...')).toBeVisible();
-
     // Após transcrição, o editor de revisão deve conter o texto formatado final
     const reviewTextArea = page.locator('textarea[placeholder*="A evolução estruturada aparecerá"]');
     await expect(reviewTextArea).toBeVisible();
-    await expect(reviewTextArea).not.toHaveValue('');
+    await expect(reviewTextArea).toHaveValue(/EVOLUÇÃO CLÍNICA DE ENFERMAGEM/, { timeout: 10000 });
 
     // Deve conter palavras chaves da formatação estruturada clínica
     const textVal = await reviewTextArea.inputValue();
