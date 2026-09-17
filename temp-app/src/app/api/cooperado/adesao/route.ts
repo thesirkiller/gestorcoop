@@ -7,90 +7,9 @@ import { jsPDF } from 'jspdf';
 import { DocumentoAdesao, documentosObrigatoriosPendentes, normalizarUrlDocumento } from '@/lib/documentos';
 import { verificarComprovanteUpload } from '@/lib/comprovante-upload';
 
+import { montarTermoResolvido } from '@/lib/termo-template';
+
 export const runtime = 'edge';
-
-function resolveTermoText(
-  personalData: {
-    nomeCompleto: string;
-    rg?: string;
-    cpf: string;
-    dataNascimento?: string;
-    estadoCivil?: string;
-    nomeMae?: string;
-    nomePai?: string;
-    pis?: string;
-    email?: string;
-    whatsapp?: string;
-    telefoneReserva?: string;
-  },
-  fullAddress: string,
-  professionOptionNames: string[],
-  allTerms: Termo[]
-) {
-  const professionsText = (professionOptionNames || []).map((p) => (p || '').trim()).filter(Boolean).join(', ') || 'Cooperado';
-  const nomeCompleto = personalData?.nomeCompleto || '';
-  const rg = personalData?.rg || '';
-  const cpf = personalData?.cpf || '';
-  const dataNascimento = personalData?.dataNascimento;
-  const estadoCivil = personalData?.estadoCivil || '';
-  const endereco = fullAddress || '';
-  const nomeMae = personalData?.nomeMae || '';
-  const nomePai = personalData?.nomePai || '';
-  const pis = personalData?.pis || '';
-  const email = personalData?.email || '';
-  const telefone = personalData?.whatsapp || personalData?.telefoneReserva || '';
-  const currentDate = new Date().toLocaleDateString('pt-BR');
-
-  // 1. Try to find active term for one of the cooperado's professions
-  let activeTerm = (allTerms || []).find(
-    (t) => t?.bool_ativo && professionOptionNames.some((p: string) => (p || '').toLowerCase().trim() === (t?.txt_profissao || '').toLowerCase().trim())
-  );
-
-  // 2. If not found, try to find active term for 'Geral'
-  if (!activeTerm) {
-    activeTerm = (allTerms || []).find((t) => t?.bool_ativo && (t?.txt_profissao || '').toLowerCase().trim() === 'geral');
-  }
-
-  let templateText = activeTerm?.txt_conteudo;
-  const title = activeTerm?.txt_titulo || 'TERMO DE ADESAO AO QUADRO SOCIAL';
-
-  // Fallback to static text if no term exists in database
-  if (!templateText || typeof templateText !== 'string' || !templateText.trim()) {
-    templateText = `Pelo presente instrumento, eu, {nome}, portador(a) da cédula de identidade RG nº {rg} e inscrito(a) no CPF/MF sob o nº {cpf}, nascido(a) em {dataNascimento}, de estado civil {estadoCivil}, residente e domiciliado(a) em {endereco}, venho por meio deste solicitar a minha adesão e admissão como cooperado(a) na GESTORCOOP COOPERATIVA DE TRABALHO.
-
-Declaro estar ciente e de acordo com as seguintes disposições:
-
-1. COMPROMISSO SOCIAL: Comprometo-me a cumprir integralmente as normas do Estatuto Social, do Regimento Interno e as deliberações das Assembleias Gerais da Cooperativa.
-2. INTEGRALIZAÇÃO DE CAPITAL: Comprometo-me a integralizar o capital social mínimo exigido nos termos do estatuto.
-3. ATIVIDADE PROFISSIONAL: Declaro exercer legalmente a(s) profissão(ões) de {profissoes}, possuindo todos os registros ativos nos respectivos conselhos de classe.
-4. RESPONSABILIDADE: Declaro-me ciente de que a atividade cooperativa é exercida em caráter autônomo, sem vínculo empregatício de qualquer natureza com a cooperativa ou com seus tomadores de serviços.
-5. VERACIDADE DAS INFORMAÇÕES: Declaro, sob as penas da lei, que todas as informações prestadas neste cadastro e os documentos anexados são inteiramente verdadeiros e autênticos.
-
-Por ser a expressão da minha livre vontade e concordância, assino este Termo de Adesão por meio de assinatura eletrônica disponibilizada.
-
-Goiânia - GO, {dataAtual}.`;
-  }
-
-  // Replace placeholders
-  const resolvedText = templateText
-    .replace(/{nome}/gi, nomeCompleto.toUpperCase())
-    .replace(/{nomeCompleto}/gi, nomeCompleto.toUpperCase())
-    .replace(/{rg}/gi, rg)
-    .replace(/{cpf}/gi, cpf)
-    .replace(/{dataNascimento}/gi, dataNascimento ? new Date(dataNascimento).toLocaleDateString('pt-BR') : '')
-    .replace(/{estadoCivil}/gi, estadoCivil)
-    .replace(/{endereco}/gi, endereco)
-    .replace(/{profissoes}/gi, professionsText)
-    .replace(/{nomeMae}/gi, nomeMae.toUpperCase())
-    .replace(/{nomePai}/gi, nomePai.toUpperCase())
-    .replace(/{pis}/gi, pis)
-    .replace(/{email}/gi, email)
-    .replace(/{telefone}/gi, telefone)
-    .replace(/{matricula}/gi, '') // during signup, matricula is empty or not yet assigned
-    .replace(/{dataAtual}/gi, currentDate);
-
-  return { title, text: resolvedText || '' };
-}
 
 export async function POST(request: Request) {
   try {
@@ -270,7 +189,25 @@ export async function POST(request: Request) {
       console.warn('Falha ao buscar termos no Bubble, usando fallback estático:', e);
     }
 
-    const { text } = resolveTermoText(personalData, fullAddress, professionOptionNames, allTerms);
+    const { text } = montarTermoResolvido(
+      {
+        nomeCompleto: personalData.nomeCompleto,
+        rg: personalData.rg,
+        cpf: personalData.cpf,
+        dataNascimento: personalData.dataNascimento,
+        estadoCivil: personalData.estadoCivil,
+        endereco: fullAddress,
+        nomeMae: personalData.nomeMae,
+        nomePai: personalData.nomePai,
+        pis: personalData.pis,
+        email: personalData.email,
+        whatsapp: personalData.whatsapp,
+        telefone: personalData.telefoneReserva,
+        matricula: cooperadoId,
+        profissoes: professionOptionNames,
+      },
+      allTerms
+    );
 
     // 6. Generate Termo de Adesão PDF dynamically (with multi-page support)
     console.log('Gerando PDF do Termo de Adesão');

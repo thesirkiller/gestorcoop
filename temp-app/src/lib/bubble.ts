@@ -805,6 +805,25 @@ export const bubbleApi = {
   },
 
   async getTermos(): Promise<Termo[]> {
+    try {
+      const baseUrl = urlBaseBubble();
+      const token = process.env.BUBBLE_API_TOKEN;
+      const res = await fetch(`${baseUrl}/obj/termos?limit=100`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(15_000),
+        cache: 'no-store',
+      });
+      if (res.ok) {
+        const json = await res.json();
+        const results = json.response?.results;
+        if (Array.isArray(results) && results.length > 0) return results;
+      }
+    } catch (e) {
+      console.warn('fetch getTermos falhou, tentando fallback via getAllResults:', e);
+    }
     return getAllResults<Termo>('/obj/termos');
   },
 

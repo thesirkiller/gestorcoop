@@ -37,7 +37,7 @@ export const zapsignApi = {
     
     const url = `${baseUrl}/docs/`;
     
-    console.log(`[ZapSign API] Sending request to: ${url}`);
+    const webhookUrl = (process.env.ZAPSIGN_WEBHOOK_URL || (process.env.NEXT_PUBLIC_APP_URL ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/+$/, '')}/api/webhooks/zapsign` : 'https://gestorcoop.app/api/webhooks/zapsign')).trim();
     
     try {
       const response = await fetch(url, {
@@ -51,6 +51,7 @@ export const zapsignApi = {
           name,
           external_id: cooperadoId,
           base64_pdf: pdfBase64,
+          ...(webhookUrl ? { webhook_url: webhookUrl } : {}),
           signers: [
             {
               name: signerName,
