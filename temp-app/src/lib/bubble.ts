@@ -722,12 +722,25 @@ export const bubbleApi = {
 
   async uploadFile(filename: string, base64Contents: string): Promise<string> {
     const appUrl = urlBaseBubble().replace(/\/api\/1\.1\/?$/, '');
-    const response = await bubbleClient.post(`${appUrl}/fileupload`, {
-      name: filename,
-      contents: base64Contents,
-      private: false,
-    }, { timeout: 60_000 });
-    const url = normalizarUrlDocumento(response.data?.url || response.data?.response?.url || response.data);
+    // `fetch` nativo em vez do axios. Esta era a única chamada que passava
+    // `timeout` ao axios e, no runtime edge, isso estourava
+    // "Illegal invocation: function called with incorrect `this` reference",
+    // derrubando TODO upload de documento em produção — enquanto em
+    // desenvolvimento, que roda sobre Node, o mesmo código passava.
+    // `AbortSignal.timeout` é o mesmo recurso já usado em `zapsign.ts`.
+    const response = await fetch(`${appUrl}/fileupload`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${process.env.BUBBLE_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name: filename, contents: base64Contents, private: false }),
+      signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) throw new Error(`O armazenamento recusou o arquivo (${response.status}).`);
+    // O endpoint devolve a URL como string JSON pura, daí o último fallback.
+    const data = await response.json();
+    const url = normalizarUrlDocumento(data?.url || data?.response?.url || data);
     if (!url) throw new Error('O armazenamento não confirmou o arquivo enviado. Tente novamente.');
     return url;
   },

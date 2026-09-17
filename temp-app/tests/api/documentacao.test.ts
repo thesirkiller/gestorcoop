@@ -78,10 +78,23 @@ test('comprovante de upload não pode ser reaproveitado em outra URL', async () 
   expect(await verificarComprovanteUpload('https://cdn.bubble.io/rg.pdf', '1.' + 'a'.repeat(64))).toBe(false);
 });
 test('upload não inventa arquivo quando armazenamento falha; normaliza retorno real', async () => {
-  await expect(bubble.uploadFile('rg.pdf', 'JVBERg==')).rejects.toThrow('Upload indisponível');
-  uploadResult = '//cdn.bubble.io/rg.pdf';
+  // `uploadFile` usa `fetch`, e não o axios: o timeout do axios quebrava o
+  // upload no runtime edge com "Illegal invocation". O mock acompanha isso.
+  const mockarStorage = (corpo: unknown, status = 200) => {
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('https://bubble.invalid/version-test/fileupload');
+      expect(JSON.parse(String(init?.body)).name).toBe('rg.pdf');
+      return new Response(JSON.stringify(corpo), { status, headers: { 'content-type': 'application/json' } });
+    };
+  };
+
+  mockarStorage(null, 502);
+  await expect(bubble.uploadFile('rg.pdf', 'JVBERg==')).rejects.toThrow('recusou o arquivo');
+
+  mockarStorage('//cdn.bubble.io/rg.pdf');
   expect(await bubble.uploadFile('rg.pdf', 'JVBERg==')).toBe('https://cdn.bubble.io/rg.pdf');
-  uploadResult = { success: true };
+
+  mockarStorage({ success: true });
   await expect(bubble.uploadFile('rg.pdf', 'JVBERg==')).rejects.toThrow('não confirmou');
 });
 test('erro e resposta incompleta da ZapSign não viram cadastro concluído', async () => {
