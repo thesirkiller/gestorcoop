@@ -39,7 +39,7 @@ export const zapsignApi = {
     
     const appUrl = (process.env.NEXT_PUBLIC_APP_URL || '').trim();
     const isLocal = appUrl.includes('localhost') || appUrl.includes('127.0.0.1') || !appUrl.startsWith('https://');
-    const webhookUrl = (process.env.ZAPSIGN_WEBHOOK_URL || (!isLocal && appUrl ? `${appUrl.replace(/\/+$/, '')}/api/webhooks/zapsign` : 'https://gestorcoop.app/api/webhooks/zapsign')).trim();
+    const webhookUrl = (process.env.ZAPSIGN_WEBHOOK_URL || (!isLocal && appUrl ? `${appUrl.replace(/\/+$/, '')}/api/webhooks/zapsign` : 'https://gestorcoop.pages.dev/api/webhooks/zapsign')).trim();
     
     try {
       const response = await fetch(url, {

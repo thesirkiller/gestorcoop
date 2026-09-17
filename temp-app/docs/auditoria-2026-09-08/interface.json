@@ -7,33 +7,33 @@
     "smallTargets": [
       {
         "text": "Etapa 1: Dados Pessoais (Atual)",
-        "width": 39.859375,
-        "height": 39.859375
+        "width": 39.3125,
+        "height": 39.3125
       },
       {
         "text": "Etapa 2: Endereço",
-        "width": 39.859375,
-        "height": 39.859375
+        "width": 39.3125,
+        "height": 39.3125
       },
       {
         "text": "Etapa 3: Profissões",
-        "width": 39.859375,
-        "height": 39.859375
+        "width": 39.3125,
+        "height": 39.3125
       },
       {
         "text": "Etapa 4: Dados Bancários",
-        "width": 39.859375,
-        "height": 39.859375
+        "width": 39.3125,
+        "height": 39.3125
       },
       {
         "text": "Etapa 5: Documentos",
-        "width": 39.859375,
-        "height": 39.859375
+        "width": 39.3125,
+        "height": 39.3125
       },
       {
         "text": "Etapa 6: Assinatura",
-        "width": 39.859375,
-        "height": 39.859375
+        "width": 39.3125,
+        "height": 39.3125
       }
     ]
   },
@@ -45,33 +45,33 @@
     "smallTargets": [
       {
         "text": "Etapa 1: Dados Pessoais (Atual)",
-        "width": 32.03125,
-        "height": 32.03125
+        "width": 32.125,
+        "height": 32.125
       },
       {
         "text": "Etapa 2: Endereço",
-        "width": 32.03125,
-        "height": 32.03125
+        "width": 32.125,
+        "height": 32.125
       },
       {
         "text": "Etapa 3: Profissões",
-        "width": 32.03125,
-        "height": 32.03125
+        "width": 32.125,
+        "height": 32.125
       },
       {
         "text": "Etapa 4: Dados Bancários",
-        "width": 32.03125,
-        "height": 32.03125
+        "width": 32.125,
+        "height": 32.125
       },
       {
         "text": "Etapa 5: Documentos",
-        "width": 32.03125,
-        "height": 32.03125
+        "width": 32.125,
+        "height": 32.125
       },
       {
         "text": "Etapa 6: Assinatura",
-        "width": 32.03125,
-        "height": 32.03125
+        "width": 32.125,
+        "height": 32.125
       }
     ]
   },
@@ -83,33 +83,33 @@
     "smallTargets": [
       {
         "text": "Etapa 1: Dados Pessoais (Atual)",
-        "width": 39.78125,
-        "height": 39.78125
+        "width": 40,
+        "height": 40
       },
       {
         "text": "Etapa 2: Endereço",
-        "width": 39.78125,
-        "height": 39.78125
+        "width": 40,
+        "height": 40
       },
       {
         "text": "Etapa 3: Profissões",
-        "width": 39.78125,
-        "height": 39.78125
+        "width": 40,
+        "height": 40
       },
       {
         "text": "Etapa 4: Dados Bancários",
-        "width": 39.78125,
-        "height": 39.78125
+        "width": 40,
+        "height": 40
       },
       {
         "text": "Etapa 5: Documentos",
-        "width": 39.78125,
-        "height": 39.78125
+        "width": 40,
+        "height": 40
       },
       {
         "text": "Etapa 6: Assinatura",
-        "width": 39.78125,
-        "height": 39.78125
+        "width": 40,
+        "height": 40
       }
     ]
   }
