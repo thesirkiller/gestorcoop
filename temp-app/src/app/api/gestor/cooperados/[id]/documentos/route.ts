@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
+import { nomeDocumento, normalizarUrlDocumento, validarArquivoDocumento } from '@/lib/documentos';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 
 function parseDocumentInfo(url: string, isSignedTerm = false) {
+  url = normalizarUrlDocumento(url) || url;
   const cleanUrl = url.split('?')[0];
   const filename = cleanUrl.split('/').pop() || 'documento';
   const ext = (filename.split('.').pop() || '').toLowerCase();
@@ -23,7 +25,7 @@ function parseDocumentInfo(url: string, isSignedTerm = false) {
 
   return {
     url,
-    filename: decodeURIComponent(filename),
+    filename: nomeDocumento(url),
     extension: ext.toUpperCase() || 'ARQUIVO',
     isImage,
     isPdf,
@@ -39,24 +41,7 @@ export async function GET(
 ) {
   try {
     const cooperadoId = params.id;
-    let cooperado: any = null;
-    try {
-      cooperado = await bubbleApi.getCooperado(cooperadoId);
-    } catch {
-      // Fallback para IDs mockados
-      if (cooperadoId.startsWith('coop_') || process.env.NODE_ENV === 'development') {
-        cooperado = {
-          _id: cooperadoId,
-          txt_nomeCompleto: cooperadoId === 'coop_1' ? 'Juliana Ramos dos Santos' : cooperadoId === 'coop_2' ? 'Marcos Vinícius de Oliveira' : 'Dra. Beatriz Helena Meirelles',
-          fks_pasta: [
-            'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=800&auto=format&fit=crop&q=80',
-            'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?w=800&auto=format&fit=crop&q=80',
-            'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-          ],
-          file_termo_assinado: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
-        };
-      }
-    }
+    const cooperado = await bubbleApi.getCooperado(cooperadoId);
 
     if (!cooperado) {
       return NextResponse.json({ success: false, error: 'Cooperado não encontrado' }, { status: 404 });
@@ -108,9 +93,12 @@ export async function POST(
       const formData = await request.formData();
       const file = formData.get('file') as File | null;
 
-      if (!file) {
+      if (!file || typeof file === 'string') {
         return NextResponse.json({ success: false, error: 'Nenhum arquivo enviado.' }, { status: 400 });
       }
+
+      const validationError = validarArquivoDocumento(file);
+      if (validationError) return NextResponse.json({ success: false, error: validationError }, { status: 400 });
 
       filename = file.name;
       const arrayBuffer = await file.arrayBuffer();
@@ -228,12 +216,15 @@ export async function PATCH(
       oldUrl = (formData.get('oldUrl') as string) || '';
       const file = formData.get('file') as File | null;
 
-      if (!oldUrl || !file) {
+      if (!oldUrl || !file || typeof file === 'string') {
         return NextResponse.json(
           { success: false, error: 'Arquivo substituto e URL anterior são obrigatórios.' },
           { status: 400 }
         );
       }
+
+      const validationError = validarArquivoDocumento(file);
+      if (validationError) return NextResponse.json({ success: false, error: validationError }, { status: 400 });
 
       const filename = file.name;
       const arrayBuffer = await file.arrayBuffer();

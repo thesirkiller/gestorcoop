@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import axios from 'axios';
+import { nomeDocumento, normalizarUrlDocumento } from '@/lib/documentos';
 import {
   X,
   FileText,
@@ -43,12 +44,13 @@ interface ModalDocumentosCooperadoProps {
 }
 
 function parseDoc(url: string, termoAssinadoUrl?: string): DocumentItem {
+  const isSignedTerm = url === termoAssinadoUrl;
+  url = normalizarUrlDocumento(url) || url;
   const cleanUrl = url.split('?')[0];
-  const filename = decodeURIComponent(cleanUrl.split('/').pop() || 'documento');
+  const filename = nomeDocumento(url);
   const ext = (filename.split('.').pop() || '').toLowerCase();
   const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'].includes(ext);
   const isPdf = ext === 'pdf' || cleanUrl.endsWith('.pdf') || url.includes('zapsign');
-  const isSignedTerm = url === termoAssinadoUrl;
 
   let typeLabel = 'Documento';
   if (isSignedTerm) typeLabel = 'Termo Assinado';
@@ -90,6 +92,7 @@ export default function ModalDocumentosCooperado({
 
   const [filterType, setFilterType] = useState<'all' | 'images' | 'docs'>('all');
   const [uploading, setUploading] = useState(false);
+  const [failedPreviews, setFailedPreviews] = useState<string[]>([]);
   const [replacingUrl, setReplacingUrl] = useState<string | null>(null);
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
   const [confirmDeleteUrl, setConfirmDeleteUrl] = useState<string | null>(null);
@@ -383,7 +386,9 @@ export default function ModalDocumentosCooperado({
                   >
                     {/* Thumbnail / Visual Preview Area */}
                     <div className="relative aspect-[16/10] bg-slate-100 border-b border-slate-100 overflow-hidden group">
-                      {doc.isImage ? (
+                      {doc.url.includes('mock-file-') || failedPreviews.includes(doc.url) ? (
+                        <p role="status" className="p-5 text-sm text-red-700">Não foi possível carregar este arquivo. Abra em nova aba para conferir ou substitua o anexo.</p>
+                      ) : doc.isImage ? (
                         <div
                           onClick={() => setLightboxIndex(index)}
                           className="w-full h-full cursor-pointer relative"
@@ -394,6 +399,7 @@ export default function ModalDocumentosCooperado({
                             alt={doc.filename}
                             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                             loading="lazy"
+                            onError={() => setFailedPreviews(prev => [...prev, doc.url])}
                           />
                           <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/30 transition-colors flex items-center justify-center">
                             <span className="opacity-0 group-hover:opacity-100 bg-white/90 text-slate-800 text-[11px] font-bold px-2.5 py-1 rounded-full shadow backdrop-blur-sm flex items-center gap-1 transition-opacity">

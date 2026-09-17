@@ -4,6 +4,8 @@ import { zapsignApi } from '@/lib/zapsign';
 import { isValidCPF, cpfDigits } from '@/lib/cpf';
 import { normalizeProfissaoBubble } from '@/lib/profissoes';
 import { jsPDF } from 'jspdf';
+import { DocumentoAdesao, documentosObrigatoriosPendentes, normalizarUrlDocumento } from '@/lib/documentos';
+import { verificarComprovanteUpload } from '@/lib/comprovante-upload';
 
 export const runtime = 'edge';
 
@@ -103,6 +105,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'CPF inválido. Confira os números digitados.' }, { status: 400 });
     }
 
+    if (!addressData || !Array.isArray(professions) || !professions.length || !Array.isArray(bankAccounts) || !bankAccounts.length || !personalData.email?.trim()) {
+      return NextResponse.json({ error: 'Preencha endereço, e-mail, profissão e conta bancária antes de finalizar.' }, { status: 400 });
+    }
+    if (!Array.isArray(uploadedFiles) || uploadedFiles.some(file => !file || typeof file !== 'object')) {
+      return NextResponse.json({ error: 'Envie a identificação e o comprovante de residência antes de finalizar.' }, { status: 400 });
+    }
+    const documents = uploadedFiles as DocumentoAdesao[];
+    const missing = documentosObrigatoriosPendentes(documents);
+    if (missing.length) {
+      return NextResponse.json({ error: `Documentos obrigatórios pendentes: ${missing.join(', ')}.` }, { status: 400 });
+    }
+    const documentUrls = documents.map(file => normalizarUrlDocumento(file.url));
+    if (documentUrls.some(url => !url) || new Set(documentUrls).size !== documents.length) {
+      return NextResponse.json({ error: 'Envie arquivos válidos e diferentes para cada documento obrigatório.' }, { status: 400 });
+    }
+    const confirmed = await Promise.all(documents.map((file, index) => verificarComprovanteUpload(documentUrls[index]!, file.comprovante)));
+    if (confirmed.some(valid => !valid)) {
+      return NextResponse.json({ error: 'Há documentos sem confirmação de envio ou com envio expirado. Remova-os e anexe novamente.' }, { status: 400 });
+    }
+
     // 1. Format Address text
     const fullAddress = `${addressData.rua || ''}, Nº ${addressData.numero || ''}${addressData.complemento ? `, ${addressData.complemento}` : ''}, ${addressData.bairro || ''}, ${addressData.cidade || ''} - ${addressData.estado || ''}, CEP: ${addressData.cep || ''}`;
 
@@ -132,7 +154,7 @@ export async function POST(request: Request) {
       bool_BLOQUEADO: false,
       txt_termo_status: 'Aguardando Assinatura',
       // Storing uploaded files direct URLs in the list file field
-      fks_pasta: uploadedFiles || [],
+      fks_pasta: documentUrls,
     };
 
     // 2b. Um CPF só pode ter um cadastro. Se já existe com o termo pendente de
@@ -303,7 +325,7 @@ export async function POST(request: Request) {
       }
     });
 
-    const pdfBase64 = Buffer.from(doc.output(), 'binary').toString('base64');
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
 
     // 7. Create ZapSign Document
     console.log('Enviando documento para a ZapSign');
@@ -315,18 +337,20 @@ export async function POST(request: Request) {
         `Termo de Adesão - ${personalData.nomeCompleto}`,
         pdfBase64,
         personalData.nomeCompleto,
-        personalData.email
+        personalData.email,
+        cooperadoId
       );
 
       docToken = zapsignDoc.token;
       signUrl = zapsignDoc.signers?.[0]?.sign_url || '';
     } catch (zapsignError) {
       const err = zapsignError as { response?: { data?: unknown }; message?: string };
-      console.error('Erro na integração com a ZapSign:', err?.response?.data || err.message);
-      // Fallback para simulação em ambiente de desenvolvimento caso as credenciais falhem
-      const isSandbox = process.env.ZAPSIGN_BASE_URL?.includes('sandbox');
-      const baseSignUrl = isSandbox ? 'https://sandbox.zapsign.com.br' : 'https://app.zapsign.com.br';
-      signUrl = `${baseSignUrl}/sign/${docToken}`;
+      console.error('Erro na integração com a ZapSign:', err.message);
+      return NextResponse.json({
+        success: false,
+        cooperadoId,
+        error: 'Seus dados foram salvos, mas não foi possível gerar o link de assinatura. Tente finalizar novamente. Se persistir, fale com a cooperativa.',
+      }, { status: 502 });
     }
 
     // Save the ZapSign document token in the cooperado record for callback tracking

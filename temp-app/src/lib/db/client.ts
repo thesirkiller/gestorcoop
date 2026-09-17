@@ -1,3 +1,5 @@
+import { getRequestContext } from '@cloudflare/next-on-pages';
+
 /**
  * Acesso centralizado ao binding D1 do Cloudflare.
  *
@@ -59,6 +61,10 @@ export class D1IndisponivelError extends Error {
  * não uma string, daí o cast em duas etapas.
  */
 export function getDb(): D1Database | undefined {
+  try {
+    const env = getRequestContext().env as unknown as { DB?: D1Database };
+    if (env.DB && typeof env.DB.prepare === 'function') return env.DB;
+  } catch { /* Build e testes fora do runtime Cloudflare. */ }
   const binding = (process.env as unknown as Record<string, unknown>).DB;
   if (!binding || typeof binding !== 'object') return undefined;
   return binding as unknown as D1Database;

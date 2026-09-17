@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import axios from 'axios';
 import { validarTransicao } from './equipamentos-estados';
+import { normalizarUrlDocumento } from './documentos';
 
 if (!process.env.BUBBLE_API_URL) {
   throw new Error(
@@ -690,20 +691,15 @@ export const bubbleApi = {
   },
 
   async uploadFile(filename: string, base64Contents: string): Promise<string> {
-    try {
-      const response = await bubbleClient.post('/file', {
-        filename,
-        contents: base64Contents,
-        private: false,
-      });
-      // The Bubble API response for file uploads usually contains either url or response.url or response.data.url
-      const url = response.data?.url || response.data?.response?.url || response.data;
-      if (typeof url === 'string') return url;
-      throw new Error('Invalid upload response format');
-    } catch (error) {
-      console.warn('Bubble file upload failed, using fallback mock URL:', error);
-      return `https://ac33ef5507a749df80cc649e43463289.cdn.bubble.io/mock-file-${Date.now()}-${filename}`;
-    }
+    const appUrl = process.env.BUBBLE_API_URL!.replace(/\/api\/1\.1\/?$/, '');
+    const response = await bubbleClient.post(`${appUrl}/fileupload`, {
+      name: filename,
+      contents: base64Contents,
+      private: false,
+    }, { timeout: 60_000 });
+    const url = normalizarUrlDocumento(response.data?.url || response.data?.response?.url || response.data);
+    if (!url) throw new Error('O armazenamento não confirmou o arquivo enviado. Tente novamente.');
+    return url;
   },
 
   async getServicosByCooperado(cooperadoId: string, startDate?: string, endDate?: string) {

@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { isValidCPF } from '@/lib/cpf';
 import { PROFISSOES_FORM } from '@/lib/profissoes';
+import { DocumentoAdesao, TIPOS_DOCUMENTO, MAX_DOCUMENTO_BYTES, documentosObrigatoriosPendentes, normalizarUrlDocumento } from '@/lib/documentos';
 
 // Form interfaces
 interface Profession {
@@ -59,7 +60,7 @@ const HELP_BY_STEP: Record<number, { title: string; items: string[] }> = {
     items: [
       'Preencha seu nome completo exatamente como consta no seu documento de identidade.',
       'O CPF é usado para identificar seu cadastro — cada CPF só pode ter uma adesão.',
-      'Use um e-mail que você acessa com frequência: o link de assinatura do termo será enviado para ele.',
+      'Use um e-mail que você acessa com frequência para identificar sua assinatura.',
       'O WhatsApp é o principal canal de contato da cooperativa com você.',
     ],
   },
@@ -97,7 +98,7 @@ const HELP_BY_STEP: Record<number, { title: string; items: string[] }> = {
     title: 'Assinatura',
     items: [
       'Você será redirecionado para a ZapSign para assinar o Termo de Adesão eletronicamente.',
-      'Se o link não abrir, verifique seu e-mail (inclusive a caixa de spam) — o link de assinatura também é enviado por lá.',
+      'Se o redirecionamento não funcionar, clique em "Ir para Assinatura". Se houver erro, fale com a cooperativa.',
     ],
   },
 };
@@ -168,8 +169,9 @@ export default function AdesaoPage() {
   });
 
   // Step 5: Document Uploads
-  const [uploadedFiles, setUploadedFiles] = useState<{ url: string; name: string }[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<DocumentoAdesao[]>([]);
   const [uploading, setUploading] = useState(false);
+  const pendingDocuments = documentosObrigatoriosPendentes(uploadedFiles);
 
   // ── Retomada de progresso ────────────────────────────────────────────────
   // O rascunho completo fica no localStorage (cookies têm limite de ~4KB e
@@ -185,7 +187,7 @@ export default function AdesaoPage() {
           if (saved.addressData) setAddressData((prev) => ({ ...prev, ...saved.addressData }));
           if (Array.isArray(saved.professions)) setProfessions(saved.professions);
           if (Array.isArray(saved.bankAccounts)) setBankAccounts(saved.bankAccounts);
-          if (Array.isArray(saved.uploadedFiles)) setUploadedFiles(saved.uploadedFiles);
+          if (Array.isArray(saved.uploadedFiles)) setUploadedFiles(saved.uploadedFiles.filter((file: DocumentoAdesao) => file && normalizarUrlDocumento(file.url) && file.comprovante));
           setCurrentStep(saved.currentStep);
           setResumed(true);
         }
@@ -371,6 +373,7 @@ export default function AdesaoPage() {
 
   // File dropzone configuration
   const onDrop = async (acceptedFiles: File[]) => {
+    if (uploading || submitting || !acceptedFiles.length) return;
     setUploading(true);
     setErrorMsg('');
     try {
@@ -382,14 +385,13 @@ export default function AdesaoPage() {
           headers: { 'Content-Type': 'multipart/form-data' },
         });
 
-        if (res.data.success) {
-          setUploadedFiles(prev => [...prev, { url: res.data.url, name: res.data.name }]);
-        }
+        const url = normalizarUrlDocumento(res.data.url);
+        if (!res.data.success || !url || !res.data.comprovante) throw new Error('O envio não foi confirmado.');
+        setUploadedFiles(prev => [...prev, { url, name: res.data.name, tipo: 'outro', comprovante: res.data.comprovante }]);
       }
     } catch (err) {
-      const error = err as { message?: string };
-      console.error(error);
-      setErrorMsg('Falha ao enviar arquivo. Tente novamente.');
+      const error = err as { response?: { data?: { error?: string } } };
+      setErrorMsg(error.response?.data?.error || 'Falha ao enviar arquivo. Tente novamente.');
     } finally {
       setUploading(false);
     }
@@ -401,14 +403,20 @@ export default function AdesaoPage() {
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
+    disabled: uploading || submitting,
+    maxSize: MAX_DOCUMENTO_BYTES,
+    minSize: 1,
+    onDropRejected: () => setErrorMsg('Arquivo recusado. Envie PDF, JPEG ou PNG de até 10 MB, com conteúdo.'),
     accept: {
-      'image/*': ['.jpeg', '.jpg', '.png'],
+      'image/jpeg': ['.jpeg', '.jpg'],
+      'image/png': ['.png'],
       'application/pdf': ['.pdf'],
     },
   });
 
   // Next / Prev step navigation
   const nextStep = async () => {
+    if (uploading || submitting || checkingCpf) return;
     // Basic validation per step
     if (currentStep === 1) {
       if (!personalData.nomeCompleto || !personalData.cpf || !personalData.email || !personalData.whatsapp) {
@@ -459,8 +467,8 @@ export default function AdesaoPage() {
       alert('Adicione pelo menos uma conta bancária antes de avançar.');
       return;
     }
-    if (currentStep === 5 && uploadedFiles.length === 0) {
-      alert('Por favor, envie pelo menos um documento de identificação para continuar.');
+    if (currentStep === 5 && pendingDocuments.length) {
+      setErrorMsg(`Documentos obrigatórios pendentes: ${pendingDocuments.join(', ')}.`);
       return;
     }
 
@@ -478,6 +486,7 @@ export default function AdesaoPage() {
 
   // Submit all data to BFF and get ZapSign URL
   const submitAllData = async () => {
+    if (uploading || submitting || pendingDocuments.length) return;
     setSubmitting(true);
     setErrorMsg('');
     try {
@@ -486,12 +495,12 @@ export default function AdesaoPage() {
         addressData,
         professions,
         bankAccounts,
-        uploadedFiles: uploadedFiles.map(f => f.url),
+        uploadedFiles,
       };
 
       const res = await axios.post('/api/cooperado/adesao', payload);
 
-      if (res.data.success) {
+      if (res.data.success && normalizarUrlDocumento(res.data.signUrl) && res.data.docToken) {
         clearProgress();
         setSignUrl(res.data.signUrl);
         setCurrentStep(6);
@@ -500,6 +509,8 @@ export default function AdesaoPage() {
             window.location.href = res.data.signUrl;
           }, 1500);
         }
+      } else {
+        setErrorMsg('Não foi possível obter o link de assinatura. Tente finalizar novamente.');
       }
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } }; message?: string };
@@ -1183,7 +1194,10 @@ export default function AdesaoPage() {
                     <FileText className="w-6 h-6 text-indigo-600" />
                     Upload de Documentos
                   </h2>
-                  <p className="text-sm text-slate-550 mb-6">Por favor, envie uma foto nítida do seu documento de identificação (RG ou CNH) e um Comprovante de Residência recente.</p>
+                  <p className="text-sm text-slate-600 mb-3">Envie a identificação (RG ou CNH) e um comprovante de residência recente, em arquivos separados. Escolha o tipo de cada arquivo abaixo.</p>
+                  <p className="text-sm text-slate-700 mb-6" role="status">
+                    {pendingDocuments.length ? `Obrigatórios pendentes: ${pendingDocuments.join(', ')}.` : 'Documentos obrigatórios enviados. Você pode finalizar e assinar.'}
+                  </p>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
@@ -1204,7 +1218,7 @@ export default function AdesaoPage() {
                       ) : (
                         <div className="flex flex-col items-center gap-2 text-slate-550 text-center">
                           <UploadCloud className="w-16 h-16 text-indigo-600 mb-2" />
-                          <p className="text-sm font-bold text-white">Arraste seus documentos aqui</p>
+                          <p className="text-sm font-bold text-slate-800">Arraste seus documentos aqui</p>
                           <p className="text-xs">ou clique para selecionar do computador</p>
                           <span className="text-[10px] text-slate-600 mt-2">Formatos aceitos: PDF, JPEG, PNG (máx. 10MB)</span>
                         </div>
@@ -1228,11 +1242,24 @@ export default function AdesaoPage() {
                                 <div className="bg-slate-100 p-2 rounded-lg shrink-0">
                                   <FileText className="w-5 h-5 text-indigo-600" />
                                 </div>
-                                <span className="text-xs text-slate-800 truncate font-mono max-w-[200px] md:max-w-xs">{file.name}</span>
+                                <div className="min-w-0">
+                                  <a href={file.url} target="_blank" rel="noopener noreferrer" className="block text-xs text-indigo-700 underline truncate" title={`Visualizar ${file.name}`}>{file.name}</a>
+                                  <select
+                                    aria-label={`Tipo de ${file.name}`}
+                                    value={file.tipo || 'outro'}
+                                    disabled={uploading || submitting}
+                                    onChange={event => setUploadedFiles(prev => prev.map((item, index) => index === idx ? { ...item, tipo: event.target.value as DocumentoAdesao['tipo'] } : item))}
+                                    className="mt-2 w-full min-w-0 rounded border border-slate-300 bg-white p-2 text-xs text-slate-800"
+                                  >
+                                    {Object.entries(TIPOS_DOCUMENTO).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                  </select>
+                                </div>
                               </div>
                               <button
                                 type="button"
                                 onClick={() => removeFile(idx)}
+                                disabled={uploading || submitting}
+                                aria-label={`Remover ${file.name}`}
                                 className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
                               >
                                 <Trash2 className="w-4 h-4" />
@@ -1300,7 +1327,7 @@ export default function AdesaoPage() {
           <div className="bg-slate-50 px-8 py-5 border-t border-slate-200 flex justify-between items-center gap-4">
             <button
               onClick={prevStep}
-              disabled={currentStep === 1 || submitting}
+              disabled={currentStep === 1 || submitting || uploading}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${currentStep === 1 || submitting
                   ? 'text-slate-600 cursor-not-allowed'
                   : 'text-slate-700 hover:text-white hover:bg-slate-800'
@@ -1311,7 +1338,7 @@ export default function AdesaoPage() {
 
             <button
               onClick={nextStep}
-              disabled={submitting || checkingCpf}
+              disabled={submitting || checkingCpf || uploading || (currentStep === 5 && pendingDocuments.length > 0)}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50"
             >
               {submitting ? (

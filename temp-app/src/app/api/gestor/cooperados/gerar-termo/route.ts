@@ -180,7 +180,7 @@ export async function POST(request: Request) {
       }
     });
 
-    const pdfBase64 = Buffer.from(doc.output(), 'binary').toString('base64');
+    const pdfBase64 = doc.output('datauristring').split(',')[1];
 
     // 3. Create ZapSign Document
     console.log('Enviando documento para a ZapSign para:', nomeCompleto);
@@ -192,17 +192,16 @@ export async function POST(request: Request) {
         `Termo de Adesão - ${nomeCompleto}`,
         pdfBase64,
         nomeCompleto,
-        email
+        email,
+        id
       );
 
       docToken = zapsignDoc.token;
       signUrl = zapsignDoc.signers?.[0]?.sign_url || '';
     } catch (zapsignError) {
       const err = zapsignError as { response?: { data?: unknown }; message?: string };
-      console.error('Erro na integração com a ZapSign:', err?.response?.data || err.message);
-      const isSandbox = process.env.ZAPSIGN_BASE_URL?.includes('sandbox');
-      const baseSignUrl = isSandbox ? 'https://sandbox.zapsign.com.br' : 'https://app.zapsign.com.br';
-      signUrl = `${baseSignUrl}/sign/${docToken}`;
+      console.error('Erro na integração com a ZapSign:', err.message);
+      return NextResponse.json({ success: false, error: 'Não foi possível gerar o link de assinatura. Tente novamente ou confira a configuração da ZapSign.' }, { status: 502 });
     }
 
     // Update Bubble: Set term status to "Aguardando Assinatura"

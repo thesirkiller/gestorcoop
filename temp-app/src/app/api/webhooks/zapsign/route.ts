@@ -1,56 +1,57 @@
 import { NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
+import { zapsignApi } from '@/lib/zapsign';
+import { normalizarUrlDocumento } from '@/lib/documentos';
 
 export const runtime = 'edge';
 
 export async function POST(request: Request) {
   try {
     const payload = await request.json();
-    console.log('Recebido webhook da ZapSign:', JSON.stringify(payload));
-
-    const event = payload.event;
-    // ZapSign events can be doc_signed, doc_completed, etc.
-    if (event === 'doc_signed' || event === 'doc_completed' || payload.signed_pdf_url) {
-      const document = payload.document || {};
-      const signedPdfUrl = payload.signed_pdf_url || document.signed_file;
-      const signers = document.signers || [];
-      const primarySigner = signers[0] || {};
-      const email = primarySigner.email || payload.signer_email;
-
-      if (!email || !signedPdfUrl) {
-        console.warn('Webhook recebido sem e-mail do signatário ou URL do PDF assinado');
-        return NextResponse.json({ success: false, message: 'Dados incompletos' });
-      }
-
-      console.log(`Buscando cooperado com e-mail: ${email}`);
-      const cooperado = await bubbleApi.findCooperadoByEmail(email);
-
-      if (cooperado) {
-        const currentPasta = cooperado.fks_pasta || [];
-        const updateData: Record<string, unknown> = {
-          txt_termo_status: 'Assinado',
-          file_termo_assinado: signedPdfUrl,
-        };
-
-        // Also append signed document to fks_pasta list if not already there
-        if (!currentPasta.includes(signedPdfUrl)) {
-          updateData.fks_pasta = [...currentPasta, signedPdfUrl];
-        }
-
-        console.log(`Atualizando status de assinatura e termo para o cooperado ${cooperado._id}`);
-        await bubbleApi.updateCooperado(cooperado._id, updateData);
-
-        return NextResponse.json({ success: true, message: 'Cooperado atualizado' });
-      } else {
-        console.warn(`Cooperado não encontrado para o e-mail: ${email}`);
-        return NextResponse.json({ success: false, message: 'Cooperado não encontrado' });
-      }
+    const event = payload.event_type || payload.event;
+    if (event !== 'doc_signed' && event !== 'doc_completed') {
+      return NextResponse.json({ success: true, message: 'Evento ignorado' });
+    }
+    const token = payload.token || payload.document?.token;
+    if (typeof token !== 'string' || !token) {
+      return NextResponse.json({ error: 'Token do documento ausente' }, { status: 400 });
     }
 
-    return NextResponse.json({ success: true, message: 'Evento ignorado' });
+    // Consulta autenticada: não confia em status, e-mail ou URL do webhook público.
+    const document = await zapsignApi.getDocument(token);
+    if (document.token !== token || document.deleted || document.status !== 'signed') {
+      return NextResponse.json({ success: true, message: 'Documento ainda não concluído' });
+    }
+    const signedUrl = normalizarUrlDocumento(document.signed_file);
+    if (!signedUrl) throw new Error('PDF assinado indisponível na ZapSign.');
+    const email = document.signers?.[0]?.email;
+    const cooperado = document.external_id
+      ? await bubbleApi.getCooperado(document.external_id)
+      : email ? await bubbleApi.findCooperadoByEmail(email) : null;
+    if (!cooperado) return NextResponse.json({ error: 'Cooperado não encontrado' }, { status: 404 });
+
+    const filename = `termo-assinado-${token}.pdf`;
+    const currentPasta: string[] = cooperado.fks_pasta || [];
+    const saved = currentPasta.find(url => url.split('?')[0].endsWith(`/${filename}`));
+    let permanentUrl = saved;
+    if (!permanentUrl) {
+      // signed_file expira em 60 minutos: preserva o PDF no armazenamento do app.
+      const response = await fetch(signedUrl, { signal: AbortSignal.timeout(30_000) });
+      if (!response.ok) throw new Error('Não foi possível baixar o PDF assinado.');
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      if (new TextDecoder().decode(bytes.slice(0, 5)) !== '%PDF-') throw new Error('A ZapSign não retornou um PDF.');
+      let binary = '';
+      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...Array.from(bytes.slice(i, i + 8192)));
+      permanentUrl = await bubbleApi.uploadFile(filename, btoa(binary));
+    }
+    await bubbleApi.updateCooperado(cooperado._id, {
+      txt_termo_status: 'Assinado',
+      file_termo_assinado: permanentUrl,
+      fks_pasta: Array.from(new Set([...currentPasta, permanentUrl])),
+    });
+    return NextResponse.json({ success: true, message: 'Termo assinado salvo' });
   } catch (error) {
-    const err = error as { message?: string };
-    console.error('Erro no processamento do webhook da ZapSign:', err);
-    return NextResponse.json({ error: err.message || 'Erro interno' }, { status: 500 });
+    console.error('Erro no webhook da ZapSign:', error instanceof Error ? error.message : 'Erro desconhecido');
+    return NextResponse.json({ error: 'Não foi possível salvar o termo assinado. Reenvie o evento.' }, { status: 502 });
   }
 }

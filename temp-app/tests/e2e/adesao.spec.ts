@@ -18,11 +18,11 @@ async function mockBackend(
     })
   );
 
-  await page.route('**/api/cooperado/upload', (route) =>
-    route.fulfill({
-      json: { success: true, url: 'https://cdn.example.com/doc-teste.pdf', name: 'doc-teste.pdf' },
-    })
-  );
+  let uploadIndex = 0;
+  await page.route('**/api/cooperado/upload', (route) => {
+    const name = ++uploadIndex === 1 ? 'doc-teste.pdf' : 'residencia.pdf';
+    return route.fulfill({ json: { success: true, url: `https://cdn.example.com/${name}`, name, comprovante: 'comprovante-mock' } });
+  });
 
   await page.route('**/api/cooperado/adesao', (route) =>
     route.fulfill({
@@ -30,7 +30,7 @@ async function mockBackend(
         success: true,
         cooperadoId: 'coop-e2e-1',
         docToken: 'tok-e2e',
-        signUrl: 'http://localhost:3005/e2e-assinatura-mock',
+        signUrl: 'https://app.zapsign.com.br/sign/e2e-assinatura-mock',
       },
     })
   );
@@ -103,6 +103,10 @@ test('fluxo completo de adesão até a tela de assinatura', async ({ page }) => 
   });
   await expect(page.getByText('Arquivos Carregados (1)')).toBeVisible();
   await expect(page.getByText('doc-teste.pdf').first()).toBeAttached();
+  await page.getByRole('combobox', { name: 'Tipo de doc-teste.pdf' }).selectOption('identificacao');
+  await expect(page.getByRole('button', { name: /Finalizar & Assinar/ })).toBeDisabled();
+  await page.locator('input[type="file"]').setInputFiles({ name: 'residencia.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 residencia') });
+  await page.getByRole('combobox', { name: 'Tipo de residencia.pdf' }).selectOption('residencia');
   await page.getByRole('button', { name: /Finalizar & Assinar/ }).click();
 
   // Etapa 6 — Redirecionamento para assinatura

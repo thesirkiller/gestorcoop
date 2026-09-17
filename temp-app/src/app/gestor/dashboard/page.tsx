@@ -56,6 +56,7 @@ interface Cooperado {
 export default function GestorDashboard() {
   const [cooperados, setCooperados] = useState<Cooperado[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCooperado, setSelectedCooperado] = useState<Cooperado | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -108,6 +109,7 @@ export default function GestorDashboard() {
   // Fetch data
   const fetchData = async () => {
     setLoading(true);
+    setLoadError('');
     try {
       await fetchFullDataset<Cooperado>('/api/gestor/cooperados', (data) => {
         setCooperados(data);
@@ -115,6 +117,7 @@ export default function GestorDashboard() {
       });
     } catch (err) {
       console.error('Error fetching cooperados:', err);
+      setLoadError('Não foi possível carregar os cooperados e seus documentos. Tente atualizar os dados.');
       setLoading(false);
     }
   };
@@ -269,6 +272,8 @@ export default function GestorDashboard() {
           </button>
         </div>
       </div>
+
+      {loadError && <p role="alert" className="max-w-7xl mx-auto mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
 
       {/* Metrics Row */}
       <div className="max-w-7xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
@@ -582,23 +587,14 @@ export default function GestorDashboard() {
                               )}
 
                               {/* Copiar Link */}
-                              {(isWaiting || activeLink) && (
+                              {activeLink && (
                                 <button
-                                  onClick={() =>
-                                    handleCopyLink(
-                                      coop._id,
-                                      activeLink || `https://app.zapsign.com.br/sign/mock` // fallback se já estivesse aguardando assinatura anteriormente
-                                    )
-                                  }
+                                  onClick={() => handleCopyLink(coop._id, activeLink)}
                                   className={`px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm border ${copiedId === coop._id
                                       ? 'bg-green-600 hover:bg-green-700 text-white border-green-700'
                                       : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
                                     }`}
-                                  title={
-                                    !activeLink && isWaiting
-                                      ? 'Copia link simulado. Clique em Regerar Termo para obter um link real da ZapSign.'
-                                      : 'Copiar link da ZapSign'
-                                  }
+                                  title="Copiar link da ZapSign"
                                 >
                                   {copiedId === coop._id ? (
                                     <>

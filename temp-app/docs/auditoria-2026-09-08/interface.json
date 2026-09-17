@@ -1,0 +1,140 @@
+[
+  {
+    "viewport": 360,
+    "documentWidth": 360,
+    "fields": 17,
+    "withoutAccessibleLabel": [
+      "nomeCompleto",
+      "cpf",
+      "email",
+      "whatsapp",
+      "telefoneReserva",
+      "rg",
+      "orgaoEmissor",
+      "orgaoUF",
+      "dataExpedicaoRG",
+      "dataNascimento",
+      "sexo",
+      "estadoCivil",
+      "nomeMae",
+      "nomePai",
+      "grauEscolaridade",
+      "racaCor",
+      "pis"
+    ],
+    "smallTargets": [
+      {
+        "text": "GestorCoop",
+        "width": 127.84375,
+        "height": 28
+      },
+      {
+        "text": "Carregando...",
+        "width": 98.390625,
+        "height": 25
+      },
+      {
+        "text": "Voltar",
+        "width": 101.65625,
+        "height": 40
+      },
+      {
+        "text": "Avançar",
+        "width": 124.75,
+        "height": 40
+      }
+    ]
+  },
+  {
+    "viewport": 768,
+    "documentWidth": 768,
+    "fields": 17,
+    "withoutAccessibleLabel": [
+      "nomeCompleto",
+      "cpf",
+      "email",
+      "whatsapp",
+      "telefoneReserva",
+      "rg",
+      "orgaoEmissor",
+      "orgaoUF",
+      "dataExpedicaoRG",
+      "dataNascimento",
+      "sexo",
+      "estadoCivil",
+      "nomeMae",
+      "nomePai",
+      "grauEscolaridade",
+      "racaCor",
+      "pis"
+    ],
+    "smallTargets": [
+      {
+        "text": "GestorCoop",
+        "width": 127.84375,
+        "height": 28
+      },
+      {
+        "text": "Carregando...",
+        "width": 98.390625,
+        "height": 25
+      },
+      {
+        "text": "Voltar",
+        "width": 101.65625,
+        "height": 40
+      },
+      {
+        "text": "Avançar",
+        "width": 124.75,
+        "height": 40
+      }
+    ]
+  },
+  {
+    "viewport": 1440,
+    "documentWidth": 1440,
+    "fields": 17,
+    "withoutAccessibleLabel": [
+      "nomeCompleto",
+      "cpf",
+      "email",
+      "whatsapp",
+      "telefoneReserva",
+      "rg",
+      "orgaoEmissor",
+      "orgaoUF",
+      "dataExpedicaoRG",
+      "dataNascimento",
+      "sexo",
+      "estadoCivil",
+      "nomeMae",
+      "nomePai",
+      "grauEscolaridade",
+      "racaCor",
+      "pis"
+    ],
+    "smallTargets": [
+      {
+        "text": "GestorCoop",
+        "width": 127.84375,
+        "height": 28
+      },
+      {
+        "text": "Carregando...",
+        "width": 98.390625,
+        "height": 25
+      },
+      {
+        "text": "Voltar",
+        "width": 101.65625,
+        "height": 40
+      },
+      {
+        "text": "Avançar",
+        "width": 124.75,
+        "height": 40
+      }
+    ]
+  }
+]

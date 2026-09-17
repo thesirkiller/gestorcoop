@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
+import { validarArquivoDocumento } from '@/lib/documentos';
+import { criarComprovanteUpload } from '@/lib/comprovante-upload';
 
 export const runtime = 'edge';
 
@@ -8,9 +10,12 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
-    if (!file) {
+    if (!file || typeof file === 'string') {
       return NextResponse.json({ error: 'Nenhum arquivo enviado' }, { status: 400 });
     }
+
+    const validationError = validarArquivoDocumento(file);
+    if (validationError) return NextResponse.json({ error: validationError }, { status: 400 });
 
     const arrayBuffer = await file.arrayBuffer();
     const uint8Array = new Uint8Array(arrayBuffer);
@@ -31,10 +36,11 @@ export async function POST(request: Request) {
       success: true,
       url: fileUrl,
       name: filename,
+      comprovante: await criarComprovanteUpload(fileUrl),
     });
   } catch (error) {
     const err = error as { message?: string };
-    console.error('Erro no upload do arquivo:', err);
-    return NextResponse.json({ error: err.message || 'Erro no processamento do upload' }, { status: 500 });
+    console.error('Erro no upload do arquivo:', err.message);
+    return NextResponse.json({ error: 'Não foi possível salvar o documento. Tente enviar novamente.' }, { status: 502 });
   }
 }
