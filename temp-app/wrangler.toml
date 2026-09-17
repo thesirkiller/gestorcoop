@@ -7,5 +7,8 @@ pages_build_output_dir = ".vercel/output/static"
 [[d1_databases]]
 binding = "DB"
 database_name = "gestorcoop-db"
-database_id = "local" # O D1 usará sqlite local para ambiente de desenvolvimento
+# UUID real do banco. Precisa ser válido mesmo em desenvolvimento: o publish
+# recusa qualquer outra coisa ("Error 8000022: Invalid database UUID"). Para
+# rodar contra o sqlite local, use `wrangler dev --local` em vez de trocar o id.
+database_id = "ab487796-11d9-4f62-8aff-3df7843ce394"
 migrations_dir = "migrations"
