@@ -4,6 +4,13 @@ compatibility_date = "2026-09-10"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
+# Workers AI. Habilitado mas ainda não é o provedor primário: a ordem da cascata
+# vive em `IA_ORDEM_TRANSCRICAO` e começa pela OpenAI, que é o caminho validado.
+# Depois de comparar a qualidade com áudio clínico real, inverta a env para
+# `workersai,groq,openai` — o custo cai para dentro da cota gratuita sem deploy.
+[ai]
+binding = "AI"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "gestorcoop-db"

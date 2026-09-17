@@ -124,6 +124,9 @@ export default function ProntuarioAtendimento() {
   const [transcribing, setTranscribing] = useState(false);
   const [transcriptionText, setTranscriptionText] = useState('');
   const [durationSecs, setDurationSecs] = useState(0);
+  // Texto veio do mock de desenvolvimento, não de áudio real. Enquanto for true,
+  // a assinatura fica travada: o conteúdo descreve aferição que não aconteceu.
+  const [transcricaoSimulada, setTranscricaoSimulada] = useState(false);
   
   // Módulo de Enfermagem - Checagem
   const [checkingAprazamento, setCheckingAprazamento] = useState<AprazamentoLocal | null>(null);
@@ -320,7 +323,8 @@ export default function ProntuarioAtendimento() {
       
       if (response.data.success) {
         setTranscriptionText(response.data.transcricao);
-        
+        setTranscricaoSimulada(response.data.simulado === true);
+
         // Atualizar evolução no banco local
         if (evolucao) {
           const updated = {
@@ -336,8 +340,17 @@ export default function ProntuarioAtendimento() {
       }
     } catch (err: any) {
       console.error(err);
-      setErrorText('Erro ao transcrever áudio. Você pode redigir a evolução manualmente.');
+      // O servidor explica o motivo real (cota do dia, provedor fora do ar) e o
+      // texto dele é mais útil que a mensagem genérica. O áudio continua salvo
+      // no IndexedDB de qualquer forma, e a evolução pode ser digitada.
+      const doServidor = err?.response?.data?.error;
+      setErrorText(
+        typeof doServidor === 'string' && doServidor
+          ? doServidor
+          : 'Erro ao transcrever áudio. Você pode redigir a evolução manualmente.'
+      );
       setTranscriptionText('');
+      setTranscricaoSimulada(false);
     } finally {
       setTranscribing(false);
     }
@@ -426,6 +439,13 @@ export default function ProntuarioAtendimento() {
 
     if (!transcriptionText && !audioRecorded) {
       setErrorText('A evolução clínica não pode estar em branco. Grave o áudio ou digite o relato.');
+      return;
+    }
+
+    // Trava dura: o texto simulado descreve sinais vitais que ninguém aferiu.
+    // Assinado, vira prontuário falso com selo de integridade válido.
+    if (transcricaoSimulada) {
+      setErrorText('Este texto é uma simulação de desenvolvimento, não a transcrição do seu áudio. Remova os trechos marcados com [SIMULAÇÃO] e redija a evolução antes de assinar.');
       return;
     }
 
@@ -854,6 +874,17 @@ export default function ProntuarioAtendimento() {
                 Revisão Textual da Evolução
               </label>
 
+              {transcricaoSimulada && (
+                <div className="bg-crit-soft border border-crit-line text-crit-ink text-xs p-2.5 rounded-lg flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" aria-hidden="true" />
+                  <span>
+                    <strong className="font-heavy">Texto simulado, não é o seu áudio.</strong> Nenhum serviço de
+                    transcrição está configurado neste ambiente. A assinatura está bloqueada até os trechos marcados
+                    com [SIMULAÇÃO] serem removidos.
+                  </span>
+                </div>
+              )}
+
               {transcribing ? (
                 <div className="bg-canvas border border-line-soft rounded-xl p-6 text-center text-xs text-muted flex flex-col items-center gap-2">
                   <RotateCw className="w-6 h-6 text-accent-ink animate-spin" aria-hidden="true" />
@@ -867,7 +898,14 @@ export default function ProntuarioAtendimento() {
                   rows={6}
                   disabled={isLocked}
                   value={transcriptionText}
-                  onChange={(e) => setTranscriptionText(e.target.value)}
+                  onChange={(e) => {
+                    setTranscriptionText(e.target.value);
+                    // A trava cai sozinha quando o último marcador sai do texto:
+                    // editar uma vírgula não deveria liberar a assinatura.
+                    if (transcricaoSimulada && !e.target.value.includes('[SIMULAÇÃO]')) {
+                      setTranscricaoSimulada(false);
+                    }
+                  }}
                   placeholder="A evolução estruturada aparecerá aqui automaticamente após gravar o áudio..."
                   className="bg-canvas border border-line rounded-xl p-3 text-xs text-ink-body placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-surface focus:border-line-strong resize-none"
                 />

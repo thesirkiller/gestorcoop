@@ -22,9 +22,23 @@ async function syncZapSignDocument(token: string, fallbackCooperadoId?: string) 
 
   const email = document.signers?.[0]?.email;
   const cooperadoId = document.external_id || fallbackCooperadoId;
-  const cooperado = cooperadoId
-    ? await bubbleApi.getCooperado(cooperadoId)
-    : email ? await bubbleApi.findCooperadoByEmail(email) : null;
+  let cooperado = null;
+
+  if (cooperadoId) {
+    try {
+      cooperado = await bubbleApi.getCooperado(cooperadoId);
+    } catch {
+      cooperado = null;
+    }
+  }
+
+  if (!cooperado && email) {
+    try {
+      cooperado = await bubbleApi.findCooperadoByEmail(email);
+    } catch {
+      cooperado = null;
+    }
+  }
 
   if (!cooperado) {
     return { success: false, message: 'Cooperado não encontrado' };
@@ -67,6 +81,12 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json().catch(() => ({}));
     const event = (payload.event_type || payload.event || payload.action || '').toLowerCase().trim();
+
+    // Responde a testes de webhook ou pings da ZapSign com sucesso
+    if (payload.ping || event === 'ping' || event === 'test' || payload.event_type === 'test') {
+      return NextResponse.json({ success: true, message: 'Webhook ativo e operante' });
+    }
+
     if (event && !event.includes('signed') && !event.includes('completed')) {
       return NextResponse.json({ success: true, message: 'Evento ignorado' });
     }

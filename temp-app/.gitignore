@@ -48,3 +48,7 @@ zs-resp.json
 b.log
 cflog.json
 documentos-validacao/
+
+# segredos locais do wrangler (pages dev)
+.dev.vars
+.dev.vars.*
