@@ -88,9 +88,15 @@ export async function GET(request: NextRequest) {
           dbAprazamentos = (
             await db
               .prepare(
-                `SELECT a.* FROM aprazamentos a
+                // `a.*` sozinho não bastava: nome do medicamento, dosagem e via
+                // moram em `prescricoes`, e são exatamente o que a tela de
+                // checagem do técnico exibe em cada card. Sem estas colunas o
+                // cooperado recebia o horário com o medicamento em branco.
+                `SELECT a.*, p.paciente_id, p.medicamento, p.dosagem, p.via_administracao
+                   FROM aprazamentos a
                    JOIN prescricoes p ON p.id = a.prescricao_id
-                  WHERE p.paciente_id IN (${marcadores})`
+                  WHERE p.paciente_id IN (${marcadores})
+                  ORDER BY a.horario_previsto ASC`
               )
               .bind(...idsPermitidos)
               .all()

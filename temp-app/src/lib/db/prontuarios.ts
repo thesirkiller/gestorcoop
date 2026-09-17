@@ -639,11 +639,85 @@ export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & 
 
 export async function listarPrescricoesClinicas(pacienteId: string, apenasAtivas = true): Promise<PrescricaoClinica[]> {
   seedClinicalMemory();
+
+  // D1 primeiro: o Map em memória morre com o isolate do Worker, então ler só
+  // dele fazia o painel perder prescrição recém-cadastrada entre dois cliques.
+  const db = getDb();
+  if (db) {
+    try {
+      const sql = apenasAtivas
+        ? 'SELECT * FROM prescricoes WHERE paciente_id = ? AND status = ? ORDER BY created_at DESC'
+        : 'SELECT * FROM prescricoes WHERE paciente_id = ? ORDER BY created_at DESC';
+      const binds = apenasAtivas ? [pacienteId, 'Ativa'] : [pacienteId];
+      const { results } = await db.prepare(sql).bind(...binds).all<any>();
+      if (results.length > 0) {
+        return results.map((p) => ({
+          ...p,
+          horarios_padrao: p.horarios_padrao ? JSON.parse(p.horarios_padrao) : [],
+        })) as PrescricaoClinica[];
+      }
+    } catch (e) {
+      console.warn('Erro ao ler prescrições do D1, caindo para memória:', e);
+    }
+  }
+
   let lista = Array.from(inMemoryPrescricoes.values()).filter((p) => p.paciente_id === pacienteId);
   if (apenasAtivas) {
     lista = lista.filter((p) => p.status === 'Ativa');
   }
   return lista;
+}
+
+/**
+ * Fuso dos horários de aprazamento.
+ *
+ * `horarios_padrao` é digitado pelo gestor em horário de Brasília ("08:00" é
+ * oito da manhã, não 08:00 UTC). A versão anterior montava o ISO com sufixo `Z`
+ * direto, então uma medicação das 8h aparecia como 5h no celular do técnico —
+ * três horas de erro em horário de medicamento.
+ */
+const FUSO_APRAZAMENTO = process.env.APRAZAMENTO_UTC_OFFSET || '-03:00';
+
+/** Teto de segurança: prescrição de longa duração não deve gerar milhares de linhas. */
+const MAX_SLOTS_APRAZAMENTO = 400;
+
+/**
+ * Gera um slot por horário padrão por dia, da data de início até a de fim.
+ *
+ * Antes só existia slot para o dia do cadastro: uma prescrição de 30 dias dava
+ * três horários hoje e nada amanhã.
+ */
+export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): AprazamentoClinico[] {
+  const horarios = prescricao.horarios_padrao?.length ? prescricao.horarios_padrao : ['08:00', '16:00', '00:00'];
+  const inicio = new Date(prescricao.data_inicio);
+  const fim = new Date(prescricao.data_fim);
+  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime()) || fim < inicio) return [];
+
+  const slots: AprazamentoClinico[] = [];
+  const dia = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth(), inicio.getUTCDate()));
+  const ultimoDia = new Date(Date.UTC(fim.getUTCFullYear(), fim.getUTCMonth(), fim.getUTCDate()));
+
+  while (dia <= ultimoDia && slots.length < MAX_SLOTS_APRAZAMENTO) {
+    const dataIso = dia.toISOString().slice(0, 10);
+    for (const h of horarios) {
+      if (slots.length >= MAX_SLOTS_APRAZAMENTO) break;
+      const instante = new Date(`${dataIso}T${h}:00${FUSO_APRAZAMENTO}`);
+      if (Number.isNaN(instante.getTime())) continue;
+      slots.push({
+        id: novoId('apraz'),
+        prescricao_id: prescricao.id,
+        paciente_id: prescricao.paciente_id,
+        medicamento: prescricao.medicamento,
+        dosagem: prescricao.dosagem,
+        via_administracao: prescricao.via_administracao,
+        horario_previsto: instante.toISOString(),
+        status: 'Pendente',
+      });
+    }
+    dia.setUTCDate(dia.getUTCDate() + 1);
+  }
+
+  return slots;
 }
 
 export async function criarPrescricaoClinica(dados: Omit<PrescricaoClinica, 'id'> & { id?: string }): Promise<PrescricaoClinica> {
@@ -657,23 +731,46 @@ export async function criarPrescricaoClinica(dados: Omit<PrescricaoClinica, 'id'
 
   inMemoryPrescricoes.set(id, prescricao);
 
-  // Gera slots de aprazamentos automáticos para o dia
-  const horarios = dados.horarios_padrao || ['08:00', '16:00', '00:00'];
-  const hoje = new Date().toISOString().split('T')[0];
+  const slots = gerarSlotsAprazamento(prescricao);
+  for (const ap of slots) inMemoryAprazamentos.set(ap.id, ap);
 
-  for (const h of horarios) {
-    const apId = novoId('apraz');
-    const ap: AprazamentoClinico = {
-      id: apId,
-      prescricao_id: id,
-      paciente_id: dados.paciente_id,
-      medicamento: dados.medicamento,
-      dosagem: dados.dosagem,
-      via_administracao: dados.via_administracao,
-      horario_previsto: `${hoje}T${h}:00.000Z`,
-      status: 'Pendente',
-    };
-    inMemoryAprazamentos.set(apId, ap);
+  // Persistência no D1. Sem isto a prescrição existia só no Map deste isolate:
+  // o gestor via a confirmação de sucesso e o cooperado nunca recebia a
+  // medicação, porque a agenda dele lê da tabela `aprazamentos`.
+  const db = getDb();
+  if (db) {
+    const statements = [
+      db.prepare(`
+        INSERT INTO prescricoes (
+          id, paciente_id, medicamento, dosagem, via_administracao, frequencia_horas,
+          data_inicio, data_fim, medico_nome, medico_crm, horarios_padrao, instrucoes, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        prescricao.id,
+        prescricao.paciente_id,
+        prescricao.medicamento,
+        prescricao.dosagem,
+        prescricao.via_administracao,
+        prescricao.frequencia_horas,
+        prescricao.data_inicio,
+        prescricao.data_fim,
+        prescricao.medico_nome || '',
+        prescricao.medico_crm || '',
+        JSON.stringify(prescricao.horarios_padrao || []),
+        prescricao.instrucoes || '',
+        prescricao.status || 'Ativa',
+        prescricao.created_at || agoraIso(),
+      ),
+      ...slots.map((ap) =>
+        db
+          .prepare('INSERT INTO aprazamentos (id, prescricao_id, horario_previsto, status) VALUES (?, ?, ?, ?)')
+          .bind(ap.id, ap.prescricao_id, ap.horario_previsto, ap.status),
+      ),
+    ];
+
+    // `batch` é atômico: ou entra a prescrição com todos os seus horários, ou
+    // nada. Aprazamento órfão significaria medicação sem prescrição na tela.
+    await db.batch(statements);
   }
 
   return prescricao;
