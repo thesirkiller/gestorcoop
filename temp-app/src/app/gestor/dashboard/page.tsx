@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { fetchFullDataset } from '@/lib/client-fetch';
+import { normalizarUrlDocumento } from '@/lib/documentos';
 import {
   Users,
   Clock,
@@ -890,19 +891,30 @@ export default function GestorDashboard() {
                     )}
 
                     {selectedCooperado.file_termo_assinado && (
-                      <a
-                        href={selectedCooperado.file_termo_assinado}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="bg-green-50 border border-green-100 hover:bg-green-100/50 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors mb-1"
-                      >
-                        <span className="text-green-800 font-semibold truncate max-w-[250px] flex items-center gap-1.5">
-                          <FileText className="w-3.5 h-3.5 text-green-600" /> Termo de Adesão Assinado
-                        </span>
-                        <span className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 text-[9px] font-bold rounded transition-colors flex items-center gap-0.5">
-                          Visualizar <ExternalLink className="w-2.5 h-2.5" />
-                        </span>
-                      </a>
+                      normalizarUrlDocumento(selectedCooperado.file_termo_assinado) ? (
+                        <a
+                          href={selectedCooperado.file_termo_assinado}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="bg-green-50 border border-green-100 hover:bg-green-100/50 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors mb-1"
+                        >
+                          <span className="text-green-800 font-semibold truncate max-w-[250px] flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-green-600" /> Termo de Adesão Assinado
+                          </span>
+                          <span className="bg-green-600 hover:bg-green-700 text-white px-2 py-0.5 text-[9px] font-bold rounded transition-colors flex items-center gap-0.5">
+                            Visualizar <ExternalLink className="w-2.5 h-2.5" />
+                          </span>
+                        </a>
+                      ) : (
+                        <div className="bg-red-50 border border-red-200 p-2.5 rounded-lg flex items-center justify-between text-xs mb-1">
+                          <span className="text-red-800 font-semibold truncate max-w-[250px] flex items-center gap-1.5">
+                            <FileText className="w-3.5 h-3.5 text-red-600" /> Termo de Adesão Assinado
+                          </span>
+                          <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-red-100 text-red-800 border border-red-200 shrink-0">
+                            Arquivo indisponível — gerar novamente
+                          </span>
+                        </div>
+                      )
                     )}
 
                     {/* Exibe botão de cópia dentro da modal caso tenha link ativo na sessão */}
@@ -931,6 +943,26 @@ export default function GestorDashboard() {
                         if (url === selectedCooperado.file_termo_assinado) return null;
                         const isSignedPdf =
                           url.includes('zapsign') || url.includes('signed') || url.endsWith('.pdf');
+                        const nomeArquivo = url.split('/').pop();
+
+                        // Anexo que nunca chegou ao armazenamento não vira link:
+                        // clicar levava a um "AccessDenied" do storage.
+                        if (!normalizarUrlDocumento(url)) {
+                          return (
+                            <div
+                              key={i}
+                              className="bg-red-50 border border-red-200 p-2.5 rounded-lg flex items-center justify-between text-xs"
+                            >
+                              <span className="text-red-800 truncate max-w-[250px] font-mono">
+                                {nomeArquivo}
+                              </span>
+                              <span className="px-2 py-0.5 text-[9px] font-bold rounded bg-red-100 text-red-800 border border-red-200 shrink-0">
+                                Arquivo perdido — pedir reenvio
+                              </span>
+                            </div>
+                          );
+                        }
+
                         return (
                           <a
                             key={i}
@@ -940,7 +972,7 @@ export default function GestorDashboard() {
                             className="bg-slate-50 border border-slate-200 hover:bg-slate-100 p-2.5 rounded-lg flex items-center justify-between text-xs transition-colors"
                           >
                             <span className="text-indigo-600 truncate max-w-[250px] font-mono">
-                              {url.split('/').pop()}
+                              {nomeArquivo}
                             </span>
                             <span
                               className={`px-2 py-0.5 text-[9px] font-bold rounded ${isSignedPdf
