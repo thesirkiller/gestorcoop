@@ -12,8 +12,14 @@ export async function POST(request: NextRequest) {
     const origin = process.env.APP_ORIGIN;
     if (!origin) throw new Error('APP_ORIGIN não configurada.');
     const user = await bubbleApi.getUser(user_id);
-    const gestores = (process.env.GESTOR_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-    if (!user?._id || user._id !== user_id || (area === 'gestor' && !gestores.includes(user_id)) || (area === 'cooperado' && !user.fk_cooperado)) return NextResponse.json({ error: 'Usuário sem acesso a esta área.' }, { status: 403, headers });
+    // Quem é gestor sai do próprio cadastro (`bool_colaborador_interno`), não de
+    // uma lista no ambiente: são dezenas de pessoas e cada admissão ou
+    // desligamento exigiria editar a variável e refazer o deploy — com o risco
+    // de alguém desligado continuar entrando. GESTOR_USER_IDS segue valendo como
+    // liberação avulsa, para conceder acesso sem mexer no cadastro.
+    const liberadosPorAmbiente = (process.env.GESTOR_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
+    const ehGestor = user?.bool_colaborador_interno === true || liberadosPorAmbiente.includes(user_id);
+    if (!user?._id || user._id !== user_id || (area === 'gestor' && !ehGestor) || (area === 'cooperado' && !user.fk_cooperado)) return NextResponse.json({ error: 'Usuário sem acesso a esta área.' }, { status: 403, headers });
     const ticket = await criarTicket({ userId: user_id, area, cooperadoId: area === 'cooperado' ? user.fk_cooperado : undefined, nome: user.txt_nome || 'Profissional', cargo: 'Tecnico_Enfermagem' });
     return NextResponse.json({ success: true, embed_url: `${origin.replace(/\/$/, '')}/entrar#ticket=${ticket}`, expires_in: 60 }, { headers });
   } catch { return NextResponse.json({ error: 'Não foi possível emitir acesso. Verifique a configuração da integração.' }, { status: 503, headers }); }
