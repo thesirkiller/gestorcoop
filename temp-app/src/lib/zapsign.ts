@@ -72,9 +72,13 @@ export const zapsignApi = {
       let validSignUrl = false;
       try {
         const parsed = new URL(signUrl);
+        // A ZapSign entrega o link do signatário como `/verificar/<uuid>`;
+        // `/sign/<uuid>` é o formato antigo. Aceitar só `/sign/` fazia esta
+        // função descartar toda resposta legítima e devolver "a ZapSign não
+        // retornou um link de assinatura válido" mesmo com HTTP 200.
         validSignUrl = parsed.protocol === 'https:' && !parsed.username && !parsed.password &&
           (parsed.hostname === 'zapsign.com.br' || parsed.hostname.endsWith('.zapsign.com.br')) &&
-          /^\/sign\/[^/]+/.test(parsed.pathname);
+          /^\/(sign|verificar)\/[^/]+/.test(parsed.pathname);
       } catch { /* Resposta incompleta do provedor. */ }
       if (!data.token || !validSignUrl) throw new Error('A ZapSign não retornou um link de assinatura válido.');
       return data as ZapSignDocumentResponse;
