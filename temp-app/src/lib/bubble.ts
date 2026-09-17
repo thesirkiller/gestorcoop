@@ -1,20 +1,50 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import axios from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import { validarTransicao } from './equipamentos-estados';
 import { normalizarUrlDocumento } from './documentos';
 
-if (!process.env.BUBBLE_API_URL) {
-  throw new Error(
-    'BUBBLE_API_URL não está definida. Configure-a no .env.local (ex.: https://gestorcoop.app/version-test/api/1.1). ' +
-    'Sem ela, o axios usa URLs relativas e o Next.js lança "URL is malformed".'
-  );
+/**
+ * A URL do Bubble é exigida na PRIMEIRA CHAMADA, não no carregamento do módulo.
+ *
+ * Validar no topo derrubava o build: ao "coletar page data", o Next importa
+ * cada rota de edge, e o build do Cloudflare não recebe variáveis de ambiente
+ * (`Build environment variables: (none found)`). O módulo lançava ali e o
+ * deploy inteiro falhava — sem nunca ter feito uma requisição.
+ *
+ * O proxy abaixo mantém `bubbleClient.get(...)` funcionando como antes e adia a
+ * criação do axios para o momento em que a variável de fato precisa existir.
+ */
+export function urlBaseBubble(): string {
+  const baseURL = process.env.BUBBLE_API_URL;
+  if (!baseURL) {
+    throw new Error(
+      'BUBBLE_API_URL não está definida. Configure-a no .env.local (ex.: https://gestorcoop.app/version-test/api/1.1) ' +
+      'e nas variáveis do Cloudflare Pages. Sem ela, o axios usa URLs relativas e o Next.js lança "URL is malformed".'
+    );
+  }
+  return baseURL;
 }
 
-const bubbleClient = axios.create({
-  baseURL: process.env.BUBBLE_API_URL,
-  headers: {
-    'Authorization': `Bearer ${process.env.BUBBLE_API_TOKEN}`,
-    'Content-Type': 'application/json',
+let clienteMemo: AxiosInstance | null = null;
+
+function obterCliente(): AxiosInstance {
+  if (!clienteMemo) {
+    clienteMemo = axios.create({
+      baseURL: urlBaseBubble(),
+      headers: {
+        'Authorization': `Bearer ${process.env.BUBBLE_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+    });
+  }
+  return clienteMemo;
+}
+
+const bubbleClient = new Proxy({} as AxiosInstance, {
+  get(_alvo, prop) {
+    const cliente = obterCliente();
+    const valor = (cliente as any)[prop];
+    return typeof valor === 'function' ? valor.bind(cliente) : valor;
   },
 });
 
@@ -691,7 +721,7 @@ export const bubbleApi = {
   },
 
   async uploadFile(filename: string, base64Contents: string): Promise<string> {
-    const appUrl = process.env.BUBBLE_API_URL!.replace(/\/api\/1\.1\/?$/, '');
+    const appUrl = urlBaseBubble().replace(/\/api\/1\.1\/?$/, '');
     const response = await bubbleClient.post(`${appUrl}/fileupload`, {
       name: filename,
       contents: base64Contents,
