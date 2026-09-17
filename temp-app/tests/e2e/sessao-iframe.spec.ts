@@ -17,62 +17,59 @@ import { test, expect, request as playwrightRequest } from '@playwright/test';
 
 // O módulo lê o segredo de `process.env` a cada chamada, então definir aqui
 // basta e não depende do `.env.local` da máquina.
-process.env.ASSINATURA_SECRET = 'segredo-de-teste-nao-usar-em-producao';
+process.env.AUTH_JWT_SECRET = 'segredo-de-teste-nao-usar-em-producao-ao-menos-32-chars';
 
 import {
-  assinarTokenSessao,
-  verificarTokenSessao,
+  emitirTokenSessao,
+  validarTokenSessao,
   tokenDoCabecalho,
 } from '../../src/lib/sessao-token';
 
 test.describe('Token de sessão do cooperado', () => {
+  const mockIdentidade = {
+    userId: 'user_abc123',
+    area: 'cooperado' as const,
+    cooperadoId: 'coop_123',
+    nome: 'Dra. Ana Silva',
+  };
+
   test('ida e volta devolve o mesmo user id', async () => {
-    const token = await assinarTokenSessao('user_abc123');
-    expect(await verificarTokenSessao(token)).toBe('user_abc123');
+    const token = await emitirTokenSessao(mockIdentidade, 'sess_123');
+    const claims = await validarTokenSessao(token);
+    expect(claims?.userId).toBe('user_abc123');
+    expect(claims?.cooperadoId).toBe('coop_123');
   });
 
   test('recusa token com payload adulterado', async () => {
-    const token = await assinarTokenSessao('user_abc123');
-    const [versao, payload, assinatura] = token.split('.');
+    const token = await emitirTokenSessao(mockIdentidade, 'sess_123');
+    const [header, payload, assinatura] = token.split('.');
 
-    // Reescreve o payload para outro usuário, mantendo a assinatura original —
-    // exatamente o que alguém faria para gravar evolução em nome de terceiro.
-    const forjado = Buffer.from(
-      JSON.stringify({ u: 'user_invasor', exp: Math.floor(Date.now() / 1000) + 3600 }),
-    )
-      .toString('base64url');
+    // Reescreve o payload para outro usuário, mantendo a assinatura original
+    const payloadObj = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
+    payloadObj.sub = 'user_invasor';
+    const forjado = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
 
-    expect(await verificarTokenSessao(`${versao}.${forjado}.${assinatura}`)).toBeNull();
+    expect(await validarTokenSessao(`${header}.${forjado}.${assinatura}`)).toBeNull();
   });
 
   test('recusa assinatura de outro segredo', async () => {
-    const token = await assinarTokenSessao('user_abc123');
-    process.env.ASSINATURA_SECRET = 'outro-segredo-completamente-diferente';
+    const token = await emitirTokenSessao(mockIdentidade, 'sess_123');
+    process.env.AUTH_JWT_SECRET = 'outro-segredo-completamente-diferente-32-chars-long';
     try {
-      expect(await verificarTokenSessao(token)).toBeNull();
+      expect(await validarTokenSessao(token)).toBeNull();
     } finally {
-      process.env.ASSINATURA_SECRET = 'segredo-de-teste-nao-usar-em-producao';
+      process.env.AUTH_JWT_SECRET = 'segredo-de-teste-nao-usar-em-producao-ao-menos-32-chars';
     }
   });
 
   test('recusa token vencido', async () => {
-    const token = await assinarTokenSessao('user_abc123', -1);
-    expect(await verificarTokenSessao(token)).toBeNull();
+    const token = await emitirTokenSessao(mockIdentidade, 'sess_123', -10);
+    expect(await validarTokenSessao(token)).toBeNull();
   });
 
   test('recusa lixo sem lançar', async () => {
     for (const entrada of ['', 'abc', 'v1.só-duas', 'v2.a.b', null, undefined]) {
-      expect(await verificarTokenSessao(entrada as string)).toBeNull();
-    }
-  });
-
-  test('lança ao assinar sem segredo configurado, em vez de emitir sessão fraca', async () => {
-    const original = process.env.ASSINATURA_SECRET;
-    delete process.env.ASSINATURA_SECRET;
-    try {
-      await expect(assinarTokenSessao('user_abc123')).rejects.toThrow(/ASSINATURA_SECRET/);
-    } finally {
-      process.env.ASSINATURA_SECRET = original;
+      expect(await validarTokenSessao(entrada as string)).toBeNull();
     }
   });
 

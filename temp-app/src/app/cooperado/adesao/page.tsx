@@ -24,11 +24,11 @@ import {
   RotateCcw,
   MessageCircle,
   Mail,
+  Shield,
 } from 'lucide-react';
 import { isValidCPF } from '@/lib/cpf';
 import { PROFISSOES_FORM } from '@/lib/profissoes';
 import { DocumentoAdesao, TIPOS_DOCUMENTO, MAX_DOCUMENTO_BYTES, documentosObrigatoriosPendentes, normalizarUrlDocumento } from '@/lib/documentos';
-
 // Form interfaces
 interface Profession {
   name: string;
@@ -532,836 +532,922 @@ export default function AdesaoPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between py-10 px-4 md:px-8 font-sans">
-      <div className="max-w-5xl w-full mx-auto bg-white border border-slate-200 rounded-2xl shadow-lg overflow-hidden flex flex-col">
+    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col justify-between py-6 md:py-10 px-4 md:px-8 font-sans">
+      <div className="max-w-4xl w-full mx-auto flex flex-col gap-6">
 
-        {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-50/30 via-slate-50/80 to-indigo-50/30 px-8 py-6 border-b border-slate-200">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Top Brand Header */}
+        <header className="flex items-center justify-between px-1">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-indigo-600 text-white p-2 rounded-xl shadow-sm">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="text-[10px] uppercase tracking-widest font-extrabold text-indigo-600">Portal de Ingresso</span>
+              <h2 className="text-base font-black tracking-tight text-slate-900 leading-none">GestorCoop</h2>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 bg-white px-3.5 py-1.5 rounded-full border border-slate-200 shadow-sm">
+            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+            <span className="text-xs font-semibold text-slate-700">Canal de Cadastro Seguro</span>
+          </div>
+        </header>
+
+        {/* Main Card */}
+        <div className="w-full bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+
+          {/* Card Header & Stepper */}
+          <div className="bg-gradient-to-r from-indigo-50/40 via-slate-50/80 to-indigo-50/40 px-6 sm:px-8 py-6 border-b border-slate-200">
             <div>
               <span className="text-indigo-600 font-bold uppercase tracking-wider text-xs">Adesão de Cooperado</span>
-              <h1 className="text-2xl font-extrabold text-slate-900 mt-1">Ficha de Inscrição & Adesão</h1>
+              <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mt-1">Ficha de Inscrição & Adesão</h1>
             </div>
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-full border border-slate-200 self-start md:self-center shadow-sm">
-              <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse"></span>
-              <span className="text-xs font-semibold text-slate-600">Canal de Cadastro Seguro</span>
-            </div>
-          </div>
 
-          {/* Stepper Progress */}
-          <div className="mt-8 flex justify-between items-center relative">
-            <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 -translate-y-1/2 z-0" />
-            <div
-              className="absolute top-1/2 left-0 h-0.5 bg-indigo-600 -translate-y-1/2 z-0 transition-all duration-300"
-              style={{ width: `${((currentStep - 1) / (steps.length - 1)) * 100}%` }}
-            />
-            {steps.map((st) => {
-              const Icon = st.icon;
-              const isCompleted = st.num < currentStep;
-              const isActive = st.num === currentStep;
+            {/* Stepper Progress */}
+            <div className="mt-8">
+              <div className="relative flex justify-between items-center">
+                {/* Background Track Line */}
+                <div className="absolute top-4 md:top-5 left-4 right-4 h-0.5 bg-slate-200 z-0" />
+                {/* Active Progress Line */}
+                <div
+                  className="absolute top-4 md:top-5 left-4 h-0.5 bg-indigo-600 z-0 transition-all duration-300"
+                  style={{
+                    width: steps.length > 1 ? `calc(${((currentStep - 1) / (steps.length - 1)) * 100}% - 2rem)` : '0%',
+                  }}
+                />
+                {steps.map((st) => {
+                  const Icon = st.icon;
+                  const isCompleted = st.num < currentStep;
+                  const isActive = st.num === currentStep;
 
-              return (
-                <div key={st.num} className="flex flex-col items-center z-10">
-                  <div
-                    className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center border transition-all duration-300 ${isCompleted
-                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                        : isActive
-                          ? 'bg-indigo-50 border-indigo-500 text-indigo-700 ring-4 ring-indigo-500/10'
-                          : 'bg-slate-100 border-slate-200 text-slate-500'
-                      }`}
-                  >
-                    {isCompleted ? <Check className="w-4 h-4 md:w-5 md:h-5" /> : <Icon className="w-4 h-4 md:w-5 md:h-5" />}
-                  </div>
-                  <span className={`text-[10px] font-bold mt-2 hidden sm:block uppercase tracking-wider ${isActive ? 'text-indigo-600' : isCompleted ? 'text-slate-600' : 'text-slate-500'
-                    }`}>
-                    {st.label}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Form Body with slide transitions */}
-        <div className="p-6 md:p-10 flex-1 relative min-h-[450px]">
-          {resumed && currentStep < 6 && (
-            <div className="mb-6 p-4 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-lg text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 shrink-0 text-indigo-600" />
-                <span>Continuamos de onde você parou. Seus dados preenchidos anteriormente foram recuperados.</span>
+                  return (
+                    <div key={st.num} className="flex-1 flex flex-col items-center z-10 min-w-0">
+                      <button
+                        type="button"
+                        disabled={st.num > currentStep}
+                        onClick={() => {
+                          if (st.num < currentStep) setCurrentStep(st.num);
+                        }}
+                        aria-label={`Etapa ${st.num}: ${st.label}${isCompleted ? ' (Concluída)' : isActive ? ' (Atual)' : ''}`}
+                        className={`w-8 h-8 md:w-10 md:h-10 rounded-full flex items-center justify-center border-2 transition-all duration-200 ${
+                          isCompleted
+                            ? 'bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700 cursor-pointer shadow-sm'
+                            : isActive
+                              ? 'bg-white border-indigo-600 text-indigo-600 ring-4 ring-indigo-500/20 font-bold'
+                              : 'bg-slate-100 border-slate-200 text-slate-400 cursor-default'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <Check className="w-4 h-4 md:w-5 md:h-5 stroke-[2.5]" />
+                        ) : (
+                          <Icon className="w-4 h-4 md:w-5 md:h-5" />
+                        )}
+                      </button>
+                      <span
+                        className={`text-[11px] font-bold mt-2 hidden md:block text-center leading-tight uppercase tracking-wider max-w-[100px] break-words transition-colors ${
+                          isActive
+                            ? 'text-indigo-600 font-extrabold'
+                            : isCompleted
+                              ? 'text-slate-700 font-semibold'
+                              : 'text-slate-400'
+                        }`}
+                      >
+                        {st.label}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
-              <button
-                type="button"
-                onClick={restartForm}
-                className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 underline underline-offset-2 self-start sm:self-center shrink-0"
+
+              {/* Mobile Current Step Label */}
+              <div className="mt-4 text-center md:hidden flex items-center justify-center gap-2">
+                <span className="text-[11px] font-extrabold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+                  Passo {currentStep} de {steps.length}
+                </span>
+                <span className="text-xs font-bold text-slate-800">
+                  {steps[currentStep - 1]?.label}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Form Body with slide transitions */}
+          <div className="p-6 md:p-10 flex-1 relative min-h-[450px]">
+            {resumed && currentStep < 6 && (
+              <div className="mb-6 p-4 bg-indigo-50/80 border border-indigo-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-indigo-900">
+                <div className="flex items-start gap-3 flex-1 min-w-0">
+                  <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                  <p className="leading-relaxed">
+                    <strong className="font-semibold text-indigo-950">Continuamos de onde você parou.</strong> Seus dados preenchidos anteriormente foram recuperados.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={restartForm}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-100/60 border border-indigo-200 px-3 py-1.5 rounded-lg shrink-0 transition-colors self-start sm:self-center"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Recomeçar do zero
+                </button>
+              </div>
+            )}
+
+            {infoMsg && currentStep < 6 && (
+              <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-sm flex items-center gap-2.5">
+                <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0"></span>
+                <span className="leading-relaxed">{infoMsg}</span>
+              </div>
+            )}
+
+            {errorMsg && (
+              <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl text-sm flex items-center gap-2.5">
+                <span className="w-2 h-2 bg-red-500 rounded-full shrink-0"></span>
+                <span className="leading-relaxed">{errorMsg}</span>
+              </div>
+            )}
+
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={currentStep}
+                initial={{ x: 30, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -30, opacity: 0 }}
+                transition={{ duration: 0.2 }}
               >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Recomeçar do zero
-              </button>
-            </div>
-          )}
 
-          {infoMsg && currentStep < 6 && (
-            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg text-sm flex items-center gap-2">
-              <span className="w-2 h-2 bg-amber-500 rounded-full shrink-0"></span>
-              {infoMsg}
-            </div>
-          )}
-
-          {errorMsg && (
-            <div className="mb-6 p-4 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-center gap-2">
-              <span className="w-2 h-2 bg-red-500 rounded-full"></span>
-              {errorMsg}
-            </div>
-          )}
-
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={currentStep}
-              initial={{ x: 30, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -30, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-
-              {/* STEP 1: Personal Data */}
-              {currentStep === 1 && (
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <User className="w-6 h-6 text-indigo-600" />
-                    Dados Pessoais
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Nome Completo *</label>
-                      <input
-                        type="text"
-                        name="nomeCompleto"
-                        value={personalData.nomeCompleto}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Nome completo do cooperado"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">CPF *</label>
-                      <input
-                        type="text"
-                        name="cpf"
-                        value={personalData.cpf}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="000.000.000-00"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">E-mail *</label>
-                      <input
-                        type="email"
-                        name="email"
-                        value={personalData.email}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="seuemail@exemplo.com"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">WhatsApp / Celular *</label>
-                      <input
-                        type="text"
-                        name="whatsapp"
-                        value={personalData.whatsapp}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="(00) 00000-0000"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Telefone Alternativo</label>
-                      <input
-                        type="text"
-                        name="telefoneReserva"
-                        value={personalData.telefoneReserva}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="(00) 00000-0000"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">RG</label>
-                      <input
-                        type="text"
-                        name="rg"
-                        value={personalData.rg}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Apenas números"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Órgão Emissor / UF</label>
-                      <div className="flex gap-2">
+                {/* STEP 1: Personal Data */}
+                {currentStep === 1 && (
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                      <User className="w-6 h-6 text-indigo-600" />
+                      Dados Pessoais
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="md:col-span-2">
+                        <label htmlFor="nomeCompleto" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Nome Completo *</label>
                         <input
+                          id="nomeCompleto"
                           type="text"
-                          name="orgaoEmissor"
-                          value={personalData.orgaoEmissor}
+                          name="nomeCompleto"
+                          value={personalData.nomeCompleto}
                           onChange={handlePersonalChange}
-                          className="flex-1 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                          placeholder="Ex: SSP"
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Nome completo do cooperado"
                         />
-                        <select
-                          name="orgaoUF"
-                          value={personalData.orgaoUF}
+                      </div>
+                      <div>
+                        <label htmlFor="cpf" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">CPF *</label>
+                        <input
+                          id="cpf"
+                          type="text"
+                          name="cpf"
+                          value={personalData.cpf}
                           onChange={handlePersonalChange}
-                          className="w-24 bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-3 py-3 text-slate-800 focus:outline-none shadow-sm"
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                          placeholder="000.000.000-00"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="email" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">E-mail *</label>
+                        <input
+                          id="email"
+                          type="email"
+                          name="email"
+                          value={personalData.email}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="seuemail@exemplo.com"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="whatsapp" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">WhatsApp / Celular *</label>
+                        <input
+                          id="whatsapp"
+                          type="text"
+                          name="whatsapp"
+                          value={personalData.whatsapp}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                          placeholder="(00) 00000-0000"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="telefoneReserva" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Telefone Alternativo</label>
+                        <input
+                          id="telefoneReserva"
+                          type="text"
+                          name="telefoneReserva"
+                          value={personalData.telefoneReserva}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                          placeholder="(00) 00000-0000"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="rg" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">RG</label>
+                        <input
+                          id="rg"
+                          type="text"
+                          name="rg"
+                          value={personalData.rg}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Apenas números"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="orgaoEmissor" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Órgão Emissor / UF</label>
+                        <div className="flex gap-2">
+                          <input
+                            id="orgaoEmissor"
+                            type="text"
+                            name="orgaoEmissor"
+                            value={personalData.orgaoEmissor}
+                            onChange={handlePersonalChange}
+                            className="flex-1 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                            placeholder="Ex: SSP"
+                          />
+                          <select
+                            id="orgaoUF"
+                            aria-label="UF do órgão emissor"
+                            name="orgaoUF"
+                            value={personalData.orgaoUF}
+                            onChange={handlePersonalChange}
+                            className="w-24 bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-3 py-3 text-slate-800 focus:outline-none shadow-sm"
+                          >
+                            {['GO', 'DF', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC', 'TO', 'MT', 'MS'].map(uf => (
+                              <option key={uf} value={uf}>{uf}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      <div>
+                        <label htmlFor="dataExpedicaoRG" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Data de Expedição RG</label>
+                        <input
+                          id="dataExpedicaoRG"
+                          type="date"
+                          name="dataExpedicaoRG"
+                          value={personalData.dataExpedicaoRG}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="dataNascimento" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Data de Nascimento</label>
+                        <input
+                          id="dataNascimento"
+                          type="date"
+                          name="dataNascimento"
+                          value={personalData.dataNascimento}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="sexo" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Sexo</label>
+                        <select
+                          id="sexo"
+                          name="sexo"
+                          value={personalData.sexo}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
                         >
-                          {['GO', 'DF', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC', 'TO', 'MT', 'MS'].map(uf => (
+                          <option value="Feminino">Feminino</option>
+                          <option value="Masculino">Masculino</option>
+                          <option value="Outro">Outro / Não Informar</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="estadoCivil" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Estado Civil</label>
+                        <select
+                          id="estadoCivil"
+                          name="estadoCivil"
+                          value={personalData.estadoCivil}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
+                        >
+                          <option value="Solteiro(a)">Solteiro(a)</option>
+                          <option value="Casado(a)">Casado(a)</option>
+                          <option value="Divorciado(a)">Divorciado(a)</option>
+                          <option value="Viúvo(a)">Viúvo(a)</option>
+                          <option value="União Estável">União Estável</option>
+                        </select>
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label htmlFor="nomeMae" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Nome da Mãe *</label>
+                        <input
+                          id="nomeMae"
+                          type="text"
+                          name="nomeMae"
+                          value={personalData.nomeMae}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Nome completo da mãe"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="nomePai" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Nome do Pai</label>
+                        <input
+                          id="nomePai"
+                          type="text"
+                          name="nomePai"
+                          value={personalData.nomePai}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Nome completo do pai (opcional)"
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="grauEscolaridade" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Grau de Escolaridade</label>
+                        <select
+                          id="grauEscolaridade"
+                          name="grauEscolaridade"
+                          value={personalData.grauEscolaridade}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
+                        >
+                          <option value="Ensino Médio">Ensino Médio</option>
+                          <option value="Técnico Completo">Técnico Completo</option>
+                          <option value="Superior Incompleto">Superior Incompleto</option>
+                          <option value="Superior Completo">Superior Completo</option>
+                          <option value="Pós-Graduação / Especialização">Pós-Graduação / Especialização</option>
+                          <option value="Mestrado / Doutorado">Mestrado / Doutorado</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="racaCor" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Raça / Cor</label>
+                        <select
+                          id="racaCor"
+                          name="racaCor"
+                          value={personalData.racaCor}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
+                        >
+                          <option value="Branca">Branca</option>
+                          <option value="Preta">Preta</option>
+                          <option value="Parda">Parda</option>
+                          <option value="Amarela">Amarela</option>
+                          <option value="Indígena">Indígena</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label htmlFor="pis" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">PIS (Com Máscara) *</label>
+                        <input
+                          id="pis"
+                          type="text"
+                          name="pis"
+                          value={personalData.pis}
+                          onChange={handlePersonalChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                          placeholder="000.00000.00-0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* STEP 2: Address Data */}
+                {currentStep === 2 && (
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
+                      <MapPin className="w-6 h-6 text-indigo-600" />
+                      Endereço Residencial
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                      <div>
+                        <label htmlFor="cep" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">CEP *</label>
+                        <div className="relative">
+                          <input
+                            id="cep"
+                            type="text"
+                            name="cep"
+                            value={addressData.cep}
+                            onChange={handleAddressChange}
+                            className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                            placeholder="00000-000"
+                          />
+                          {loading && (
+                            <Loader2 className="w-4 h-4 animate-spin text-indigo-600 absolute right-3 top-1/2 -translate-y-1/2" />
+                          )}
+                        </div>
+                      </div>
+                      <div className="md:col-span-3">
+                        <label htmlFor="rua" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Logradouro / Rua *</label>
+                        <input
+                          id="rua"
+                          type="text"
+                          name="rua"
+                          value={addressData.rua}
+                          onChange={handleAddressChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Avenida, Rua, Travessa..."
+                        />
+                      </div>
+
+                      <div>
+                        <label htmlFor="numero" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Número *</label>
+                        <input
+                          id="numero"
+                          type="text"
+                          name="numero"
+                          value={addressData.numero}
+                          onChange={handleAddressChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Ex: 120"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="complemento" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Complemento</label>
+                        <input
+                          id="complemento"
+                          type="text"
+                          name="complemento"
+                          value={addressData.complemento}
+                          onChange={handleAddressChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Apto, Sala, Quadra..."
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label htmlFor="bairro" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Bairro *</label>
+                        <input
+                          id="bairro"
+                          type="text"
+                          name="bairro"
+                          value={addressData.bairro}
+                          onChange={handleAddressChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Bairro"
+                        />
+                      </div>
+
+                      <div className="md:col-span-3">
+                        <label htmlFor="cidade" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Cidade *</label>
+                        <input
+                          id="cidade"
+                          type="text"
+                          name="cidade"
+                          value={addressData.cidade}
+                          onChange={handleAddressChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm"
+                          placeholder="Cidade"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="estado" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Estado (UF)</label>
+                        <select
+                          id="estado"
+                          name="estado"
+                          value={addressData.estado}
+                          onChange={handleAddressChange}
+                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
+                        >
+                          {['GO', 'DF', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC', 'TO', 'MT', 'MS', 'PE', 'CE'].map(uf => (
                             <option key={uf} value={uf}>{uf}</option>
                           ))}
                         </select>
                       </div>
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Data de Expedição RG</label>
-                      <input
-                        type="date"
-                        name="dataExpedicaoRG"
-                        value={personalData.dataExpedicaoRG}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Data de Nascimento</label>
-                      <input
-                        type="date"
-                        name="dataNascimento"
-                        value={personalData.dataNascimento}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Sexo</label>
-                      <select
-                        name="sexo"
-                        value={personalData.sexo}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
-                      >
-                        <option value="Feminino">Feminino</option>
-                        <option value="Masculino">Masculino</option>
-                        <option value="Outro">Outro / Não Informar</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Estado Civil</label>
-                      <select
-                        name="estadoCivil"
-                        value={personalData.estadoCivil}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
-                      >
-                        <option value="Solteiro(a)">Solteiro(a)</option>
-                        <option value="Casado(a)">Casado(a)</option>
-                        <option value="Divorciado(a)">Divorciado(a)</option>
-                        <option value="Viúvo(a)">Viúvo(a)</option>
-                        <option value="União Estável">União Estável</option>
-                      </select>
-                    </div>
-
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Nome da Mãe *</label>
-                      <input
-                        type="text"
-                        name="nomeMae"
-                        value={personalData.nomeMae}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Nome completo da mãe"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Nome do Pai</label>
-                      <input
-                        type="text"
-                        name="nomePai"
-                        value={personalData.nomePai}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Nome completo do pai (opcional)"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Grau de Escolaridade</label>
-                      <select
-                        name="grauEscolaridade"
-                        value={personalData.grauEscolaridade}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
-                      >
-                        <option value="Ensino Médio">Ensino Médio</option>
-                        <option value="Técnico Completo">Técnico Completo</option>
-                        <option value="Superior Incompleto">Superior Incompleto</option>
-                        <option value="Superior Completo">Superior Completo</option>
-                        <option value="Pós-Graduação / Especialização">Pós-Graduação / Especialização</option>
-                        <option value="Mestrado / Doutorado">Mestrado / Doutorado</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Raça / Cor</label>
-                      <select
-                        name="racaCor"
-                        value={personalData.racaCor}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
-                      >
-                        <option value="Branca">Branca</option>
-                        <option value="Preta">Preta</option>
-                        <option value="Parda">Parda</option>
-                        <option value="Amarela">Amarela</option>
-                        <option value="Indígena">Indígena</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">PIS (Com Máscara) *</label>
-                      <input
-                        type="text"
-                        name="pis"
-                        value={personalData.pis}
-                        onChange={handlePersonalChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                        placeholder="000.00000.00-0"
-                      />
-                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* STEP 2: Address Data */}
-              {currentStep === 2 && (
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center gap-2">
-                    <MapPin className="w-6 h-6 text-indigo-600" />
-                    Endereço Residencial
-                  </h2>
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">CEP *</label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          name="cep"
-                          value={addressData.cep}
-                          onChange={handleAddressChange}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all font-mono shadow-sm"
-                          placeholder="00000-000"
-                        />
-                        {loading && (
-                          <Loader2 className="w-4 h-4 animate-spin text-indigo-600 absolute right-3 top-1/2 -translate-y-1/2" />
+                {/* STEP 3: Professions */}
+                {currentStep === 3 && (
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <Briefcase className="w-6 h-6 text-indigo-600" />
+                      Atuação Profissional
+                    </h2>
+                    <p className="text-sm text-slate-600 mb-6">Cadastre uma ou mais profissões pelas quais atuará na cooperativa. Indique qual é a principal.</p>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+                      {/* Left: Input Form */}
+                      <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                        <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Profissão</h3>
+
+                        <div>
+                          <label htmlFor="prof_name" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Profissão</label>
+                          <select
+                            id="prof_name"
+                            value={currentProf.name}
+                            onChange={(e) => setCurrentProf(prev => ({ ...prev, name: e.target.value }))}
+                            className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
+                          >
+                            {PROFISSOES_FORM.map((p) => (
+                              <option key={p.value} value={p.value}>{p.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label htmlFor="prof_council" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Conselho de Classe (Ex: COREN, CRM)</label>
+                          <input
+                            id="prof_council"
+                            type="text"
+                            value={currentProf.council}
+                            onChange={(e) => setCurrentProf(prev => ({ ...prev, council: e.target.value.toUpperCase() }))}
+                            className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
+                            placeholder="Ex: COREN"
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="prof_registration" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Nº Registro</label>
+                            <input
+                              id="prof_registration"
+                              type="text"
+                              value={currentProf.registration}
+                              onChange={(e) => setCurrentProf(prev => ({ ...prev, registration: e.target.value }))}
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
+                              placeholder="123456"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="prof_emissionDate" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Data Emissão</label>
+                            <input
+                              id="prof_emissionDate"
+                              type="date"
+                              value={currentProf.emissionDate}
+                              onChange={(e) => setCurrentProf(prev => ({ ...prev, emissionDate: e.target.value }))}
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none font-mono shadow-sm"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 my-2">
+                          <input
+                            type="checkbox"
+                            id="prof_principal"
+                            checked={currentProf.isPrincipal}
+                            onChange={(e) => setCurrentProf(prev => ({ ...prev, isPrincipal: e.target.checked }))}
+                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-white border-slate-300"
+                          />
+                          <label htmlFor="prof_principal" className="text-xs font-semibold text-slate-700 cursor-pointer">Profissão Principal</label>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={addProfession}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg text-sm flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                        >
+                          <Plus className="w-4 h-4" /> Salvar Profissão
+                        </button>
+                      </div>
+
+                      {/* Right: Added Professions list */}
+                      <div className="lg:col-span-2 flex flex-col gap-4">
+                        <h3 className="font-bold text-slate-800 text-sm">Profissões Cadastradas ({professions.length})</h3>
+
+                        {professions.length === 0 ? (
+                          <div className="border border-dashed border-slate-300 rounded-xl p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2 bg-slate-50/50">
+                            <Briefcase className="w-10 h-10 text-slate-400" />
+                            <p className="text-sm">Nenhuma profissão adicionada.</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3">
+                            {professions.map((prof, idx) => (
+                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-1 bg-white p-2 rounded-lg border border-slate-200">
+                                    <Briefcase className="w-5 h-5 text-indigo-600" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <h4 className="font-bold text-slate-800 text-sm">{prof.name}</h4>
+                                      {prof.isPrincipal && (
+                                        <span className="bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full">
+                                          Principal
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-xs text-slate-600 mt-1">
+                                      Conselho: {prof.council} • Registro: {prof.registration}
+                                      {prof.emissionDate && ` • Emissão: ${new Date(prof.emissionDate).toLocaleDateString('pt-BR')}`}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeProfession(idx)}
+                                  aria-label={`Remover profissão ${prof.name}`}
+                                  className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
                         )}
                       </div>
-                    </div>
-                    <div className="md:col-span-3">
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Logradouro / Rua *</label>
-                      <input
-                        type="text"
-                        name="rua"
-                        value={addressData.rua}
-                        onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Avenida, Rua, Travessa..."
-                      />
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Número *</label>
-                      <input
-                        type="text"
-                        name="numero"
-                        value={addressData.numero}
-                        onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Ex: 120"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Complemento</label>
-                      <input
-                        type="text"
-                        name="complemento"
-                        value={addressData.complemento}
-                        onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Apto, Sala, Quadra..."
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Bairro *</label>
-                      <input
-                        type="text"
-                        name="bairro"
-                        value={addressData.bairro}
-                        onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Bairro"
-                      />
-                    </div>
-
-                    <div className="md:col-span-3">
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Cidade *</label>
-                      <input
-                        type="text"
-                        name="cidade"
-                        value={addressData.cidade}
-                        onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-500 focus:outline-none transition-all shadow-sm"
-                        placeholder="Cidade"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-bold text-slate-550 uppercase tracking-wider mb-2">Estado (UF)</label>
-                      <select
-                        name="estado"
-                        value={addressData.estado}
-                        onChange={handleAddressChange}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 rounded-lg px-4 py-3 text-slate-800 focus:outline-none shadow-sm"
-                      >
-                        {['GO', 'DF', 'SP', 'RJ', 'MG', 'BA', 'PR', 'RS', 'SC', 'TO', 'MT', 'MS', 'PE', 'CE'].map(uf => (
-                          <option key={uf} value={uf}>{uf}</option>
-                        ))}
-                      </select>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* STEP 3: Professions */}
-              {currentStep === 3 && (
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <Briefcase className="w-6 h-6 text-indigo-600" />
-                    Atuação Profissional
-                  </h2>
-                  <p className="text-sm text-slate-550 mb-6">Cadastre uma ou mais profissões pelas quais atuará na cooperativa. Indique qual é a principal.</p>
+                {/* STEP 4: Bank Accounts */}
+                {currentStep === 4 && (
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <CreditCard className="w-6 h-6 text-indigo-600" />
+                      Dados Bancários
+                    </h2>
+                    <p className="text-sm text-slate-600 mb-6">Cadastre as contas bancárias para recebimento de repasses. Você pode adicionar mais de uma.</p>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-                    {/* Left: Input Form */}
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                      <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Profissão</h3>
+                      {/* Left: Input Form */}
+                      <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                        <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Conta</h3>
 
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Profissão</label>
-                        <select
-                          value={currentProf.name}
-                          onChange={(e) => setCurrentProf(prev => ({ ...prev, name: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
+                        <div>
+                          <label htmlFor="bank_select" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Banco</label>
+                          <select
+                            id="bank_select"
+                            value={currentBank.bank}
+                            onChange={(e) => setCurrentBank(prev => ({ ...prev, bank: e.target.value }))}
+                            className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
+                          >
+                            <option value="341\tItaú Unibanco S.A.">Itaú Unibanco</option>
+                            <option value="001\tBanco do Brasil S.A.">Banco do Brasil</option>
+                            <option value="237\tBanco Bradesco S.A.">Bradesco</option>
+                            <option value="033\tBanco Santander (Brasil) S.A.">Santander</option>
+                            <option value="104\tCaixa Econômica Federal">Caixa Econômica</option>
+                            <option value="077\tBanco Inter S.A.">Banco Inter</option>
+                            <option value="260\tNu Pagamentos S.A. (Nubank)">Nubank</option>
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label htmlFor="bank_agency" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Agência</label>
+                            <input
+                              id="bank_agency"
+                              type="text"
+                              value={currentBank.agency}
+                              onChange={(e) => setCurrentBank(prev => ({ ...prev, agency: e.target.value }))}
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
+                              placeholder="1234-5"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="bank_account" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Conta & Dígito</label>
+                            <input
+                              id="bank_account"
+                              type="text"
+                              value={currentBank.account}
+                              onChange={(e) => setCurrentBank(prev => ({ ...prev, account: e.target.value }))}
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
+                              placeholder="123456-7"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label htmlFor="bank_type" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Tipo de Conta</label>
+                          <select
+                            id="bank_type"
+                            value={currentBank.type}
+                            onChange={(e) => setCurrentBank(prev => ({ ...prev, type: e.target.value }))}
+                            className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
+                          >
+                            <option value="Conta Corrente">Conta Corrente</option>
+                            <option value="Conta Poupança">Conta Poupança</option>
+                          </select>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={addBankAccount}
+                          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2.5 rounded-lg text-sm flex items-center justify-center gap-1.5 transition-all shadow-sm mt-2"
                         >
-                          {PROFISSOES_FORM.map((p) => (
-                            <option key={p.value} value={p.value}>{p.label}</option>
-                          ))}
-                        </select>
+                          <Plus className="w-4 h-4" /> Salvar Conta
+                        </button>
                       </div>
 
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Conselho de Classe (Ex: COREN, CRM)</label>
-                        <input
-                          type="text"
-                          value={currentProf.council}
-                          onChange={(e) => setCurrentProf(prev => ({ ...prev, council: e.target.value.toUpperCase() }))}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                          placeholder="Ex: COREN"
-                        />
-                      </div>
+                      {/* Right: Added Bank Accounts list */}
+                      <div className="lg:col-span-2 flex flex-col gap-4">
+                        <h3 className="font-bold text-slate-800 text-sm">Contas Cadastradas ({bankAccounts.length})</h3>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Nº Registro</label>
-                          <input
-                            type="text"
-                            value={currentProf.registration}
-                            onChange={(e) => setCurrentProf(prev => ({ ...prev, registration: e.target.value }))}
-                            className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="123456"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Data Emissão</label>
-                          <input
-                            type="date"
-                            value={currentProf.emissionDate}
-                            onChange={(e) => setCurrentProf(prev => ({ ...prev, emissionDate: e.target.value }))}
-                            className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none font-mono shadow-sm"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 my-2">
-                        <input
-                          type="checkbox"
-                          id="prof_principal"
-                          checked={currentProf.isPrincipal}
-                          onChange={(e) => setCurrentProf(prev => ({ ...prev, isPrincipal: e.target.checked }))}
-                          className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 bg-slate-50 border-slate-200"
-                        />
-                        <label htmlFor="prof_principal" className="text-xs font-semibold text-slate-700">Profissão Principal</label>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={addProfession}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-slate-800 font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-1 transition-all"
-                      >
-                        <Plus className="w-4 h-4" /> Salvar Profissão
-                      </button>
-                    </div>
-
-                    {/* Right: Added Professions list */}
-                    <div className="lg:col-span-2 flex flex-col gap-4">
-                      <h3 className="font-bold text-slate-800 text-sm">Profissões Cadastradas ({professions.length})</h3>
-
-                      {professions.length === 0 ? (
-                        <div className="border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
-                          <Briefcase className="w-10 h-10 text-slate-700" />
-                          <p className="text-sm">Nenhuma profissão adicionada.</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3">
-                          {professions.map((prof, idx) => (
-                            <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
-                              <div className="flex items-start gap-3">
-                                <div className="mt-1 bg-slate-100 p-2 rounded-lg">
-                                  <Briefcase className="w-5 h-5 text-indigo-600" />
-                                </div>
-                                <div>
-                                  <div className="flex items-center gap-2">
-                                    <h4 className="font-bold text-slate-800 text-sm">{prof.name}</h4>
-                                    {prof.isPrincipal && (
-                                      <span className="bg-indigo-950 text-indigo-600 border border-indigo-900 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full">
-                                        Principal
-                                      </span>
-                                    )}
+                        {bankAccounts.length === 0 ? (
+                          <div className="border border-dashed border-slate-300 rounded-xl p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2 bg-slate-50/50">
+                            <CreditCard className="w-10 h-10 text-slate-400" />
+                            <p className="text-sm">Nenhuma conta cadastrada.</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3">
+                            {bankAccounts.map((bank, idx) => (
+                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
+                                <div className="flex items-start gap-3">
+                                  <div className="mt-1 bg-white p-2 rounded-lg border border-slate-200">
+                                    <CreditCard className="w-5 h-5 text-indigo-600" />
                                   </div>
-                                  <p className="text-xs text-slate-550 mt-1">
-                                    Conselho: {prof.council} • Registro: {prof.registration}
-                                    {prof.emissionDate && ` • Emissão: ${new Date(prof.emissionDate).toLocaleDateString('pt-BR')}`}
-                                  </p>
+                                  <div>
+                                    <h4 className="font-bold text-slate-800 text-sm">{bank.bank.split('\t')[1] || bank.bank}</h4>
+                                    <p className="text-xs text-slate-600 mt-1">
+                                      Agência: {bank.agency} • Conta: {bank.account} • {bank.type}
+                                    </p>
+                                  </div>
                                 </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeBankAccount(idx)}
+                                  aria-label={`Remover conta ${bank.bank}`}
+                                  className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
-                              <button
-                                type="button"
-                                onClick={() => removeProfession(idx)}
-                                className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
                     </div>
-
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* STEP 4: Bank Accounts */}
-              {currentStep === 4 && (
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <CreditCard className="w-6 h-6 text-indigo-600" />
-                    Dados Bancários
-                  </h2>
-                  <p className="text-sm text-slate-550 mb-6">Cadastre as contas bancárias para recebimento de repasses. Você pode adicionar mais de uma.</p>
+                {/* STEP 5: Document Uploads */}
+                {currentStep === 5 && (
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
+                      <FileText className="w-6 h-6 text-indigo-600" />
+                      Upload de Documentos
+                    </h2>
+                    <p className="text-sm text-slate-600 mb-3">Envie a identificação (RG ou CNH) e um comprovante de residência recente, em arquivos separados. Escolha o tipo de cada arquivo abaixo.</p>
+                    <p className="text-sm font-semibold text-slate-700 mb-6" role="status">
+                      {pendingDocuments.length ? `Obrigatórios pendentes: ${pendingDocuments.join(', ')}.` : 'Documentos obrigatórios enviados. Você pode finalizar e assinar.'}
+                    </p>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
-                    {/* Left: Input Form */}
-                    <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                      <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Conta</h3>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Banco</label>
-                        <select
-                          value={currentBank.bank}
-                          onChange={(e) => setCurrentBank(prev => ({ ...prev, bank: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
-                        >
-                          <option value="341\tItaú Unibanco S.A.">Itaú Unibanco</option>
-                          <option value="001\tBanco do Brasil S.A.">Banco do Brasil</option>
-                          <option value="237\tBanco Bradesco S.A.">Bradesco</option>
-                          <option value="033\tBanco Santander (Brasil) S.A.">Santander</option>
-                          <option value="104\tCaixa Econômica Federal">Caixa Econômica</option>
-                          <option value="077\tBanco Inter S.A.">Banco Inter</option>
-                          <option value="260\tNu Pagamentos S.A. (Nubank)">Nubank</option>
-                        </select>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Agência</label>
-                          <input
-                            type="text"
-                            value={currentBank.agency}
-                            onChange={(e) => setCurrentBank(prev => ({ ...prev, agency: e.target.value }))}
-                            className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="1234-5"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Conta & Dígito</label>
-                          <input
-                            type="text"
-                            value={currentBank.account}
-                            onChange={(e) => setCurrentBank(prev => ({ ...prev, account: e.target.value }))}
-                            className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="123456-7"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-550 uppercase tracking-wider mb-1">Tipo de Conta</label>
-                        <select
-                          value={currentBank.type}
-                          onChange={(e) => setCurrentBank(prev => ({ ...prev, type: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-500 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
-                        >
-                          <option value="Conta Corrente">Conta Corrente</option>
-                          <option value="Conta Poupança">Conta Poupança</option>
-                        </select>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={addBankAccount}
-                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-slate-800 font-bold py-2 rounded-lg text-sm flex items-center justify-center gap-1 transition-all mt-2"
+                      {/* Drag and drop field */}
+                      <div
+                        {...getRootProps()}
+                        className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${isDragActive
+                            ? 'border-indigo-500 bg-indigo-50/50'
+                            : 'border-slate-300 bg-slate-50/70 hover:border-indigo-400 hover:bg-slate-100/50'
+                          }`}
                       >
-                        <Plus className="w-4 h-4" /> Salvar Conta
-                      </button>
-                    </div>
-
-                    {/* Right: Added Bank Accounts list */}
-                    <div className="lg:col-span-2 flex flex-col gap-4">
-                      <h3 className="font-bold text-slate-800 text-sm">Contas Cadastradas ({bankAccounts.length})</h3>
-
-                      {bankAccounts.length === 0 ? (
-                        <div className="border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
-                          <CreditCard className="w-10 h-10 text-slate-700" />
-                          <p className="text-sm">Nenhuma conta cadastrada.</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3">
-                          {bankAccounts.map((bank, idx) => (
-                            <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
-                              <div className="flex items-start gap-3">
-                                <div className="mt-1 bg-slate-100 p-2 rounded-lg">
-                                  <CreditCard className="w-5 h-5 text-indigo-600" />
-                                </div>
-                                <div>
-                                  <h4 className="font-bold text-slate-800 text-sm">{bank.bank.split('\t')[1] || bank.bank}</h4>
-                                  <p className="text-xs text-slate-550 mt-1">
-                                    Agência: {bank.agency} • Conta: {bank.account} • {bank.type}
-                                  </p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => removeBankAccount(idx)}
-                                className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 5: Document Uploads */}
-              {currentStep === 5 && (
-                <div>
-                  <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
-                    <FileText className="w-6 h-6 text-indigo-600" />
-                    Upload de Documentos
-                  </h2>
-                  <p className="text-sm text-slate-600 mb-3">Envie a identificação (RG ou CNH) e um comprovante de residência recente, em arquivos separados. Escolha o tipo de cada arquivo abaixo.</p>
-                  <p className="text-sm text-slate-700 mb-6" role="status">
-                    {pendingDocuments.length ? `Obrigatórios pendentes: ${pendingDocuments.join(', ')}.` : 'Documentos obrigatórios enviados. Você pode finalizar e assinar.'}
-                  </p>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-
-                    {/* Drag and drop field */}
-                    <div
-                      {...getRootProps()}
-                      className={`border-2 border-dashed rounded-2xl p-10 flex flex-col items-center justify-center gap-4 cursor-pointer transition-all ${isDragActive
-                          ? 'border-indigo-400 bg-indigo-950/20'
-                          : 'border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/50'
-                        }`}
-                    >
-                      <input {...getInputProps()} />
-                      {uploading ? (
-                        <div className="flex flex-col items-center gap-2 text-indigo-600">
-                          <Loader2 className="w-12 h-12 animate-spin" />
-                          <p className="text-sm font-semibold">Enviando arquivo...</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center gap-2 text-slate-550 text-center">
-                          <UploadCloud className="w-16 h-16 text-indigo-600 mb-2" />
-                          <p className="text-sm font-bold text-slate-800">Arraste seus documentos aqui</p>
-                          <p className="text-xs">ou clique para selecionar do computador</p>
-                          <span className="text-[10px] text-slate-600 mt-2">Formatos aceitos: PDF, JPEG, PNG (máx. 10MB)</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Files list */}
-                    <div className="flex flex-col gap-4">
-                      <h3 className="font-bold text-slate-800 text-sm">Arquivos Carregados ({uploadedFiles.length})</h3>
-
-                      {uploadedFiles.length === 0 ? (
-                        <div className="border border-dashed border-slate-800 rounded-xl p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
-                          <FileText className="w-10 h-10 text-slate-700" />
-                          <p className="text-xs">Nenhum documento anexado ainda.</p>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col gap-3">
-                          {uploadedFiles.map((file, idx) => (
-                            <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
-                              <div className="flex items-center gap-3 overflow-hidden">
-                                <div className="bg-slate-100 p-2 rounded-lg shrink-0">
-                                  <FileText className="w-5 h-5 text-indigo-600" />
-                                </div>
-                                <div className="min-w-0">
-                                  <a href={file.url} target="_blank" rel="noopener noreferrer" className="block text-xs text-indigo-700 underline truncate" title={`Visualizar ${file.name}`}>{file.name}</a>
-                                  <select
-                                    aria-label={`Tipo de ${file.name}`}
-                                    value={file.tipo || 'outro'}
-                                    disabled={uploading || submitting}
-                                    onChange={event => setUploadedFiles(prev => prev.map((item, index) => index === idx ? { ...item, tipo: event.target.value as DocumentoAdesao['tipo'] } : item))}
-                                    className="mt-2 w-full min-w-0 rounded border border-slate-300 bg-white p-2 text-xs text-slate-800"
-                                  >
-                                    {Object.entries(TIPOS_DOCUMENTO).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                                  </select>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => removeFile(idx)}
-                                disabled={uploading || submitting}
-                                aria-label={`Remover ${file.name}`}
-                                className="text-red-500 hover:text-red-600 p-2 hover:bg-slate-100 rounded-lg transition-all"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-
-                  </div>
-                </div>
-              )}
-
-              {/* STEP 6: ZapSign Direct Redirect */}
-              {currentStep === 6 && (
-                <div className="flex flex-col items-center py-12 text-center animate-fadeIn">
-                  <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-sm border border-indigo-100 animate-pulse">
-                    <FileCheck className="w-10 h-10" />
-                  </div>
-                  
-                  <h2 className="text-2xl font-extrabold text-slate-900 mb-3">
-                    Ficha de Inscrição Enviada!
-                  </h2>
-                  
-                  <p className="text-sm text-slate-600 max-w-md mb-8">
-                    Para concluir sua adesão à cooperativa, você está sendo redirecionado para assinar o termo eletronicamente na ZapSign.
-                  </p>
-
-                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 max-w-lg w-full flex flex-col items-center justify-center gap-4 shadow-sm">
-                    {signUrl ? (
-                      <>
-                        <div className="flex items-center gap-3 text-emerald-600 font-semibold text-sm bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
-                          <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
-                          Redirecionando automaticamente...
-                        </div>
-                        
-                        <p className="text-xs text-slate-550 mt-2">
-                          Se o redirecionamento automático não iniciar em alguns segundos, clique no botão abaixo:
-                        </p>
-                        
-                        <a
-                          href={signUrl}
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-8 py-3.5 rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 transition-all text-base flex items-center gap-2 mt-2"
-                        >
-                          Ir para Assinatura <ChevronRight className="w-5 h-5" />
-                        </a>
-                      </>
-                    ) : (
-                      <div className="flex flex-col items-center justify-center py-6 gap-3">
-                        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
-                        <p className="text-sm font-semibold text-slate-600">Gerando documento de assinatura...</p>
+                        <input {...getInputProps()} />
+                        {uploading ? (
+                          <div className="flex flex-col items-center gap-2 text-indigo-600">
+                            <Loader2 className="w-12 h-12 animate-spin" />
+                            <p className="text-sm font-semibold">Enviando arquivo...</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 text-slate-600 text-center">
+                            <UploadCloud className="w-16 h-16 text-indigo-600 mb-2" />
+                            <p className="text-sm font-bold text-slate-800">Arraste seus documentos aqui</p>
+                            <p className="text-xs">ou clique para selecionar do computador</p>
+                            <span className="text-[10px] text-slate-500 mt-2">Formatos aceitos: PDF, JPEG, PNG (máx. 10MB)</span>
+                          </div>
+                        )}
                       </div>
-                    )}
+
+                      {/* Files list */}
+                      <div className="flex flex-col gap-4">
+                        <h3 className="font-bold text-slate-800 text-sm">Arquivos Carregados ({uploadedFiles.length})</h3>
+
+                        {uploadedFiles.length === 0 ? (
+                          <div className="border border-dashed border-slate-300 rounded-xl p-8 text-center text-slate-500 flex flex-col items-center justify-center gap-2 bg-slate-50/50">
+                            <FileText className="w-10 h-10 text-slate-400" />
+                            <p className="text-xs">Nenhum documento anexado ainda.</p>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col gap-3">
+                            {uploadedFiles.map((file, idx) => (
+                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
+                                <div className="flex items-center gap-3 overflow-hidden">
+                                  <div className="bg-white border border-slate-200 p-2 rounded-lg shrink-0">
+                                    <FileText className="w-5 h-5 text-indigo-600" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <a href={file.url} target="_blank" rel="noopener noreferrer" className="block text-xs text-indigo-700 hover:text-indigo-900 font-semibold underline truncate" title={`Visualizar ${file.name}`}>{file.name}</a>
+                                    <select
+                                      aria-label={`Tipo de ${file.name}`}
+                                      value={file.tipo || 'outro'}
+                                      disabled={uploading || submitting}
+                                      onChange={event => setUploadedFiles(prev => prev.map((item, index) => index === idx ? { ...item, tipo: event.target.value as DocumentoAdesao['tipo'] } : item))}
+                                      className="mt-2 w-full min-w-0 rounded border border-slate-300 bg-white p-2 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                                    >
+                                      {Object.entries(TIPOS_DOCUMENTO).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                                    </select>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => removeFile(idx)}
+                                  disabled={uploading || submitting}
+                                  aria-label={`Remover ${file.name}`}
+                                  className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
 
-            </motion.div>
-          </AnimatePresence>
-        </div>
+                {/* STEP 6: ZapSign Direct Redirect */}
+                {currentStep === 6 && (
+                  <div className="flex flex-col items-center py-12 text-center animate-fadeIn">
+                    <div className="w-20 h-20 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mb-6 shadow-sm border border-indigo-100 animate-pulse">
+                      <FileCheck className="w-10 h-10" />
+                    </div>
+                    
+                    <h2 className="text-2xl font-extrabold text-slate-900 mb-3">
+                      Ficha de Inscrição Enviada!
+                    </h2>
+                    
+                    <p className="text-sm text-slate-600 max-w-md mb-8 leading-relaxed">
+                      Para concluir sua adesão à cooperativa, você está sendo redirecionado para assinar o termo eletronicamente na ZapSign.
+                    </p>
 
-        {/* Footer controls */}
-        {currentStep < 6 && (
-          <div className="bg-slate-50 px-8 py-5 border-t border-slate-200 flex justify-between items-center gap-4">
-            <button
-              onClick={prevStep}
-              disabled={currentStep === 1 || submitting || uploading}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${currentStep === 1 || submitting
-                  ? 'text-slate-600 cursor-not-allowed'
-                  : 'text-slate-700 hover:text-white hover:bg-slate-800'
-                }`}
-            >
-              <ChevronLeft className="w-4 h-4" /> Voltar
-            </button>
+                    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 max-w-lg w-full flex flex-col items-center justify-center gap-4 shadow-sm">
+                      {signUrl ? (
+                        <>
+                          <div className="flex items-center gap-3 text-emerald-600 font-semibold text-sm bg-emerald-50 px-4 py-2 rounded-full border border-emerald-100">
+                            <span className="w-2 h-2 bg-emerald-500 rounded-full animate-ping"></span>
+                            Redirecionando automaticamente...
+                          </div>
+                          
+                          <p className="text-xs text-slate-600 mt-2">
+                            Se o redirecionamento automático não iniciar em alguns segundos, clique no botão abaixo:
+                          </p>
+                          
+                          <a
+                            href={signUrl}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-8 py-3.5 rounded-xl shadow-lg shadow-indigo-600/20 active:scale-95 transition-all text-base flex items-center gap-2 mt-2"
+                          >
+                            Ir para Assinatura <ChevronRight className="w-5 h-5" />
+                          </a>
+                        </>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-6 gap-3">
+                          <Loader2 className="w-10 h-10 text-indigo-600 animate-spin" />
+                          <p className="text-sm font-semibold text-slate-600">Gerando documento de assinatura...</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-            <button
-              onClick={nextStep}
-              disabled={submitting || checkingCpf || uploading || (currentStep === 5 && pendingDocuments.length > 0)}
-              className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50"
-            >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Processando...
-                </>
-              ) : checkingCpf ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Verificando CPF...
-                </>
-              ) : currentStep === 5 ? (
-                <>
-                  Finalizar & Assinar <CheckCircle className="w-4 h-4" />
-                </>
-              ) : (
-                <>
-                  Avançar <ChevronRight className="w-4 h-4" />
-                </>
-              )}
-            </button>
+              </motion.div>
+            </AnimatePresence>
           </div>
-        )}
 
+          {/* Footer controls */}
+          {currentStep < 6 && (
+            <div className="bg-slate-50 px-6 sm:px-8 py-5 border-t border-slate-200 flex justify-between items-center gap-4">
+              <button
+                onClick={prevStep}
+                disabled={currentStep === 1 || submitting || uploading}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold min-h-[44px] transition-all ${currentStep === 1 || submitting
+                    ? 'text-slate-400 cursor-not-allowed'
+                    : 'text-slate-700 hover:text-slate-950 hover:bg-slate-200/70 active:scale-95'
+                  }`}
+              >
+                <ChevronLeft className="w-4 h-4" /> Voltar
+              </button>
+
+              <button
+                onClick={nextStep}
+                disabled={submitting || checkingCpf || uploading || (currentStep === 5 && pendingDocuments.length > 0)}
+                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold min-h-[44px] shadow-lg shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Processando...
+                  </>
+                ) : checkingCpf ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" /> Verificando CPF...
+                  </>
+                ) : currentStep === 5 ? (
+                  <>
+                    Finalizar & Assinar <CheckCircle className="w-4 h-4" />
+                  </>
+                ) : (
+                  <>
+                    Avançar <ChevronRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+        </div>
       </div>
 
       {/* Ajuda ao cooperado: botão flutuante + painel com orientações da etapa atual */}
@@ -1369,7 +1455,7 @@ export default function AdesaoPage() {
         type="button"
         onClick={() => setHelpOpen(true)}
         aria-label="Abrir ajuda"
-        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-full text-sm font-bold shadow-xl shadow-indigo-600/30 active:scale-95 transition-all"
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-3 rounded-full text-sm font-bold shadow-xl shadow-indigo-600/30 active:scale-95 transition-all min-h-[44px]"
       >
         <HelpCircle className="w-5 h-5" />
         <span className="hidden sm:inline">Ajuda</span>
@@ -1381,7 +1467,7 @@ export default function AdesaoPage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 bg-slate-900/40 flex items-end sm:items-center justify-center p-4"
+            className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-end sm:items-center justify-center p-4"
             onClick={() => setHelpOpen(false)}
           >
             <motion.div
@@ -1394,7 +1480,7 @@ export default function AdesaoPage() {
               className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg max-h-[85vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl">
+              <div className="px-6 py-5 border-b border-slate-200 flex items-center justify-between sticky top-0 bg-white rounded-t-2xl z-10">
                 <div className="flex items-center gap-2">
                   <HelpCircle className="w-5 h-5 text-indigo-600" />
                   <h3 className="font-bold text-slate-900">Precisa de ajuda?</h3>
@@ -1449,7 +1535,7 @@ export default function AdesaoPage() {
                           href={`https://wa.me/${SUPORTE_WHATSAPP.replace(/\D/g, '')}?text=${encodeURIComponent('Olá! Preciso de ajuda com o cadastro de adesão de cooperado.')}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-all"
+                          className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-sm font-bold transition-all shadow-sm"
                         >
                           <MessageCircle className="w-4 h-4" />
                           WhatsApp

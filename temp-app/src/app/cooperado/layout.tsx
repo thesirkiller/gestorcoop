@@ -2,6 +2,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import { subscribeToSync, synchronizeQueue, SyncStatus } from '@/lib/sync-service';
 import { Wifi, WifiOff, RotateCw, Check, AlertCircle, LogOut, Shield, Moon, Sun } from 'lucide-react';
 import Link from 'next/link';
@@ -20,6 +21,12 @@ interface ProfessionalSession {
 }
 
 export default function CooperadoLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+
+  // O funil de adesão é público (usuário ainda não é cooperado) e possui layout próprio responsivo
+  if (pathname?.startsWith('/cooperado/adesao')) {
+    return <>{children}</>;
+  }
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({
     isOnline: true,
     pendingCount: 0,

@@ -3,45 +3,37 @@
     "viewport": 360,
     "documentWidth": 360,
     "fields": 17,
-    "withoutAccessibleLabel": [
-      "nomeCompleto",
-      "cpf",
-      "email",
-      "whatsapp",
-      "telefoneReserva",
-      "rg",
-      "orgaoEmissor",
-      "orgaoUF",
-      "dataExpedicaoRG",
-      "dataNascimento",
-      "sexo",
-      "estadoCivil",
-      "nomeMae",
-      "nomePai",
-      "grauEscolaridade",
-      "racaCor",
-      "pis"
-    ],
+    "withoutAccessibleLabel": [],
     "smallTargets": [
       {
-        "text": "GestorCoop",
-        "width": 127.84375,
-        "height": 28
+        "text": "Etapa 1: Dados Pessoais (Atual)",
+        "width": 39.859375,
+        "height": 39.859375
       },
       {
-        "text": "Carregando...",
-        "width": 98.390625,
-        "height": 25
+        "text": "Etapa 2: Endereço",
+        "width": 39.859375,
+        "height": 39.859375
       },
       {
-        "text": "Voltar",
-        "width": 101.65625,
-        "height": 40
+        "text": "Etapa 3: Profissões",
+        "width": 39.859375,
+        "height": 39.859375
       },
       {
-        "text": "Avançar",
-        "width": 124.75,
-        "height": 40
+        "text": "Etapa 4: Dados Bancários",
+        "width": 39.859375,
+        "height": 39.859375
+      },
+      {
+        "text": "Etapa 5: Documentos",
+        "width": 39.859375,
+        "height": 39.859375
+      },
+      {
+        "text": "Etapa 6: Assinatura",
+        "width": 39.859375,
+        "height": 39.859375
       }
     ]
   },
@@ -49,45 +41,37 @@
     "viewport": 768,
     "documentWidth": 768,
     "fields": 17,
-    "withoutAccessibleLabel": [
-      "nomeCompleto",
-      "cpf",
-      "email",
-      "whatsapp",
-      "telefoneReserva",
-      "rg",
-      "orgaoEmissor",
-      "orgaoUF",
-      "dataExpedicaoRG",
-      "dataNascimento",
-      "sexo",
-      "estadoCivil",
-      "nomeMae",
-      "nomePai",
-      "grauEscolaridade",
-      "racaCor",
-      "pis"
-    ],
+    "withoutAccessibleLabel": [],
     "smallTargets": [
       {
-        "text": "GestorCoop",
-        "width": 127.84375,
-        "height": 28
+        "text": "Etapa 1: Dados Pessoais (Atual)",
+        "width": 32.03125,
+        "height": 32.03125
       },
       {
-        "text": "Carregando...",
-        "width": 98.390625,
-        "height": 25
+        "text": "Etapa 2: Endereço",
+        "width": 32.03125,
+        "height": 32.03125
       },
       {
-        "text": "Voltar",
-        "width": 101.65625,
-        "height": 40
+        "text": "Etapa 3: Profissões",
+        "width": 32.03125,
+        "height": 32.03125
       },
       {
-        "text": "Avançar",
-        "width": 124.75,
-        "height": 40
+        "text": "Etapa 4: Dados Bancários",
+        "width": 32.03125,
+        "height": 32.03125
+      },
+      {
+        "text": "Etapa 5: Documentos",
+        "width": 32.03125,
+        "height": 32.03125
+      },
+      {
+        "text": "Etapa 6: Assinatura",
+        "width": 32.03125,
+        "height": 32.03125
       }
     ]
   },
@@ -95,45 +79,37 @@
     "viewport": 1440,
     "documentWidth": 1440,
     "fields": 17,
-    "withoutAccessibleLabel": [
-      "nomeCompleto",
-      "cpf",
-      "email",
-      "whatsapp",
-      "telefoneReserva",
-      "rg",
-      "orgaoEmissor",
-      "orgaoUF",
-      "dataExpedicaoRG",
-      "dataNascimento",
-      "sexo",
-      "estadoCivil",
-      "nomeMae",
-      "nomePai",
-      "grauEscolaridade",
-      "racaCor",
-      "pis"
-    ],
+    "withoutAccessibleLabel": [],
     "smallTargets": [
       {
-        "text": "GestorCoop",
-        "width": 127.84375,
-        "height": 28
+        "text": "Etapa 1: Dados Pessoais (Atual)",
+        "width": 39.78125,
+        "height": 39.78125
       },
       {
-        "text": "Carregando...",
-        "width": 98.390625,
-        "height": 25
+        "text": "Etapa 2: Endereço",
+        "width": 39.78125,
+        "height": 39.78125
       },
       {
-        "text": "Voltar",
-        "width": 101.65625,
-        "height": 40
+        "text": "Etapa 3: Profissões",
+        "width": 39.78125,
+        "height": 39.78125
       },
       {
-        "text": "Avançar",
-        "width": 124.75,
-        "height": 40
+        "text": "Etapa 4: Dados Bancários",
+        "width": 39.78125,
+        "height": 39.78125
+      },
+      {
+        "text": "Etapa 5: Documentos",
+        "width": 39.78125,
+        "height": 39.78125
+      },
+      {
+        "text": "Etapa 6: Assinatura",
+        "width": 39.78125,
+        "height": 39.78125
       }
     ]
   }
