@@ -6,7 +6,16 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 
 function parseDocumentInfo(url: string, isSignedTerm = false) {
-  url = normalizarUrlDocumento(url) || url;
+  // `normalizarUrlDocumento` devolve null para anexos que nunca chegaram ao
+  // armazenamento — são os registros gravados com prefixo `mock-file-`, em que
+  // só a URL foi salva no cadastro e o arquivo não existe. O `|| url` que ficava
+  // aqui anulava essa rejeição e reinseria o link quebrado, levando o gestor a
+  // uma página de "AccessDenied" do S3. Agora o documento segue na listagem
+  // (o gestor precisa saber que falta algo) mas marcado como indisponível, e a
+  // interface deixa de oferecer abertura.
+  const urlNormalizada = normalizarUrlDocumento(url);
+  const disponivel = urlNormalizada !== null;
+  url = urlNormalizada || url;
   const cleanUrl = url.split('?')[0];
   const filename = cleanUrl.split('/').pop() || 'documento';
   const ext = (filename.split('.').pop() || '').toLowerCase();
@@ -25,6 +34,7 @@ function parseDocumentInfo(url: string, isSignedTerm = false) {
 
   return {
     url,
+    disponivel,
     filename: nomeDocumento(url),
     extension: ext.toUpperCase() || 'ARQUIVO',
     isImage,

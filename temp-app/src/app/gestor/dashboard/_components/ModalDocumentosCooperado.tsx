@@ -24,6 +24,8 @@ import {
 
 export interface DocumentItem {
   url: string;
+  /** false quando o anexo nunca chegou ao armazenamento e a URL não abre. */
+  disponivel: boolean;
   filename: string;
   extension: string;
   isImage: boolean;
@@ -45,7 +47,11 @@ interface ModalDocumentosCooperadoProps {
 
 function parseDoc(url: string, termoAssinadoUrl?: string): DocumentItem {
   const isSignedTerm = url === termoAssinadoUrl;
-  url = normalizarUrlDocumento(url) || url;
+  // Ver a nota em `api/gestor/cooperados/[id]/documentos`: a URL rejeitada não
+  // volta a ser usada como se fosse boa; o anexo é sinalizado como indisponível.
+  const urlNormalizada = normalizarUrlDocumento(url);
+  const disponivel = urlNormalizada !== null;
+  url = urlNormalizada || url;
   const cleanUrl = url.split('?')[0];
   const filename = nomeDocumento(url);
   const ext = (filename.split('.').pop() || '').toLowerCase();
@@ -59,6 +65,7 @@ function parseDoc(url: string, termoAssinadoUrl?: string): DocumentItem {
 
   return {
     url,
+    disponivel,
     filename,
     extension: ext.toUpperCase() || 'ARQUIVO',
     isImage,
@@ -386,8 +393,12 @@ export default function ModalDocumentosCooperado({
                   >
                     {/* Thumbnail / Visual Preview Area */}
                     <div className="relative aspect-[16/10] bg-slate-100 border-b border-slate-100 overflow-hidden group">
-                      {doc.url.includes('mock-file-') || failedPreviews.includes(doc.url) ? (
-                        <p role="status" className="p-5 text-sm text-red-700">Não foi possível carregar este arquivo. Abra em nova aba para conferir ou substitua o anexo.</p>
+                      {!doc.disponivel ? (
+                        <p role="status" className="p-5 text-sm text-red-700">
+                          Este anexo não chegou a ser armazenado: o arquivo não existe e não há como recuperá-lo. Peça o reenvio ao cooperado e substitua o anexo.
+                        </p>
+                      ) : failedPreviews.includes(doc.url) ? (
+                        <p role="status" className="p-5 text-sm text-red-700">Não foi possível carregar a prévia. Abra em nova aba para conferir ou substitua o anexo.</p>
                       ) : doc.isImage ? (
                         <div
                           onClick={() => setLightboxIndex(index)}
@@ -442,16 +453,19 @@ export default function ModalDocumentosCooperado({
                         )}
                       </div>
 
-                      {/* External Link Top Right */}
-                      <a
-                        href={doc.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="absolute top-2.5 right-2.5 bg-white/90 hover:bg-white text-slate-700 p-1.5 rounded-lg shadow-sm backdrop-blur-sm transition-all hover:scale-105"
-                        title="Abrir em nova aba"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+                      {/* External Link Top Right — ausente quando o arquivo não existe:
+                          oferecer o link só levaria o gestor a um erro do storage. */}
+                      {doc.disponivel && (
+                        <a
+                          href={doc.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="absolute top-2.5 right-2.5 bg-white/90 hover:bg-white text-slate-700 p-1.5 rounded-lg shadow-sm backdrop-blur-sm transition-all hover:scale-105"
+                          title="Abrir em nova aba"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      )}
                     </div>
 
                     {/* Card Body & Info */}
@@ -473,7 +487,11 @@ export default function ModalDocumentosCooperado({
                       {/* Card Action Buttons (View, Replace, Delete) */}
                       <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between gap-1.5">
                         <div className="flex items-center gap-1.5">
-                          {doc.isImage ? (
+                          {!doc.disponivel ? (
+                            <span className="bg-red-50 text-red-700 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> Arquivo perdido
+                            </span>
+                          ) : doc.isImage ? (
                             <button
                               onClick={() => setLightboxIndex(index)}
                               className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
