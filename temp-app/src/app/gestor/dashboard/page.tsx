@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { fetchFullDataset } from '@/lib/client-fetch';
-import { normalizarUrlDocumento } from '@/lib/documentos';
+import { normalizarUrlDocumento, nomeDocumento } from '@/lib/documentos';
 import {
   Users,
   Clock,
@@ -940,10 +940,10 @@ export default function GestorDashboard() {
 
                     {selectedCooperado.fks_pasta && selectedCooperado.fks_pasta.length > 0 ? (
                       selectedCooperado.fks_pasta.map((url, i) => {
-                        if (url === selectedCooperado.file_termo_assinado) return null;
+                        if (!url || typeof url !== 'string' || url === selectedCooperado.file_termo_assinado) return null;
                         const isSignedPdf =
                           url.includes('zapsign') || url.includes('signed') || url.endsWith('.pdf');
-                        const nomeArquivo = url.split('/').pop();
+                        const nomeArquivo = nomeDocumento(url);
 
                         // Anexo que nunca chegou ao armazenamento não vira link:
                         // clicar levava a um "AccessDenied" do storage.

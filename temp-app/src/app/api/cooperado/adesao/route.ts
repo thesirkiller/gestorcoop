@@ -27,35 +27,35 @@ function resolveTermoText(
   professionOptionNames: string[],
   allTerms: Termo[]
 ) {
-  const professionsText = professionOptionNames.map((p) => p.trim()).join(', ') || 'Cooperado';
-  const nomeCompleto = personalData.nomeCompleto || '';
-  const rg = personalData.rg || '';
-  const cpf = personalData.cpf || '';
-  const dataNascimento = personalData.dataNascimento;
-  const estadoCivil = personalData.estadoCivil || '';
+  const professionsText = (professionOptionNames || []).map((p) => (p || '').trim()).filter(Boolean).join(', ') || 'Cooperado';
+  const nomeCompleto = personalData?.nomeCompleto || '';
+  const rg = personalData?.rg || '';
+  const cpf = personalData?.cpf || '';
+  const dataNascimento = personalData?.dataNascimento;
+  const estadoCivil = personalData?.estadoCivil || '';
   const endereco = fullAddress || '';
-  const nomeMae = personalData.nomeMae || '';
-  const nomePai = personalData.nomePai || '';
-  const pis = personalData.pis || '';
-  const email = personalData.email || '';
-  const telefone = personalData.whatsapp || personalData.telefoneReserva || '';
+  const nomeMae = personalData?.nomeMae || '';
+  const nomePai = personalData?.nomePai || '';
+  const pis = personalData?.pis || '';
+  const email = personalData?.email || '';
+  const telefone = personalData?.whatsapp || personalData?.telefoneReserva || '';
   const currentDate = new Date().toLocaleDateString('pt-BR');
 
   // 1. Try to find active term for one of the cooperado's professions
-  let activeTerm = allTerms.find(
-    (t) => t.bool_ativo && professionOptionNames.some((p: string) => p.toLowerCase().trim() === t.txt_profissao.toLowerCase().trim())
+  let activeTerm = (allTerms || []).find(
+    (t) => t?.bool_ativo && professionOptionNames.some((p: string) => (p || '').toLowerCase().trim() === (t?.txt_profissao || '').toLowerCase().trim())
   );
 
   // 2. If not found, try to find active term for 'Geral'
   if (!activeTerm) {
-    activeTerm = allTerms.find((t) => t.bool_ativo && t.txt_profissao.toLowerCase().trim() === 'geral');
+    activeTerm = (allTerms || []).find((t) => t?.bool_ativo && (t?.txt_profissao || '').toLowerCase().trim() === 'geral');
   }
 
   let templateText = activeTerm?.txt_conteudo;
   const title = activeTerm?.txt_titulo || 'TERMO DE ADESAO AO QUADRO SOCIAL';
 
   // Fallback to static text if no term exists in database
-  if (!templateText) {
+  if (!templateText || typeof templateText !== 'string' || !templateText.trim()) {
     templateText = `Pelo presente instrumento, eu, {nome}, portador(a) da cédula de identidade RG nº {rg} e inscrito(a) no CPF/MF sob o nº {cpf}, nascido(a) em {dataNascimento}, de estado civil {estadoCivil}, residente e domiciliado(a) em {endereco}, venho por meio deste solicitar a minha adesão e admissão como cooperado(a) na GESTORCOOP COOPERATIVA DE TRABALHO.
 
 Declaro estar ciente e de acordo com as seguintes disposições:
@@ -89,7 +89,7 @@ Goiânia - GO, {dataAtual}.`;
     .replace(/{matricula}/gi, '') // during signup, matricula is empty or not yet assigned
     .replace(/{dataAtual}/gi, currentDate);
 
-  return { title, text: resolvedText };
+  return { title, text: resolvedText || '' };
 }
 
 export async function POST(request: Request) {
@@ -261,8 +261,7 @@ export async function POST(request: Request) {
       'fks_ContasBancarias': bankAccountIds,
       'fks_profissoes': professionOptionNames, // option list field
     });
-
-    // Fetch all terms from Bubble for dynamic selection
+    // Fetch all terms from Bubble for dynamic selection
     console.log('Buscando termos ativos no Bubble para preenchimento dinâmico...');
     let allTerms: Termo[] = [];
     try {
@@ -277,7 +276,7 @@ export async function POST(request: Request) {
     console.log('Gerando PDF do Termo de Adesão');
     const doc = new jsPDF();
     
-    const pages = text.split('[PAGE_BREAK]');
+    const pages = (text || '').split('[PAGE_BREAK]');
     pages.forEach((pageContent, pageIndex) => {
       if (pageIndex > 0) {
         doc.addPage();
@@ -301,7 +300,7 @@ export async function POST(request: Request) {
       
       // Draw content lines
       doc.setFontSize(9);
-      const splitLines = doc.splitTextToSize(pageContent.trim(), width);
+      const splitLines = doc.splitTextToSize((pageContent || '').trim(), width);
       let y = startY;
       
       for (let i = 0; i < splitLines.length; i++) {
@@ -325,7 +324,19 @@ export async function POST(request: Request) {
       }
     });
 
-    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    let pdfBase64 = '';
+    try {
+      const dataUri = doc.output('datauristring');
+      if (typeof dataUri === 'string' && dataUri.includes(',')) {
+        pdfBase64 = dataUri.split(',')[1] || '';
+      }
+    } catch {
+      // fallback
+    }
+    if (!pdfBase64) {
+      const arrayBuffer = doc.output('arraybuffer');
+      pdfBase64 = Buffer.from(arrayBuffer).toString('base64');
+    }
 
     // 7. Create ZapSign Document
     console.log('Enviando documento para a ZapSign');

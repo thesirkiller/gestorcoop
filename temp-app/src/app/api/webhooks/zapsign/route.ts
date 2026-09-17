@@ -32,7 +32,7 @@ export async function POST(request: Request) {
 
     const filename = `termo-assinado-${token}.pdf`;
     const currentPasta: string[] = cooperado.fks_pasta || [];
-    const saved = currentPasta.find(url => url.split('?')[0].endsWith(`/${filename}`));
+    const saved = currentPasta.find(url => typeof url === 'string' && url.split('?')[0].endsWith(`/${filename}`));
     let permanentUrl = saved;
     if (!permanentUrl) {
       // signed_file expira em 60 minutos: preserva o PDF no armazenamento do app.

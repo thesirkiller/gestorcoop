@@ -46,17 +46,18 @@ interface ModalDocumentosCooperadoProps {
 }
 
 function parseDoc(url: string, termoAssinadoUrl?: string): DocumentItem {
-  const isSignedTerm = url === termoAssinadoUrl;
+  const safeUrl = typeof url === 'string' ? url : '';
+  const isSignedTerm = Boolean(safeUrl && safeUrl === termoAssinadoUrl);
   // Ver a nota em `api/gestor/cooperados/[id]/documentos`: a URL rejeitada não
   // volta a ser usada como se fosse boa; o anexo é sinalizado como indisponível.
-  const urlNormalizada = normalizarUrlDocumento(url);
+  const urlNormalizada = normalizarUrlDocumento(safeUrl);
   const disponivel = urlNormalizada !== null;
-  url = urlNormalizada || url;
-  const cleanUrl = url.split('?')[0];
-  const filename = nomeDocumento(url);
+  const effectiveUrl = urlNormalizada || safeUrl;
+  const cleanUrl = effectiveUrl.split('?')[0] || '';
+  const filename = nomeDocumento(effectiveUrl);
   const ext = (filename.split('.').pop() || '').toLowerCase();
   const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'].includes(ext);
-  const isPdf = ext === 'pdf' || cleanUrl.endsWith('.pdf') || url.includes('zapsign');
+  const isPdf = ext === 'pdf' || cleanUrl.endsWith('.pdf') || effectiveUrl.includes('zapsign');
 
   let typeLabel = 'Documento';
   if (isSignedTerm) typeLabel = 'Termo Assinado';

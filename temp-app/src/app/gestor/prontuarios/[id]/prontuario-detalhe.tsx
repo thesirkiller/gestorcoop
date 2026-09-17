@@ -227,7 +227,7 @@ export default function Prontuario360Detalhe() {
     if (!paciente) return;
     setSalvando(true);
     try {
-      const horarios = novaPrescricaoForm.horarios_padrao
+      const horarios = (novaPrescricaoForm.horarios_padrao || '')
         .split(',')
         .map((h) => h.trim())
         .filter((h) => h.length > 0);

@@ -193,7 +193,7 @@ export default function GestorTermos() {
         text = text.replace(regex, value);
       });
 
-      const pages = text.split('[PAGE_BREAK]');
+      const pages = (text || '').split('[PAGE_BREAK]');
       pages.forEach((pageContent, pageIndex) => {
         if (pageIndex > 0) {
           doc.addPage();

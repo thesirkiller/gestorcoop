@@ -38,7 +38,8 @@ export function validarArquivoDocumento(file: File): string | null {
   return null;
 }
 
-export function nomeDocumento(url: string): string {
-  const name = url.split(/[?#]/)[0].split('/').pop() || 'documento';
+export function nomeDocumento(url?: string | null): string {
+  if (typeof url !== 'string' || !url.trim()) return 'documento';
+  const name = url.split(/[?#]/)[0]?.split('/').pop() || 'documento';
   try { return decodeURIComponent(name); } catch { return name; }
 }

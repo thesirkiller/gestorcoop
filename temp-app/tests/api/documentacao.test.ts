@@ -137,10 +137,31 @@ test('webhook não confia em status assinado informado pelo chamador', async () 
   expect(response.status).toBe(200);
   expect(writes).toHaveLength(0);
 });
-test('nomes com percentual inválido não derrubam a visualização', () => {
+test('nomes com percentual inválido ou valores nulos não derrubam a visualização', () => {
   expect(nomeDocumento('https://cdn.bubble.io/100%foto.png')).toBe('100%foto.png');
+  expect(nomeDocumento(null)).toBe('documento');
+  expect(nomeDocumento(undefined)).toBe('documento');
+  expect(nomeDocumento('')).toBe('documento');
   expect(normalizarUrlDocumento('//cdn.bubble.io/rg.pdf')).toBe('https://cdn.bubble.io/rg.pdf');
   expect(normalizarUrlDocumento('https://cdn.bubble.io/mock-file-123.pdf')).toBeNull();
+  expect(normalizarUrlDocumento(null)).toBeNull();
+  expect(normalizarUrlDocumento(undefined)).toBeNull();
+});
+
+test('adesao com termos incompletos no banco de dados não falha com split', async () => {
+  // Simula termos no Bubble com campos nulos/ausentes
+  bubble.getTermos = async () => [
+    { _id: 't1', bool_ativo: true, txt_profissao: null as unknown as string, txt_conteudo: null as unknown as string, txt_titulo: 'Termo', num_versao: 1 },
+    { _id: 't2', bool_ativo: true, txt_profissao: 'Geral', txt_conteudo: 'Texto [PAGE_BREAK] Pagina 2', txt_titulo: 'Termo Geral', num_versao: 1 },
+  ];
+  globalThis.fetch = async (_url, init) => {
+    const data = JSON.parse(init!.body as string);
+    expect(Buffer.from(data.base64_pdf, 'base64').subarray(0, 5).toString()).toBe('%PDF-');
+    return Response.json({ token: 'token', signers: [{ sign_url: 'https://app.zapsign.com.br/sign/assinante' }] });
+  };
+  const response = await adesao(request(await payload()));
+  expect(response.status).toBe(200);
+  expect((await response.json()).signUrl).toBe('https://app.zapsign.com.br/sign/assinante');
 });
 
 

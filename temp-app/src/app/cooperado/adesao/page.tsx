@@ -1248,16 +1248,16 @@ export default function AdesaoPage() {
                                     <CreditCard className="w-5 h-5 text-indigo-600" />
                                   </div>
                                   <div>
-                                    <h4 className="font-bold text-slate-800 text-sm">{bank.bank.split('\t')[1] || bank.bank}</h4>
+                                    <h4 className="font-bold text-slate-800 text-sm">{(bank.bank || '').split('\t')[1] || bank.bank || 'Conta'}</h4>
                                     <p className="text-xs text-slate-600 mt-1">
-                                      Agência: {bank.agency} • Conta: {bank.account} • {bank.type}
+                                      Agência: {bank.agency || '-'} • Conta: {bank.account || '-'} • {bank.type || 'Conta'}
                                     </p>
                                   </div>
                                 </div>
                                 <button
                                   type="button"
                                   onClick={() => removeBankAccount(idx)}
-                                  aria-label={`Remover conta ${bank.bank}`}
+                                  aria-label={`Remover conta ${bank.bank || ''}`}
                                   className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-all"
                                 >
                                   <Trash2 className="w-4 h-4" />

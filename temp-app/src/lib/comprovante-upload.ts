@@ -14,9 +14,13 @@ export async function criarComprovanteUpload(url: string): Promise<string> {
 }
 
 export async function verificarComprovanteUpload(url: string, receipt: unknown): Promise<boolean> {
-  if (typeof receipt !== 'string') return false;
-  const [expires, signature, extra] = receipt.split('.');
-  if (extra || !/^\d+$/.test(expires) || Number(expires) < Date.now() || !/^[a-f0-9]{64}$/.test(signature || '')) return false;
-  const bytes = Uint8Array.from(signature.match(/../g)!, byte => parseInt(byte, 16));
+  if (typeof receipt !== 'string' || !receipt.includes('.')) return false;
+  const parts = receipt.split('.');
+  if (parts.length !== 2) return false;
+  const [expires, signature] = parts;
+  if (!/^\d+$/.test(expires) || Number(expires) < Date.now() || !/^[a-f0-9]{64}$/.test(signature || '')) return false;
+  const match = signature.match(/../g);
+  if (!match) return false;
+  const bytes = Uint8Array.from(match, byte => parseInt(byte, 16));
   return crypto.subtle.verify('HMAC', await key(), bytes, encoder.encode(`${expires}:${url}`));
 }

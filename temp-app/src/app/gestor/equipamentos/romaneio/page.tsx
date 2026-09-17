@@ -35,7 +35,7 @@ function RomaneioContent() {
 
     const carregar = async () => {
       try {
-        const preSelecionados = itensParam.split(',').map((i) => i.trim()).filter(Boolean);
+        const preSelecionados = (itensParam || '').split(',').map((i) => i.trim()).filter(Boolean);
         const [resCli, resLoc, resEqp, resDom] = await Promise.all([
           axios.get('/api/gestor/pacientes'),
           axios.get('/api/gestor/locacoes'),
