@@ -55,9 +55,37 @@ export async function POST(request: NextRequest) {
       if (type === 'CHECK_IN') {
         const { evolucaoId, pacienteId, checkIn, tipoProfissional, turno } = payload;
 
-        // INSERT OR IGNORE, e não REPLACE: reenviar a fila (o que acontece a
-        // cada reconexão) não pode zerar uma evolução já em andamento nem
-        // ressuscitar uma já finalizada.
+        // Verificar se é uma nova evolução ou re-envio de uma existente
+        const evolucaoExistente = await db.prepare('SELECT id FROM evolucoes WHERE id = ?').bind(evolucaoId).first();
+
+        if (!evolucaoExistente) {
+          // Verificar cota mensal do paciente no D1
+          const paciente: any = await db.prepare('SELECT limite_visitas_mes FROM pacientes WHERE id = ?').bind(pacienteId).first();
+          const limite = Number(paciente?.limite_visitas_mes || 0);
+
+          if (limite > 0) {
+            const mesIso = (checkIn || new Date().toISOString()).slice(0, 7);
+            const countRes: any = await db.prepare(
+              "SELECT COUNT(*) as total FROM evolucoes WHERE paciente_id = ? AND strftime('%Y-%m', check_in) = ?"
+            ).bind(pacienteId, mesIso).first();
+
+            const realizadas = Number(countRes?.total || 0);
+            if (realizadas >= limite) {
+              return NextResponse.json(
+                {
+                  success: false,
+                  error: `Limite mensal de ${limite} visitas atingido para este paciente (${realizadas}/${limite}). A visita foi bloqueada pela gestão da cooperativa.`,
+                  cotaAtingida: true,
+                  limite,
+                  realizadas,
+                },
+                { status: 403 }
+              );
+            }
+          }
+        }
+
+        // INSERT OR IGNORE: garante idempotência
         statements.push(
           db.prepare(
             `INSERT OR IGNORE INTO evolucoes (id, paciente_id, profissional_id, tipo_profissional, turno, check_in, status)

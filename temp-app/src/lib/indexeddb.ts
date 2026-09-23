@@ -7,6 +7,10 @@ export interface PacienteLocal {
   data_nascimento?: string;
   endereco?: string;
   warnings?: string[]; // Alergias, etc.
+  limite_visitas_mes?: number;
+  visitas_realizadas_mes?: number;
+  visitas_restantes_mes?: number;
+  limite_atingido?: boolean;
 }
 
 export interface PrescricaoLocal {

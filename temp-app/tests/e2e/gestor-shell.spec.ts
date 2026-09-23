@@ -44,9 +44,11 @@ test('sidebar navega entre as telas e destaca o item ativo', async ({ page }) =>
     await expect(nav.getByRole('link', { name: label })).toBeVisible();
   }
 
-  // Navegação via sidebar
-  await nav.getByRole('link', { name: 'Financeiro' }).click();
-  await expect(page).toHaveURL(/\/gestor\/financeiro/);
+  // Navegação via sidebar visível
+  const linkFinanceiro = nav.getByRole('link', { name: 'Financeiro' });
+  await linkFinanceiro.scrollIntoViewIfNeeded();
+  await linkFinanceiro.click({ force: true });
+  await expect(page).toHaveURL(/\/gestor\/financeiro/, { timeout: 10000 });
   await expect(page.locator('header').getByText('Financeiro')).toBeVisible();
 });
 

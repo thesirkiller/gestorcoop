@@ -33,8 +33,12 @@ export interface PacienteClinico {
   numero_carteirinha?: string;
   warnings?: string[]; // Array de alertas/alergias
   status?: 'Ativo' | 'Internado' | 'Alta' | 'Suspenso';
+  limite_visitas_mes?: number; // Cota mensal de visitas técnicas (ex: 13)
   created_at?: string;
   // Campos computados em consultas
+  visitas_realizadas_mes?: number;
+  visitas_restantes_mes?: number;
+  limite_atingido?: boolean;
   total_prescricoes_ativas?: number;
   ultima_evolucao_data?: string;
   ultimo_profissional_nome?: string;
@@ -400,6 +404,7 @@ export async function listarPacientesClinicos(filtro?: {
         numero_carteirinha: r.numero_carteirinha,
         warnings: r.warnings ? (typeof r.warnings === 'string' ? JSON.parse(r.warnings) : r.warnings) : [],
         status: r.status || 'Ativo',
+        limite_visitas_mes: Number(r.limite_visitas_mes || 0),
         created_at: r.created_at,
       }));
     } catch (e) {
@@ -422,7 +427,9 @@ export async function listarPacientesClinicos(filtro?: {
     );
   }
 
-  // Enriquecer com métricas clínicas (última evolução, prescrições)
+  const mesAtualIso = new Date().toISOString().slice(0, 7); // ex: '2026-09'
+
+  // Enriquecer com métricas clínicas (última evolução, prescrições e cota de visitas do mês)
   for (const p of lista) {
     const prescricoes = Array.from(inMemoryPrescricoes.values()).filter(
       (pr) => pr.paciente_id === p.id && pr.status === 'Ativa'
@@ -438,6 +445,15 @@ export async function listarPacientesClinicos(filtro?: {
       p.ultimo_profissional_nome = evolucoes[0].profissional_nome;
     }
 
+    // Contagem de visitas técnicas no mês atual
+    const evolucoesMes = evolucoes.filter(
+      (ev) => ev.check_in && ev.check_in.startsWith(mesAtualIso)
+    );
+    p.visitas_realizadas_mes = evolucoesMes.length;
+    const limite = p.limite_visitas_mes || 0;
+    p.visitas_restantes_mes = limite > 0 ? Math.max(0, limite - p.visitas_realizadas_mes) : undefined;
+    p.limite_atingido = limite > 0 ? p.visitas_realizadas_mes >= limite : false;
+
     const sinais = Array.from(inMemorySinaisVitais.values())
       .filter((s) => s.paciente_id === p.id)
       .sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime());
@@ -451,12 +467,13 @@ export async function listarPacientesClinicos(filtro?: {
 export async function obterPacienteClinico(id: string): Promise<PacienteClinico | null> {
   seedClinicalMemory();
   const db = getDb();
+  let paciente: PacienteClinico | null = null;
 
   if (db) {
     try {
       const res = await db.prepare('SELECT * FROM pacientes WHERE id = ?').bind(id).first<any>();
       if (res) {
-        return {
+        paciente = {
           id: res.id,
           nome: res.nome,
           cpf: res.cpf,
@@ -472,6 +489,7 @@ export async function obterPacienteClinico(id: string): Promise<PacienteClinico 
           numero_carteirinha: res.numero_carteirinha,
           warnings: res.warnings ? (typeof res.warnings === 'string' ? JSON.parse(res.warnings) : res.warnings) : [],
           status: res.status || 'Ativo',
+          limite_visitas_mes: Number(res.limite_visitas_mes || 0),
           created_at: res.created_at,
         };
       }
@@ -480,7 +498,67 @@ export async function obterPacienteClinico(id: string): Promise<PacienteClinico 
     }
   }
 
-  return inMemoryPacientes.get(id) || null;
+  if (!paciente) {
+    paciente = inMemoryPacientes.get(id) || null;
+  }
+
+  if (paciente) {
+    const mesAtualIso = new Date().toISOString().slice(0, 7);
+    const evolucoes = Array.from(inMemoryEvolucoes.values()).filter((ev) => ev.paciente_id === id);
+    const evolucoesMes = evolucoes.filter((ev) => ev.check_in && ev.check_in.startsWith(mesAtualIso));
+    paciente.visitas_realizadas_mes = evolucoesMes.length;
+    const limite = paciente.limite_visitas_mes || 0;
+    paciente.visitas_restantes_mes = limite > 0 ? Math.max(0, limite - paciente.visitas_realizadas_mes) : undefined;
+    paciente.limite_atingido = limite > 0 ? paciente.visitas_realizadas_mes >= limite : false;
+  }
+
+  return paciente;
+}
+
+export async function obterCotaVisitasPaciente(pacienteId: string, mesReferencia?: string): Promise<{
+  limite_visitas_mes: number;
+  visitas_realizadas_mes: number;
+  visitas_restantes_mes: number;
+  limite_atingido: boolean;
+}> {
+  seedClinicalMemory();
+  const mes = mesReferencia || new Date().toISOString().slice(0, 7);
+  const db = getDb();
+  let limite = 0;
+  let realizadas = 0;
+
+  if (db) {
+    try {
+      const pRow = await db.prepare('SELECT limite_visitas_mes FROM pacientes WHERE id = ?').bind(pacienteId).first<any>();
+      if (pRow) limite = Number(pRow.limite_visitas_mes || 0);
+
+      const countRow = await db.prepare(
+        "SELECT COUNT(*) as total FROM evolucoes WHERE paciente_id = ? AND strftime('%Y-%m', check_in) = ?"
+      ).bind(pacienteId, mes).first<any>();
+      if (countRow) realizadas = Number(countRow.total || 0);
+    } catch (e) {
+      console.warn('Erro ao obter cota no D1, caindo para memória:', e);
+    }
+  }
+
+  if (limite === 0 && inMemoryPacientes.has(pacienteId)) {
+    limite = inMemoryPacientes.get(pacienteId)?.limite_visitas_mes || 0;
+  }
+  if (realizadas === 0) {
+    realizadas = Array.from(inMemoryEvolucoes.values()).filter(
+      (ev) => ev.paciente_id === pacienteId && ev.check_in && ev.check_in.startsWith(mes)
+    ).length;
+  }
+
+  const restantes = limite > 0 ? Math.max(0, limite - realizadas) : 0;
+  const atingido = limite > 0 && realizadas >= limite;
+
+  return {
+    limite_visitas_mes: limite,
+    visitas_realizadas_mes: realizadas,
+    visitas_restantes_mes: restantes,
+    limite_atingido: atingido,
+  };
 }
 
 export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> & { nome: string; cpf: string }): Promise<PacienteClinico> {
@@ -504,6 +582,7 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
     numero_carteirinha: paciente.numero_carteirinha || '',
     warnings: paciente.warnings || [],
     status: paciente.status || 'Ativo',
+    limite_visitas_mes: Number(paciente.limite_visitas_mes ?? 0),
     created_at: paciente.created_at || now,
   };
 
@@ -513,21 +592,45 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
   if (db) {
     try {
       await db.prepare(`
-        INSERT INTO pacientes (id, nome, cpf, data_nascimento, endereco, warnings)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO pacientes (
+          id, nome, cpf, data_nascimento, endereco, telefone, responsavel_nome,
+          responsavel_telefone, diagnostico_principal, cid10, complexidade,
+          plano_saude, numero_carteirinha, warnings, status, limite_visitas_mes, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           nome = excluded.nome,
           cpf = excluded.cpf,
           data_nascimento = excluded.data_nascimento,
           endereco = excluded.endereco,
-          warnings = excluded.warnings
+          telefone = excluded.telefone,
+          responsavel_nome = excluded.responsavel_nome,
+          responsavel_telefone = excluded.responsavel_telefone,
+          diagnostico_principal = excluded.diagnostico_principal,
+          cid10 = excluded.cid10,
+          complexidade = excluded.complexidade,
+          plano_saude = excluded.plano_saude,
+          numero_carteirinha = excluded.numero_carteirinha,
+          warnings = excluded.warnings,
+          status = excluded.status,
+          limite_visitas_mes = excluded.limite_visitas_mes
       `).bind(
         registro.id,
         registro.nome,
         registro.cpf,
         registro.data_nascimento,
         registro.endereco,
-        JSON.stringify(registro.warnings || [])
+        registro.telefone,
+        registro.responsavel_nome,
+        registro.responsavel_telefone,
+        registro.diagnostico_principal,
+        registro.cid10,
+        registro.complexidade,
+        registro.plano_saude,
+        registro.numero_carteirinha,
+        JSON.stringify(registro.warnings || []),
+        registro.status,
+        registro.limite_visitas_mes,
+        registro.created_at
       ).run();
     } catch (e) {
       console.warn('Erro ao salvar paciente no D1:', e);

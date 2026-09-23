@@ -52,6 +52,10 @@ interface PacienteData {
   numero_carteirinha?: string;
   warnings?: string[];
   status?: string;
+  limite_visitas_mes?: number;
+  visitas_realizadas_mes?: number;
+  visitas_restantes_mes?: number;
+  limite_atingido?: boolean;
   created_at?: string;
 }
 
@@ -304,11 +308,59 @@ export default function Prontuario360Detalhe() {
     }
   };
 
+  const [editandoCota, setEditandoCota] = useState(false);
+  const [novaCotaValor, setNovaCotaValor] = useState('');
+  const [salvandoCota, setSalvandoCota] = useState(false);
+
+  const handleSalvarCota = async () => {
+    if (!paciente) return;
+    setSalvandoCota(true);
+    try {
+      await axios.put(`/api/gestor/prontuarios/pacientes/${paciente.id}`, {
+        ...paciente,
+        limite_visitas_mes: Number(novaCotaValor) || 0,
+      });
+      setEditandoCota(false);
+      await carregarProntuarioCompleto();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Erro ao atualizar cota de visitas.');
+    } finally {
+      setSalvandoCota(false);
+    }
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-slate-400">
-        <Loader2 className="w-10 h-10 animate-spin text-indigo-600 mb-3" />
-        <p className="text-sm font-bold text-slate-700">Carregando Prontuário 360° do Paciente...</p>
+      <div className="min-h-screen bg-slate-50 p-6 lg:p-8 space-y-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="h-8 w-44 bg-slate-200 rounded-xl animate-pulse"></div>
+          <div className="h-8 w-36 bg-slate-200 rounded-xl animate-pulse"></div>
+        </div>
+        <div className="max-w-7xl mx-auto bg-white rounded-2xl border border-slate-200 p-6 lg:p-8 shadow-sm animate-pulse space-y-6">
+          <div className="flex flex-col lg:flex-row justify-between gap-6">
+            <div className="flex items-start gap-4">
+              <div className="w-16 h-16 rounded-2xl bg-slate-200"></div>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <div className="h-4 w-28 bg-slate-200 rounded-full"></div>
+                  <div className="h-4 w-20 bg-slate-200 rounded-full"></div>
+                </div>
+                <div className="h-8 w-64 bg-slate-200 rounded-xl"></div>
+                <div className="h-4 w-48 bg-slate-100 rounded"></div>
+              </div>
+            </div>
+            <div className="h-20 w-72 bg-slate-100 rounded-2xl"></div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
+            <div className="h-16 bg-slate-100 rounded-xl"></div>
+            <div className="h-16 bg-slate-100 rounded-xl"></div>
+          </div>
+          <div className="h-24 bg-slate-900/10 rounded-2xl"></div>
+        </div>
+        <div className="max-w-7xl mx-auto space-y-4">
+          <div className="h-10 w-96 bg-slate-200 rounded-xl animate-pulse"></div>
+          <div className="h-64 bg-white rounded-2xl border border-slate-200 animate-pulse"></div>
+        </div>
       </div>
     );
   }
@@ -316,7 +368,7 @@ export default function Prontuario360Detalhe() {
   if (error || !paciente) {
     return (
       <div className="min-h-screen bg-slate-50 p-8 flex items-center justify-center">
-        <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center max-w-md w-full shadow-lg">
+        <div className="bg-white border border-slate-200 rounded-2xl p-8 text-center max-w-md w-full shadow-lg">
           <AlertOctagon className="w-12 h-12 text-rose-500 mx-auto mb-3" />
           <h2 className="text-lg font-bold text-slate-900 mb-1">Prontuário Não Encontrado</h2>
           <p className="text-xs text-slate-500 mb-6">{error || 'O registro solicitado não existe ou foi removido.'}</p>
@@ -356,7 +408,7 @@ export default function Prontuario360Detalhe() {
       </div>
 
       {/* Patient Header 360 Card */}
-      <div className="max-w-7xl mx-auto bg-white rounded-3xl border border-slate-200 p-6 lg:p-8 shadow-sm mb-6">
+      <div className="max-w-7xl mx-auto bg-white rounded-2xl border border-slate-200 p-6 lg:p-8 shadow-sm mb-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
@@ -455,6 +507,94 @@ export default function Prontuario360Detalhe() {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Card de Controle de Cota Mensal de Visitas do Técnico */}
+        <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-md">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="bg-indigo-500/30 text-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border border-indigo-400/30">
+                  Cota Contratada de Visitas Técnicas
+                </span>
+                {paciente.limite_atingido ? (
+                  <span className="bg-rose-500/30 text-rose-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-rose-400/30 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-rose-400" />
+                    Cota Esgotada - Bloqueio Ativo
+                  </span>
+                ) : (
+                  <span className="bg-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-emerald-400/30">
+                    {paciente.visitas_restantes_mes !== undefined ? `${paciente.visitas_restantes_mes} visitas restantes` : 'Sem limite'}
+                  </span>
+                )}
+              </div>
+              <h3 className="text-base font-bold tracking-tight">
+                {paciente.visitas_realizadas_mes || 0} de {paciente.limite_visitas_mes || 0} visitas técnicas realizadas este mês
+              </h3>
+              <p className="text-xs text-indigo-200/80 mt-0.5">
+                {paciente.limite_atingido
+                  ? 'O técnico não consegue realizar novas visitas até o início do próximo mês ou liberação de cota adicional.'
+                  : `Restam ${paciente.visitas_restantes_mes ?? (paciente.limite_visitas_mes || 0)} visitas para o teto contratado do paciente.`}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              {editandoCota ? (
+                <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-xl border border-white/20">
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={novaCotaValor}
+                    onChange={(e) => setNovaCotaValor(e.target.value)}
+                    className="w-20 px-2 py-1 bg-white text-slate-900 font-bold rounded-lg text-xs"
+                    placeholder="Qtd"
+                  />
+                  <button
+                    onClick={handleSalvarCota}
+                    disabled={salvandoCota}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs px-2.5 py-1 rounded-lg transition-all disabled:opacity-50"
+                  >
+                    {salvandoCota ? 'Salvando...' : 'Salvar'}
+                  </button>
+                  <button
+                    onClick={() => setEditandoCota(false)}
+                    className="text-slate-300 hover:text-white text-xs px-1.5 py-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => {
+                    setNovaCotaValor(String(paciente.limite_visitas_mes || 13));
+                    setEditandoCota(true);
+                  }}
+                  className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0"
+                >
+                  Alterar Cota Mensal
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Barra de Progresso */}
+          {paciente.limite_visitas_mes !== undefined && paciente.limite_visitas_mes > 0 && (
+            <div className="mt-3 w-full bg-white/10 rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-full transition-all duration-500 ${
+                  paciente.limite_atingido
+                    ? 'bg-rose-500'
+                    : (paciente.visitas_realizadas_mes || 0) / paciente.limite_visitas_mes > 0.8
+                    ? 'bg-amber-400'
+                    : 'bg-emerald-400'
+                }`}
+                style={{
+                  width: `${Math.min(100, Math.round(((paciente.visitas_realizadas_mes || 0) / paciente.limite_visitas_mes) * 100))}%`,
+                }}
+              />
+            </div>
+          )}
         </div>
       </div>
 

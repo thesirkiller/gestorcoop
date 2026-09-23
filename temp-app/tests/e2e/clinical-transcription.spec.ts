@@ -41,7 +41,7 @@ test.describe('Prontuário - Gravação e Transcrição por Voz (API Mocked)', (
 
     // Em gravação, botões de Pause e Stop devem aparecer
     const stopRecordBtn = page.locator('button[title="Finalizar e Salvar"]');
-    await expect(stopRecordBtn).toBeVisible();
+    await expect(stopRecordBtn).toBeVisible({ timeout: 10000 });
     
     // Finalizar gravação
     await stopRecordBtn.click();

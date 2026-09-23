@@ -16,6 +16,10 @@ interface Visit {
   endereco: string;
   cpf: string;
   dataNascimento: string;
+  limite_visitas_mes?: number;
+  visitas_realizadas_mes?: number;
+  visitas_restantes_mes?: number;
+  limite_atingido?: boolean;
 }
 
 export default function CooperadoDashboard() {
@@ -45,7 +49,7 @@ export default function CooperadoDashboard() {
       if (pacientes.length > 0) {
         // Mapeia os pacientes locais para a lista de visitas
         const mappedVisits: Visit[] = await Promise.all(
-          pacientes.map(async (p, idx) => {
+          pacientes.map(async (p: any, idx) => {
             // Busca evolucoes locais para determinar status
             const evolucoes = await localDB.getEvolucoes();
             const ev = evolucoes.find(e => e.paciente_id === p.id);
@@ -65,7 +69,11 @@ export default function CooperadoDashboard() {
               status,
               endereco: p.endereco || 'Domicílio cadastrado',
               cpf: p.cpf || '***.***.***-**',
-              dataNascimento: p.data_nascimento || '01/01/1970'
+              dataNascimento: p.data_nascimento || '01/01/1970',
+              limite_visitas_mes: p.limite_visitas_mes,
+              visitas_realizadas_mes: p.visitas_realizadas_mes,
+              visitas_restantes_mes: p.visitas_restantes_mes,
+              limite_atingido: p.limite_atingido,
             };
           })
         );
@@ -192,18 +200,37 @@ export default function CooperadoDashboard() {
                     <MapPin className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                     <span className="truncate">{visit.endereco}</span>
                   </div>
+
+                  {/* Cota Mensal de Visitas */}
+                  {visit.limite_visitas_mes !== undefined && visit.limite_visitas_mes > 0 && (
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`text-[10px] font-heavy px-2 py-0.5 rounded-md border ${
+                        visit.limite_atingido
+                          ? 'bg-crit-soft text-crit-ink border-crit-line'
+                          : (visit.visitas_restantes_mes || 0) <= 2
+                          ? 'bg-warn-soft text-warn-ink border-warn-line'
+                          : 'bg-accent-soft text-accent-soft-ink border-accent-line'
+                      }`}>
+                        {visit.limite_atingido
+                          ? `⚠️ Cota atingida (${visit.visitas_realizadas_mes}/${visit.limite_visitas_mes})`
+                          : `Visitas no mês: ${visit.visitas_realizadas_mes || 0}/${visit.limite_visitas_mes} (${visit.visitas_restantes_mes} restam)`}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Status & Direção */}
                 <div className="flex items-center gap-2">
                   <span className={`text-[10px] uppercase tracking-wider font-heavy px-2.5 py-0.5 rounded-full border ${
-                    visit.status === 'Concluído'
+                    visit.limite_atingido
+                      ? 'bg-crit-soft text-crit-ink border-crit-line'
+                      : visit.status === 'Concluído'
                       ? 'bg-pos-soft text-pos-ink border-pos-line'
                       : visit.status === 'Em_Andamento'
                         ? 'bg-info-soft text-info-ink border-info-line'
                         : 'bg-idle-soft text-idle-ink border-idle-line'
                   }`}>
-                    {visit.status === 'Em_Andamento' ? 'Em andamento' : visit.status.toLowerCase()}
+                    {visit.limite_atingido ? 'Bloqueado' : visit.status === 'Em_Andamento' ? 'Em andamento' : visit.status.toLowerCase()}
                   </span>
                   <ChevronRight className="w-4 h-4 text-muted" aria-hidden="true" />
                 </div>

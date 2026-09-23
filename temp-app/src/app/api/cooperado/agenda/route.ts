@@ -54,16 +54,21 @@ export async function GET(request: NextRequest) {
         }));
 
         if (db) {
-          // Atualiza registros de pacientes no D1 local vindos do Bubble
+          // Atualiza registros de pacientes no D1 local vindos do Bubble preservando limite_visitas_mes
           for (const p of dbPacientes) {
-            await db.prepare(
-              'INSERT OR REPLACE INTO pacientes (id, nome, cpf, data_nascimento, endereco, warnings) VALUES (?, ?, ?, ?, ?, ?)'
-            ).bind(p.id, p.nome, p.cpf, p.data_nascimento, p.endereco, JSON.stringify(p.warnings)).run();
+            await db.prepare(`
+              INSERT INTO pacientes (id, nome, cpf, data_nascimento, endereco, warnings)
+              VALUES (?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET
+                nome = excluded.nome,
+                cpf = excluded.cpf,
+                data_nascimento = excluded.data_nascimento,
+                endereco = excluded.endereco,
+                warnings = excluded.warnings
+            `).bind(p.id, p.nome, p.cpf, p.data_nascimento, p.endereco, JSON.stringify(p.warnings)).run();
           }
 
-          // Só os pacientes deste cooperado. Antes eram três `SELECT *` sem
-          // filtro: o D1 devolvia a base clínica inteira e desfazia o recorte
-          // por serviço que acabara de ser feito com os dados do Bubble.
+          // Só os pacientes deste cooperado.
           const idsPermitidos = dbPacientes.map((p) => p.id);
           if (idsPermitidos.length === 0) {
             return NextResponse.json({ success: true, pacientes: [], prescricoes: [], aprazamentos: [] });
@@ -73,9 +78,30 @@ export async function GET(request: NextRequest) {
           const pacientesRes = (
             await db.prepare(`SELECT * FROM pacientes WHERE id IN (${marcadores})`).bind(...idsPermitidos).all()
           ).results;
-          dbPacientes = pacientesRes.map((p: any) => ({
-            ...p,
-            warnings: p.warnings ? JSON.parse(p.warnings) : []
+
+          const mesAtualIso = new Date().toISOString().slice(0, 7);
+
+          dbPacientes = await Promise.all(pacientesRes.map(async (p: any) => {
+            const limite = Number(p.limite_visitas_mes || 0);
+            let realizadas = 0;
+            try {
+              const countRes: any = await db.prepare(
+                "SELECT COUNT(*) as total FROM evolucoes WHERE paciente_id = ? AND strftime('%Y-%m', check_in) = ?"
+              ).bind(p.id, mesAtualIso).first();
+              realizadas = Number(countRes?.total || 0);
+            } catch {}
+
+            const restantes = limite > 0 ? Math.max(0, limite - realizadas) : undefined;
+            const atingido = limite > 0 ? realizadas >= limite : false;
+
+            return {
+              ...p,
+              warnings: p.warnings ? JSON.parse(p.warnings) : [],
+              limite_visitas_mes: limite,
+              visitas_realizadas_mes: realizadas,
+              visitas_restantes_mes: restantes,
+              limite_atingido: atingido,
+            };
           }));
 
           dbPrescricoes = (

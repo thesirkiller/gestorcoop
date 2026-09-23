@@ -45,6 +45,10 @@ interface PacienteSummary {
   plano_saude?: string;
   warnings?: string[];
   status?: string;
+  limite_visitas_mes?: number;
+  visitas_realizadas_mes?: number;
+  visitas_restantes_mes?: number;
+  limite_atingido?: boolean;
   total_prescricoes_ativas?: number;
   ultima_evolucao_data?: string;
   ultimo_profissional_nome?: string;
@@ -108,6 +112,7 @@ export default function ProntuariosAuditDashboard() {
     complexidade: 'Média',
     plano_saude: '',
     numero_carteirinha: '',
+    limite_visitas_mes: '13',
     warnings: '',
   });
 
@@ -153,6 +158,7 @@ export default function ProntuariosAuditDashboard() {
 
       await axios.post('/api/gestor/prontuarios/pacientes', {
         ...novoPacienteForm,
+        limite_visitas_mes: Number(novoPacienteForm.limite_visitas_mes) || 0,
         warnings: warningsArray,
       });
 
@@ -170,6 +176,7 @@ export default function ProntuariosAuditDashboard() {
         complexidade: 'Média',
         plano_saude: '',
         numero_carteirinha: '',
+        limite_visitas_mes: '13',
         warnings: '',
       });
       await carregarDados();
@@ -461,14 +468,34 @@ export default function ProntuariosAuditDashboard() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-16 text-slate-400">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600 mb-3" />
-            <p className="text-sm font-semibold">Carregando dados clínicos...</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <div key={n} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm animate-pulse space-y-4">
+                <div className="flex justify-between items-start">
+                  <div className="space-y-2">
+                    <div className="h-4 w-24 bg-slate-200 rounded-md"></div>
+                    <div className="h-5 w-44 bg-slate-200 rounded-lg"></div>
+                    <div className="h-3 w-32 bg-slate-100 rounded"></div>
+                  </div>
+                  <div className="h-5 w-16 bg-slate-200 rounded-full"></div>
+                </div>
+                <div className="h-10 bg-slate-100 rounded-xl"></div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="h-8 bg-slate-100 rounded-lg"></div>
+                  <div className="h-8 bg-slate-100 rounded-lg"></div>
+                  <div className="h-8 bg-slate-100 rounded-lg"></div>
+                </div>
+                <div className="pt-3 border-t border-slate-100 flex justify-between">
+                  <div className="h-4 w-28 bg-slate-100 rounded"></div>
+                  <div className="h-6 w-24 bg-slate-200 rounded-xl"></div>
+                </div>
+              </div>
+            ))}
           </div>
         ) : activeTab === 'pacientes' ? (
           /* TAB 1: PACIENTES GRID */
           filteredPacientes.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center">
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
               <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
               <h3 className="text-base font-bold text-slate-800">Nenhum paciente encontrado</h3>
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
@@ -563,13 +590,38 @@ export default function ProntuariosAuditDashboard() {
                         </div>
                       </div>
                     )}
+                    {/* Indicador de Cota Mensal de Visitas */}
+                    {p.limite_visitas_mes !== undefined && p.limite_visitas_mes > 0 && (
+                      <div className="mt-3 p-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-700 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-indigo-600" />
+                          Visitas no Mês:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className={`font-mono font-bold px-2 py-0.5 rounded-md text-[11px] ${
+                            p.limite_atingido
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : (p.visitas_restantes_mes || 0) <= 2
+                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          }`}>
+                            {p.visitas_realizadas_mes || 0} / {p.limite_visitas_mes}
+                          </span>
+                          {p.limite_atingido ? (
+                            <span className="text-[10px] text-rose-600 font-bold">Cota Atingida</span>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-medium">({p.visitas_restantes_mes} restam)</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Footer do Card */}
                   <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
                       <Pill className="w-3.5 h-3.5 text-indigo-500" />
-                      {p.total_prescricoes_ativas || 0} prescrições ativas
+                      {p.total_prescricoes_ativas || 0} prescrições
                     </span>
 
                     <Link
@@ -795,6 +847,27 @@ export default function ProntuariosAuditDashboard() {
                     className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
                     placeholder="(00) 00000-0000"
                   />
+                </div>
+              </div>
+
+              <div className="bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100">
+                <label className="block text-xs font-bold text-indigo-900 mb-1">
+                  Cota Mensal de Visitas Técnicas (Teto Contratado) *
+                </label>
+                <p className="text-[11px] text-indigo-700 mb-2">
+                  Define o número máximo de visitas que os técnicos de enfermagem podem realizar no mês. O sistema bloqueia automaticamente novas visitas ao atingir este teto.
+                </p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={novoPacienteForm.limite_visitas_mes}
+                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, limite_visitas_mes: e.target.value })}
+                    className="w-36 px-3 py-2 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    placeholder="Ex: 13"
+                  />
+                  <span className="text-xs text-indigo-800 font-semibold">visitas / mês</span>
                 </div>
               </div>
 

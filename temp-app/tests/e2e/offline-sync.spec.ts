@@ -85,7 +85,7 @@ test.describe('Prontuário - Fluxo Offline-First e Sincronização (API Mocked)'
     await expect(page.locator('text=Dona Maria de Oliveira')).toBeVisible();
 
     // Selecionar o atendimento do primeiro paciente (Seu João)
-    await page.click('text=Seu João da Silva');
+    await page.click('a[href="/cooperado/prontuario/p_1"]');
 
     // O modal de identificação do paciente deve abrir obrigatoriamente
     await expect(page.locator('text=Identificação de Segurança')).toBeVisible();

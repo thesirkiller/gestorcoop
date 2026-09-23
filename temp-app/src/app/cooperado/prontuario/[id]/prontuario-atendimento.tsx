@@ -234,6 +234,11 @@ export default function ProntuarioAtendimento() {
       return;
     }
 
+    if (paciente?.limite_atingido) {
+      setErrorText(`Limite mensal de ${paciente.limite_visitas_mes || 13} visitas atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Não é permitido realizar novas visitas este mês.`);
+      return;
+    }
+
     const checkInTime = new Date().toISOString();
     const newEv: EvolucaoLocal = {
       id: `ev_${Date.now()}`,
@@ -557,6 +562,33 @@ export default function ProntuarioAtendimento() {
           </span>
         </div>
 
+        {/* Cota Mensal de Visitas do Paciente */}
+        {paciente.limite_visitas_mes !== undefined && paciente.limite_visitas_mes > 0 && (
+          <div className={`rounded-xl p-3 text-xs flex items-start gap-2.5 border ${
+            paciente.limite_atingido
+              ? 'bg-crit-soft border-crit-line text-crit-ink'
+              : (paciente.visitas_restantes_mes || 0) <= 2
+              ? 'bg-warn-soft border-warn-line text-warn-ink'
+              : 'bg-accent-soft border-accent-line text-accent-soft-ink'
+          }`}>
+            {paciente.limite_atingido ? (
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-crit-ink" aria-hidden="true" />
+            ) : (
+              <Clock className="w-4 h-4 shrink-0 mt-0.5 text-accent-ink" aria-hidden="true" />
+            )}
+            <div className="flex flex-col gap-0.5">
+              <span className="font-heavy uppercase tracking-wider text-[10px]">
+                {paciente.limite_atingido ? '🚫 Cota Mensal Esgotada - Visitas Bloqueadas' : '📋 Cota Mensal Contratada'}
+              </span>
+              <span className="font-medium">
+                {paciente.limite_atingido
+                  ? `Este paciente atingiu o teto de ${paciente.limite_visitas_mes} visitas neste mês (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Novos atendimentos foram bloqueados pela gestão.`
+                  : `Cota contratada: ${paciente.visitas_realizadas_mes || 0} de ${paciente.limite_visitas_mes} visitas realizadas. Restam ${paciente.visitas_restantes_mes} visitas este mês.`}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Warnings */}
         {paciente.warnings && paciente.warnings.length > 0 && (
           <div className="bg-crit-soft border border-crit-line rounded-lg p-3 text-sm text-crit-ink flex items-start gap-2.5">
@@ -582,12 +614,18 @@ export default function ProntuarioAtendimento() {
         </div>
 
         {!checkedIn && (
-          <button
-            onClick={handleCheckIn}
-            className="bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs px-4 py-2.5 rounded-xl shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          >
-            Iniciar Check-in
-          </button>
+          paciente.limite_atingido ? (
+            <div className="bg-crit-soft border border-crit-line text-crit-ink text-xs font-heavy px-3 py-2 rounded-xl text-center">
+              Visitas Bloqueadas
+            </div>
+          ) : (
+            <button
+              onClick={handleCheckIn}
+              className="bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs px-4 py-2.5 rounded-xl shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              Iniciar Check-in
+            </button>
+          )
         )}
 
         {checkedIn && !checkedOut && (
