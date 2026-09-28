@@ -25,7 +25,7 @@ const ROTAS_COOPERADO_PUBLICAS = [
  * uma página do Bubble; `frame-ancestors` restringe a moldura a essa origem em
  * vez de liberar para qualquer site.
  */
-const ORIGEM_EMBED = process.env.EMBED_ORIGEM || 'https://gestorcoop.app';
+const ORIGEM_EMBED = process.env.EMBED_ORIGEM || 'https://gestorcoop.app https://appgestorcoop.bubbleapps.io';
 
 function naoAutenticado(request: NextRequest, motivo: string) {
   if (request.nextUrl.pathname.startsWith('/api/')) {

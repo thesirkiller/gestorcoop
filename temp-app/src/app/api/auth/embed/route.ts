@@ -9,8 +9,12 @@ export async function POST(request: NextRequest) {
     if (!await validarChaveIntegracao(request.headers.get('x-bubble-embed-key'))) return NextResponse.json({ error: 'Integração não autenticada.' }, { status: 401, headers });
     const { user_id, area = 'cooperado' } = await request.json();
     if (typeof user_id !== 'string' || user_id.length > 128 || !['cooperado', 'gestor'].includes(area)) return NextResponse.json({ error: 'Identidade inválida.' }, { status: 400, headers });
-    const origin = process.env.APP_ORIGIN;
-    if (!origin) throw new Error('APP_ORIGIN não configurada.');
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
+    const fallbackOrigin = host ? `https://${host}` : 'https://gestorcoop.pages.dev';
+    const configuredOrigin = process.env.APP_ORIGIN;
+    const origin = (configuredOrigin && !configuredOrigin.includes('bubbleapps.io'))
+      ? configuredOrigin
+      : fallbackOrigin;
     const user = await bubbleApi.getUser(user_id);
     // Quem é gestor sai do próprio cadastro (`bool_colaborador_interno`), não de
     // uma lista no ambiente: são dezenas de pessoas e cada admissão ou
