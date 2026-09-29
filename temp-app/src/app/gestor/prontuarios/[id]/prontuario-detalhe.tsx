@@ -35,6 +35,9 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
+import type { PlanoTerapeutico } from '@/lib/tipos-clinicos';
+import DashboardGeral from './dashboard-geral';
+import PlanoTerapeuticoTab from './plano-terapeutico-tab';
 
 interface PacienteData {
   id: string;
@@ -139,7 +142,12 @@ export default function Prontuario360Detalhe() {
   const [sinaisVitais, setSinaisVitais] = useState<SinalVitalData[]>([]);
   const [pareceres, setPareceres] = useState<ParecerData[]>([]);
 
-  const [activeTab, setActiveTab] = useState<'evolucoes' | 'prescricoes' | 'sinais' | 'auditoria'>('evolucoes');
+  // Planos Terapêuticos e Equipamentos da Dashboard Individual
+  const [planos, setPlanos] = useState<PlanoTerapeutico[]>([]);
+  const [planoVigente, setPlanoVigente] = useState<PlanoTerapeutico | null>(null);
+  const [equipamentos, setEquipamentos] = useState<any[]>([]);
+
+  const [activeTab, setActiveTab] = useState<'geral' | 'plano' | 'evolucoes' | 'prescricoes' | 'sinais' | 'auditoria'>('geral');
   const [expandedEvolucaoId, setExpandedEvolucaoId] = useState<string | null>(null);
 
   // Modais
@@ -183,8 +191,8 @@ export default function Prontuario360Detalhe() {
     carregarProntuarioCompleto();
   }, [id]);
 
-  const carregarProntuarioCompleto = async () => {
-    setLoading(true);
+  const carregarProntuarioCompleto = async (silencioso = false) => {
+    if (!silencioso) setLoading(true);
     setError(null);
     try {
       // Tenta buscar pelo endpoint 360 de paciente
@@ -199,6 +207,19 @@ export default function Prontuario360Detalhe() {
         if (d.evolucoes && d.evolucoes.length > 0) {
           setExpandedEvolucaoId(d.evolucoes[0].id);
         }
+
+        // Buscar dados unificados da dashboard do paciente em background
+        axios
+          .get(`/api/gestor/prontuarios/pacientes/${id}/dashboard`)
+          .then((resDash) => {
+            if (resDash.data?.success && resDash.data?.data) {
+              const dash = resDash.data.data;
+              setPlanoVigente(dash.planoVigente || null);
+              setPlanos(dash.planos || []);
+              setEquipamentos(dash.equipamentos || []);
+            }
+          })
+          .catch(() => {});
       } else {
         // Fallback: se id for de uma evolução, busca paciente correspondente
         const resEvo = await axios.get('/api/gestor/prontuarios');
@@ -222,7 +243,7 @@ export default function Prontuario360Detalhe() {
       console.error('Erro ao carregar prontuário 360:', e);
       setError(e.response?.data?.error || 'Erro ao carregar dados do prontuário.');
     } finally {
-      setLoading(false);
+      if (!silencioso) setLoading(false);
     }
   };
 
@@ -386,15 +407,33 @@ export default function Prontuario360Detalhe() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 lg:p-8 print:bg-white print:p-2">
-      {/* Action Bar / Navigation */}
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-4 mb-6 print:hidden">
-        <Link
-          href="/gestor/prontuarios"
-          className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          Voltar para Lista de Pacientes
-        </Link>
+      {/* Action Bar / Navigation com Breadcrumb */}
+      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 print:hidden">
+        <div className="flex items-center gap-2 text-xs">
+          <Link
+            href="/gestor/prontuarios"
+            className="text-slate-500 hover:text-indigo-600 font-medium inline-flex items-center gap-1"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            Pacientes
+          </Link>
+          <span className="text-slate-300">/</span>
+          <span className="text-slate-800 font-bold">Prontuário Individual</span>
+          <span className="text-slate-300">/</span>
+          <span className="text-indigo-600 font-bold uppercase tracking-wider text-[11px] bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-100">
+            {activeTab === 'geral'
+              ? 'Dashboard Geral'
+              : activeTab === 'plano'
+              ? 'Plano Terapêutico'
+              : activeTab === 'evolucoes'
+              ? 'Evoluções & SOAP'
+              : activeTab === 'prescricoes'
+              ? 'Prescrições'
+              : activeTab === 'sinais'
+              ? 'Sinais Vitais'
+              : 'Logs & Auditoria'}
+          </span>
+        </div>
 
         <div className="flex items-center gap-2">
           <button
@@ -600,7 +639,31 @@ export default function Prontuario360Detalhe() {
 
       {/* Tabs */}
       <div className="max-w-7xl mx-auto border-b border-slate-200 mb-6 flex items-center justify-between print:hidden">
-        <div className="flex items-center gap-4 overflow-x-auto pb-1">
+        <div className="flex items-center gap-3 overflow-x-auto pb-1">
+          <button
+            onClick={() => setActiveTab('geral')}
+            className={`pb-3 px-2 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
+              activeTab === 'geral'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Geral (Dashboard)
+          </button>
+
+          <button
+            onClick={() => setActiveTab('plano')}
+            className={`pb-3 px-2 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
+              activeTab === 'plano'
+                ? 'border-indigo-600 text-indigo-600'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            Plano Terapêutico ({planos.length})
+          </button>
+
           <button
             onClick={() => setActiveTab('evolucoes')}
             className={`pb-3 px-2 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
@@ -682,6 +745,29 @@ export default function Prontuario360Detalhe() {
 
       {/* Main Tab Content */}
       <div className="max-w-7xl mx-auto space-y-6">
+        {/* ABA: DASHBOARD GERAL INDIVIDUAL */}
+        {activeTab === 'geral' && (
+          <DashboardGeral
+            paciente={paciente}
+            planoVigente={planoVigente}
+            equipamentos={equipamentos}
+            evolucoes={evolucoes}
+            prescricoes={prescricoes}
+            onIrParaPlano={() => setActiveTab('plano')}
+            onIrParaProntuario={() => setActiveTab('evolucoes')}
+          />
+        )}
+
+        {/* ABA: PLANO TERAPÊUTICO */}
+        {activeTab === 'plano' && (
+          <PlanoTerapeuticoTab
+            pacienteId={paciente.id}
+            pacienteNome={paciente.nome}
+            planos={planos}
+            onPlanoAtualizado={() => carregarProntuarioCompleto(true)}
+          />
+        )}
+
         {/* ABA 1: EVOLUÇÕES CLÍNICAS (SOAP) */}
         {activeTab === 'evolucoes' && (
           <div className="space-y-4">

@@ -5,6 +5,7 @@ export type EspecialidadeProfissional =
   | 'Tecnico_Enfermagem'
   | 'Enfermeiro'
   | 'Medico'
+  | 'Dentista'
   | 'Fisioterapeuta'
   | 'Fonoaudiologo'
   | 'Nutricionista'
@@ -139,6 +140,44 @@ export interface ParecerAuditoriaClinica {
   data_registro: string;
 }
 
+export interface ProfissionalDesignado {
+  id: string;
+  nome: string;
+  cargo?: string;
+  crm_coren?: string;
+}
+
+export interface MetaPlanoTerapeutico {
+  id: string;
+  plano_id: string;
+  especialidade: EspecialidadeProfissional | string;
+  quantidade_prevista: number;
+  profissionais_designados?: ProfissionalDesignado[];
+  created_at?: string;
+  // Campos computados em consultas
+  quantidade_realizada?: number;
+  quantidade_restante?: number;
+  status_meta?: 'Em_Andamento' | 'Concluido' | 'Pendente' | 'Excedido';
+}
+
+export interface PlanoTerapeutico {
+  id: string;
+  paciente_id: string;
+  data_inicio: string; // YYYY-MM-DD
+  data_fim: string;    // YYYY-MM-DD
+  status: 'Ativo' | 'Concluido' | 'Cancelado';
+  observacoes?: string;
+  created_at?: string;
+  updated_at?: string;
+  metas?: MetaPlanoTerapeutico[];
+  // Campos computados
+  total_previsto?: number;
+  total_realizado?: number;
+  total_restante?: number;
+  tem_pendencias?: boolean;
+  pendencias_alertas?: string[];
+}
+
 // -------------------------------------------------------------
 // Banco de dados em memória para Fallback / Dev local sem D1
 // -------------------------------------------------------------
@@ -148,6 +187,8 @@ const inMemoryAprazamentos: Map<string, AprazamentoClinico> = new Map();
 const inMemorySinaisVitais: Map<string, SinalVitalClinico> = new Map();
 const inMemoryEvolucoes: Map<string, EvolucaoClinica> = new Map();
 const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = new Map();
+const inMemoryPlanosTerapeuticos: Map<string, PlanoTerapeutico> = new Map();
+const inMemoryPlanoMetas: Map<string, MetaPlanoTerapeutico> = new Map();
 
 let seeded = false;
 function seedClinicalMemory() {
@@ -917,4 +958,346 @@ export async function listarPareceresClinicos(pacienteId: string): Promise<Parec
   return Array.from(inMemoryPareceres.values())
     .filter((p) => p.paciente_id === pacienteId)
     .sort((a, b) => new Date(b.data_registro).getTime() - new Date(a.data_registro).getTime());
+}
+
+// -------------------------------------------------------------
+// Planos Terapêuticos & Metas por Especialidade
+// -------------------------------------------------------------
+
+export function normalizarEspecialidade(esp: string): string {
+  const map: Record<string, string> = {
+    tecnico: 'Tecnico_Enfermagem',
+    tecnico_enfermagem: 'Tecnico_Enfermagem',
+    'técnico de enfermagem': 'Tecnico_Enfermagem',
+    enfermeiro: 'Enfermeiro',
+    enfermagem: 'Enfermeiro',
+    medico: 'Medico',
+    médico: 'Medico',
+    dentista: 'Dentista',
+    odontologia: 'Dentista',
+    odonto: 'Dentista',
+    fisioterapeuta: 'Fisioterapeuta',
+    fisioterapia: 'Fisioterapeuta',
+    fonoaudiologo: 'Fonoaudiologo',
+    fonoaudiólogo: 'Fonoaudiologo',
+    fono: 'Fonoaudiologo',
+    nutricionista: 'Nutricionista',
+    psicologo: 'Psicologo',
+    psicólogo: 'Psicologo',
+    terapeuta_ocupacional: 'Terapeuta_Ocupacional',
+    'terapeuta ocupacional': 'Terapeuta_Ocupacional',
+  };
+  const key = esp.toLowerCase().trim();
+  return map[key] || esp;
+}
+
+export function formatarNomeEspecialidade(esp: string): string {
+  const map: Record<string, string> = {
+    Tecnico_Enfermagem: 'Técnico de Enfermagem',
+    Enfermeiro: 'Enfermeiro',
+    Medico: 'Médico',
+    Dentista: 'Dentista / Odontólogo',
+    Fisioterapeuta: 'Fisioterapeuta',
+    Fonoaudiologo: 'Fonoaudiólogo',
+    Nutricionista: 'Nutricionista',
+    Psicologo: 'Psicólogo',
+    Terapeuta_Ocupacional: 'Terapeuta Ocupacional',
+  };
+  return map[esp] || esp.replace(/_/g, ' ');
+}
+
+export function enriquecerPlanoComCalculos(plano: PlanoTerapeutico, evolucoes: EvolucaoClinica[]): PlanoTerapeutico {
+  const inicioIso = `${plano.data_inicio}T00:00:00.000Z`;
+  const fimIso = `${plano.data_fim}T23:59:59.999Z`;
+  const hoje = new Date().toISOString().split('T')[0];
+  const planoEncerradoOuProximo = hoje >= plano.data_fim;
+
+  let totalPrevisto = 0;
+  let totalRealizado = 0;
+  const pendenciasAlertas: string[] = [];
+
+  const metasEnriquecidas: MetaPlanoTerapeutico[] = (plano.metas || []).map((meta) => {
+    const metaEspNormalizada = normalizarEspecialidade(meta.especialidade);
+
+    // Contar evoluções do paciente que batem com esta especialidade dentro do período do plano
+    const evolucoesDaMeta = evolucoes.filter((ev) => {
+      if (ev.paciente_id !== plano.paciente_id) return false;
+      const evEsp = normalizarEspecialidade(ev.tipo_profissional || '');
+      if (evEsp !== metaEspNormalizada) return false;
+      if (!ev.check_in) return false;
+      const dataEv = ev.check_in;
+      return dataEv >= inicioIso && dataEv <= fimIso;
+    });
+
+    const realizadas = evolucoesDaMeta.length;
+    const restante = Math.max(0, meta.quantidade_prevista - realizadas);
+    totalPrevisto += meta.quantidade_prevista;
+    totalRealizado += realizadas;
+
+    let statusMeta: 'Em_Andamento' | 'Concluido' | 'Pendente' | 'Excedido' = 'Em_Andamento';
+    if (realizadas >= meta.quantidade_prevista) {
+      statusMeta = realizadas > meta.quantidade_prevista ? 'Excedido' : 'Concluido';
+    } else if (planoEncerradoOuProximo || realizadas === 0) {
+      statusMeta = 'Pendente';
+      pendenciasAlertas.push(
+        `${formatarNomeEspecialidade(meta.especialidade)}: ${realizadas} de ${meta.quantidade_prevista} visita(s) realizada(s) (${restante} pendente${restante > 1 ? 's' : ''})`
+      );
+    } else {
+      statusMeta = 'Em_Andamento';
+    }
+
+    return {
+      ...meta,
+      especialidade: meta.especialidade,
+      quantidade_realizada: realizadas,
+      quantidade_restante: restante,
+      status_meta: statusMeta,
+    };
+  });
+
+  return {
+    ...plano,
+    metas: metasEnriquecidas,
+    total_previsto: totalPrevisto,
+    total_realizado: totalRealizado,
+    total_restante: Math.max(0, totalPrevisto - totalRealizado),
+    tem_pendencias: pendenciasAlertas.length > 0,
+    pendencias_alertas: pendenciasAlertas,
+  };
+}
+
+export async function salvarPlanoTerapeutico(dados: {
+  id?: string;
+  paciente_id: string;
+  data_inicio: string;
+  data_fim: string;
+  status?: 'Ativo' | 'Concluido' | 'Cancelado';
+  observacoes?: string;
+  metas: Array<{
+    id?: string;
+    especialidade: string;
+    quantidade_prevista: number;
+    profissionais_designados?: ProfissionalDesignado[];
+  }>;
+}): Promise<PlanoTerapeutico> {
+  seedClinicalMemory();
+  const db = getDb();
+  const planoId = dados.id || novoId('pln');
+  const now = agoraIso();
+
+  const novoPlano: PlanoTerapeutico = {
+    id: planoId,
+    paciente_id: dados.paciente_id,
+    data_inicio: dados.data_inicio,
+    data_fim: dados.data_fim,
+    status: dados.status || 'Ativo',
+    observacoes: dados.observacoes || '',
+    created_at: now,
+    updated_at: now,
+    metas: dados.metas.map((m) => ({
+      id: m.id || novoId('meta'),
+      plano_id: planoId,
+      especialidade: m.especialidade,
+      quantidade_prevista: Number(m.quantidade_prevista) || 1,
+      profissionais_designados: m.profissionais_designados || [],
+      created_at: now,
+    })),
+  };
+
+  if (db) {
+    try {
+      await db.prepare(`
+        INSERT INTO planos_terapeuticos (id, paciente_id, data_inicio, data_fim, status, observacoes, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          data_inicio = excluded.data_inicio,
+          data_fim = excluded.data_fim,
+          status = excluded.status,
+          observacoes = excluded.observacoes,
+          updated_at = excluded.updated_at
+      `).bind(
+        novoPlano.id,
+        novoPlano.paciente_id,
+        novoPlano.data_inicio,
+        novoPlano.data_fim,
+        novoPlano.status,
+        novoPlano.observacoes,
+        novoPlano.created_at,
+        novoPlano.updated_at
+      ).run();
+
+      // Deleta metas anteriores se for update
+      await db.prepare('DELETE FROM plano_terapeutico_metas WHERE plano_id = ?').bind(planoId).run();
+
+      for (const meta of novoPlano.metas || []) {
+        await db.prepare(`
+          INSERT INTO plano_terapeutico_metas (id, plano_id, especialidade, quantidade_prevista, profissionais_designados, created_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).bind(
+          meta.id,
+          meta.plano_id,
+          meta.especialidade,
+          meta.quantidade_prevista,
+          JSON.stringify(meta.profissionais_designados || []),
+          meta.created_at
+        ).run();
+      }
+    } catch (e) {
+      console.warn('Erro ao salvar plano no D1, caindo para memória:', e);
+    }
+  }
+
+  inMemoryPlanosTerapeuticos.set(planoId, novoPlano);
+  for (const m of novoPlano.metas || []) {
+    inMemoryPlanoMetas.set(m.id, m);
+  }
+
+  const evolucoes = Array.from(inMemoryEvolucoes.values()).filter((e) => e.paciente_id === dados.paciente_id);
+  return enriquecerPlanoComCalculos(novoPlano, evolucoes);
+}
+
+export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): Promise<PlanoTerapeutico[]> {
+  seedClinicalMemory();
+  const db = getDb();
+  let planos: PlanoTerapeutico[] = [];
+
+  if (db) {
+    try {
+      const rows = (await db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC').bind(pacienteId).all<any>()).results;
+      if (rows && rows.length > 0) {
+        for (const row of rows) {
+          const metaRows = (await db.prepare('SELECT * FROM plano_terapeutico_metas WHERE plano_id = ?').bind(row.id).all<any>()).results;
+          const metas: MetaPlanoTerapeutico[] = (metaRows || []).map((m: any) => ({
+            id: m.id,
+            plano_id: m.plano_id,
+            especialidade: m.especialidade,
+            quantidade_prevista: Number(m.quantidade_prevista || 1),
+            profissionais_designados: m.profissionais_designados ? JSON.parse(m.profissionais_designados) : [],
+            created_at: m.created_at,
+          }));
+
+          planos.push({
+            id: row.id,
+            paciente_id: row.paciente_id,
+            data_inicio: row.data_inicio,
+            data_fim: row.data_fim,
+            status: row.status,
+            observacoes: row.observacoes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            metas,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Erro ao listar planos do D1, buscando da memória:', e);
+    }
+  }
+
+  if (planos.length === 0) {
+    planos = Array.from(inMemoryPlanosTerapeuticos.values()).filter((p) => p.paciente_id === pacienteId);
+  }
+
+  // Buscar evoluções para cálculo de progresso
+  const evolucoes = Array.from(inMemoryEvolucoes.values()).filter((e) => e.paciente_id === pacienteId);
+  return planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes));
+}
+
+export async function obterPlanoTerapeuticoVigente(pacienteId: string, dataIso?: string): Promise<PlanoTerapeutico | null> {
+  const planos = await listarPlanosTerapeuticosPorPaciente(pacienteId);
+  if (planos.length === 0) return null;
+
+  const dataRef = (dataIso || new Date().toISOString()).split('T')[0]; // YYYY-MM-DD
+
+  // Primeiro busca plano ativo com vigência cobrindo a data
+  const planoVigente = planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim);
+  if (planoVigente) return planoVigente;
+
+  // Se não houver estritamente na data, retorna o plano ativo mais recente
+  return planos.find((p) => p.status === 'Ativo') || planos[0] || null;
+}
+
+export async function validarCheckInPlanoTerapeutico(params: {
+  pacienteId: string;
+  tipoProfissional: string;
+  checkIn?: string;
+  cooperadoId?: string;
+}): Promise<{
+  permitido: boolean;
+  motivo?: string;
+  cotaAtingida?: boolean;
+  plano?: PlanoTerapeutico;
+  meta?: MetaPlanoTerapeutico;
+  realizadas?: number;
+  previstas?: number;
+}> {
+  const { pacienteId, tipoProfissional, checkIn, cooperadoId } = params;
+  const plano = await obterPlanoTerapeuticoVigente(pacienteId, checkIn);
+
+  // Se o paciente não tiver plano terapêutico cadastrado, verifica cota mensal legada
+  if (!plano || !plano.metas || plano.metas.length === 0) {
+    const cotaLegada = await obterCotaVisitasPaciente(pacienteId);
+    if (cotaLegada.limite_visitas_mes > 0 && cotaLegada.visitas_realizadas_mes >= cotaLegada.limite_visitas_mes) {
+      return {
+        permitido: false,
+        cotaAtingida: true,
+        motivo: `Limite mensal de ${cotaLegada.limite_visitas_mes} visitas atingido para este paciente (${cotaLegada.visitas_realizadas_mes}/${cotaLegada.limite_visitas_mes}). Visita bloqueada pela gestão.`,
+        realizadas: cotaLegada.visitas_realizadas_mes,
+        previstas: cotaLegada.limite_visitas_mes,
+      };
+    }
+    return { permitido: true };
+  }
+
+  const espNormalizada = normalizarEspecialidade(tipoProfissional);
+  const meta = plano.metas.find((m) => normalizarEspecialidade(m.especialidade) === espNormalizada);
+
+  // 1. Especialidade não está contemplada no plano
+  if (!meta) {
+    return {
+      permitido: false,
+      cotaAtingida: false,
+      motivo: `A especialidade "${formatarNomeEspecialidade(tipoProfissional)}" não está contemplada no Plano Terapêutico vigente deste paciente.`,
+      plano,
+    };
+  }
+
+  // 2. Validação de Cooperado Designado (se houver restrição específica de cooperados escalados)
+  if (cooperadoId && meta.profissionais_designados && meta.profissionais_designados.length > 0) {
+    const cooperadoAutorizado = meta.profissionais_designados.some((p) => p.id === cooperadoId);
+    if (!cooperadoAutorizado) {
+      const nomes = meta.profissionais_designados.map((p) => p.nome).join(', ');
+      return {
+        permitido: false,
+        cotaAtingida: false,
+        motivo: `Você não está escalado no Plano Terapêutico deste paciente para ${formatarNomeEspecialidade(tipoProfissional)}. Profissionais designados: ${nomes}.`,
+        plano,
+        meta,
+      };
+    }
+  }
+
+  // 3. Validação Estrita de Cota da Especialidade (Ex: 5 atendimentos atingidos)
+  const realizadas = meta.quantidade_realizada || 0;
+  const previstas = meta.quantidade_prevista;
+
+  if (realizadas >= previstas) {
+    return {
+      permitido: false,
+      cotaAtingida: true,
+      motivo: `Limite atingido: O Plano Terapêutico deste paciente prevê ${previstas} atendimento(s) de ${formatarNomeEspecialidade(meta.especialidade)} e todos já foram realizados (${realizadas}/${previstas}). Novos atendimentos desta especialidade estão bloqueados pela gestão.`,
+      plano,
+      meta,
+      realizadas,
+      previstas,
+    };
+  }
+
+  return {
+    permitido: true,
+    plano,
+    meta,
+    realizadas,
+    previstas,
+  };
 }

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 
 import { gerarSeloAssinatura, obterSessaoCooperado } from '@/lib/sessao-cooperado';
+import { validarCheckInPlanoTerapeutico } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -43,7 +44,7 @@ export async function POST(request: NextRequest) {
           success: false,
           error: 'Banco de dados indisponível no servidor. Seus registros seguem salvos no aparelho.',
         },
-        { status: 503 },
+        { status: 503 }
       );
     }
 
@@ -59,29 +60,27 @@ export async function POST(request: NextRequest) {
         const evolucaoExistente = await db.prepare('SELECT id FROM evolucoes WHERE id = ?').bind(evolucaoId).first();
 
         if (!evolucaoExistente) {
-          // Verificar cota mensal do paciente no D1
-          const paciente: any = await db.prepare('SELECT limite_visitas_mes FROM pacientes WHERE id = ?').bind(pacienteId).first();
-          const limite = Number(paciente?.limite_visitas_mes || 0);
+          // Validação estrita por especialidade e período no Plano Terapêutico (ou cota legada)
+          const validacao = await validarCheckInPlanoTerapeutico({
+            pacienteId,
+            tipoProfissional: tipoProfissional || 'Tecnico_Enfermagem',
+            checkIn: checkIn || new Date().toISOString(),
+            cooperadoId: sessao.cooperadoId,
+          });
 
-          if (limite > 0) {
-            const mesIso = (checkIn || new Date().toISOString()).slice(0, 7);
-            const countRes: any = await db.prepare(
-              "SELECT COUNT(*) as total FROM evolucoes WHERE paciente_id = ? AND strftime('%Y-%m', check_in) = ?"
-            ).bind(pacienteId, mesIso).first();
-
-            const realizadas = Number(countRes?.total || 0);
-            if (realizadas >= limite) {
-              return NextResponse.json(
-                {
-                  success: false,
-                  error: `Limite mensal de ${limite} visitas atingido para este paciente (${realizadas}/${limite}). A visita foi bloqueada pela gestão da cooperativa.`,
-                  cotaAtingida: true,
-                  limite,
-                  realizadas,
-                },
-                { status: 403 }
-              );
-            }
+          if (!validacao.permitido) {
+            return NextResponse.json(
+              {
+                success: false,
+                error: validacao.motivo || 'Atendimento bloqueado pelas regras do Plano Terapêutico.',
+                cotaAtingida: !!validacao.cotaAtingida,
+                limite: validacao.previstas,
+                realizadas: validacao.realizadas,
+                meta: validacao.meta,
+                plano: validacao.plano,
+              },
+              { status: 403 }
+            );
           }
         }
 
