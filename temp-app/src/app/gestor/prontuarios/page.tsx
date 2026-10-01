@@ -187,6 +187,35 @@ export default function ProntuariosAuditDashboard() {
     }
   };
 
+  const handleAdmitirMarcosExemplo = async () => {
+    setSalvandoPaciente(true);
+    try {
+      await axios.post('/api/gestor/prontuarios/pacientes', {
+        id: 'p_marcos',
+        nome: 'Marcos Vinicius Santos',
+        cpf: '123.456.789-99',
+        data_nascimento: '1975-06-20',
+        endereco: 'Rua das Acácias, 780 - Morumbi, São Paulo - SP',
+        telefone: '(11) 98765-4321',
+        responsavel_nome: 'Fernanda Santos (Esposa)',
+        responsavel_telefone: '(11) 98765-1122',
+        diagnostico_principal: 'Reabilitação Neurológica Pós-TCE',
+        cid10: 'S06.9',
+        complexidade: 'Alta',
+        plano_saude: 'Bradesco Saúde Top',
+        numero_carteirinha: '11223344001',
+        warnings: ['Risco de Queda', 'Traqueostomia'],
+        status: 'Ativo',
+        limite_visitas_mes: 8,
+      });
+      await carregarDados();
+    } catch (err: any) {
+      alert(err.response?.data?.error || 'Erro ao criar paciente de exemplo.');
+    } finally {
+      setSalvandoPaciente(false);
+    }
+  };
+
   // Filtragem Pacientes
   const filteredPacientes = pacientes.filter((p) => {
     const term = search.toLowerCase();
@@ -495,12 +524,29 @@ export default function ProntuariosAuditDashboard() {
         ) : activeTab === 'pacientes' ? (
           /* TAB 1: PACIENTES GRID */
           filteredPacientes.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center shadow-sm">
+            <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-sm max-w-lg mx-auto">
               <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800">Nenhum paciente encontrado</h3>
-              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                Tente ajustar os filtros de busca ou cadastre um novo paciente para iniciar o acompanhamento.
+              <h3 className="text-base font-bold text-slate-800">Nenhum paciente cadastrado ainda</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto mb-6">
+                Para acessar a Dashboard Individual e gerenciar o Plano Terapêutico, admita um paciente ou carregue o paciente de exemplo para demonstração imediata.
               </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button
+                  onClick={() => setIsNovoPacienteOpen(true)}
+                  className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                >
+                  <Plus className="w-4 h-4" />
+                  + Admitir Paciente
+                </button>
+                <button
+                  onClick={handleAdmitirMarcosExemplo}
+                  disabled={salvandoPaciente}
+                  className="w-full sm:w-auto bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
+                >
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  Carregar Paciente Marcos (Exemplo)
+                </button>
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
