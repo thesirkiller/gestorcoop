@@ -55,27 +55,27 @@ export function middleware(request: NextRequest) {
     return naoAutenticado(request, 'token_missing');
   }
 
+  // Links diretos ou compartilhados de prontuário (/cooperado/prontuario/*)
+  // exigem autenticação prévia. Usuários deslogados são redirecionados para o login
+  // com parâmetro de retorno para abrirem o paciente desejado após identificação.
+  const ehProntuario = pathname.startsWith('/cooperado/prontuario');
+  if (ehProntuario && !ehPublicaDoCooperado) {
+    const temCookieCooperado = !!request.cookies.get(COOKIE_SESSAO_COOPERADO);
+    const temCookieGestor = !!request.cookies.get('gestor_session');
+    if (!temCookieCooperado && !temCookieGestor) {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
   // O prontuário roda dentro de um iframe cross-site do Bubble, onde o cookie
   // NÃO é enviado. A credencial de lá é um token assinado que o cliente guarda
   // e manda em `Authorization` — cabeçalho que só existe em chamada de API,
   // nunca na navegação de documento que carrega o iframe.
-  //
-  // Daí a assimetria abaixo, que é deliberada:
-  //
-  //   API  — exige credencial. É onde mora todo dado clínico. O middleware só
-  //          confere PRESENÇA; quem valida a assinatura e o prazo do token é
-  //          `exigirSessaoCooperado` na rota, como já fazia com o cookie.
-  //   PÁGINA — passa livre. É casca: todas as telas são `'use client'` e não
-  //          renderizam nada do paciente no servidor. Bloquear aqui impediria o
-  //          próprio carregamento do iframe, já que o token só chega ao cliente
-  //          depois que o documento carrega. Quem não tiver credencial recebe a
-  //          casca e é mandado ao login pelo layout, ao ver 401 em `/me`.
-  //
-  // Se um dia alguma tela de `/cooperado` passar a renderizar dado no servidor,
-  // esta decisão precisa ser revista JUNTO com ela.
   const ehApiCooperado = pathname.startsWith('/api/cooperado');
   if (ehApiCooperado && !ehPublicaDoCooperado) {
-    const temCookie = !!request.cookies.get(COOKIE_SESSAO_COOPERADO);
+    const temCookie = !!request.cookies.get(COOKIE_SESSAO_COOPERADO) || !!request.cookies.get('gestor_session');
     const temToken = !!request.headers.get('authorization');
     if (!temCookie && !temToken) {
       return naoAutenticado(request, 'cooperado_token_missing');

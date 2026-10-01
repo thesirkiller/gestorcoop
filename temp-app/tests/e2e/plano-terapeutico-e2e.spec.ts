@@ -183,7 +183,7 @@ test.describe('Dashboard Individual do Paciente & Gestão de Plano Terapêutico 
       route.fulfill({ json: { nome: 'Dr. Marcos Gestor' } })
     );
 
-    await page.route('**/api/gestor/cooperados', (route) =>
+    await page.route('**/api/gestor/cooperados*', (route) =>
       route.fulfill({
         json: {
           success: true,
@@ -233,6 +233,20 @@ test.describe('Dashboard Individual do Paciente & Gestão de Plano Terapêutico 
         json: { success: true, data: [mockPlanoTerapeuticoVigente] },
       });
     });
+
+    await page.route('**/api/gestor/prontuarios/pacientes/p_marcos/dashboard', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            paciente: mockPacienteMarcos,
+            planoVigente: mockPlanoTerapeuticoVigente,
+            planos: [mockPlanoTerapeuticoVigente],
+            equipamentos: [],
+          },
+        },
+      })
+    );
 
     await page.goto('http://localhost:3005/gestor/prontuarios/p_marcos');
 

@@ -693,17 +693,23 @@ export const bubbleApi = {
     const masked = digits.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4');
     const candidates = digits === masked ? [digits] : [masked, digits];
 
-    for (const value of candidates) {
-      const constraints = [
-        {
-          key: 'txt_CPF',
-          constraint_type: 'equals',
-          value,
-        },
-      ];
-      const response = await bubbleClient.get(`/obj/socioscooperados?constraints=${JSON.stringify(constraints)}`);
-      const found = response.data.response.results?.[0];
-      if (found) return found;
+    for (const key of ['txt_CPF', 'txt_cpf']) {
+      for (const value of candidates) {
+        try {
+          const constraints = [
+            {
+              key,
+              constraint_type: 'equals',
+              value,
+            },
+          ];
+          const response = await bubbleClient.get(`/obj/socioscooperados?constraints=${JSON.stringify(constraints)}`);
+          const found = response.data.response.results?.[0];
+          if (found) return found;
+        } catch {
+          // segue para a próxima tentativa de chave/formato
+        }
+      }
     }
     return null;
   },
@@ -1601,6 +1607,32 @@ export const bubbleApi = {
   async getUser(id: string): Promise<any> {
     const response = await bubbleClient.get(`/obj/user/${id}`);
     return response.data.response;
+  },
+
+  async findUserByCooperado(cooperadoId: string): Promise<any> {
+    const keys = ['fk_cooperado', 'fk_socio_cooperado'];
+    for (const key of keys) {
+      try {
+        const constraints = [
+          {
+            key,
+            constraint_type: 'equals',
+            value: cooperadoId,
+          },
+        ];
+        const response = await bubbleClient.get(`/obj/user?constraints=${JSON.stringify(constraints)}`);
+        const user = response.data?.response?.results?.[0];
+        if (user) return user;
+      } catch {
+        // prossegue para a próxima chave
+      }
+    }
+    return null;
+  },
+
+  async createUser(data: Record<string, unknown>): Promise<any> {
+    const response = await bubbleClient.post('/obj/user', data);
+    return response.data;
   },
 
   // Autenticação SSO

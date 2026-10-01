@@ -18,8 +18,11 @@ export async function fetchFullDataset<T>(
     throw new Error(`Failed to fetch initial page from ${url}`);
   }
 
-  const { results, remaining } = initialRes.data.data;
-  let accumulated: T[] = [...(results || [])];
+  const rawData = initialRes.data.data;
+  const isArray = Array.isArray(rawData);
+  const results = isArray ? rawData : (rawData?.results || []);
+  const remaining = isArray ? 0 : (rawData?.remaining || 0);
+  let accumulated: T[] = [...results];
 
   if (onUpdate) {
     onUpdate(accumulated);

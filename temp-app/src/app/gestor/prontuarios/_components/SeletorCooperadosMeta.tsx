@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, X, Check, Users, Filter, ChevronDown, UserCheck } from 'lucide-react';
+import { Search, X, Check, Users, Filter, ChevronDown, UserCheck, Plus } from 'lucide-react';
 
 export interface CooperadoItem {
   id: string;
@@ -211,6 +211,28 @@ export default function SeletorCooperadosMeta({
             </button>
           </div>
         </div>
+
+        {/* Sugestões Rápidas da Especialidade (Acesso Direto com 1 Clique) */}
+        {cooperadosFiltrados.length > 0 && !isOpen && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-1.5">
+            <span className="text-[10px] text-slate-500 font-medium">Sugeridos:</span>
+            {cooperadosFiltrados
+              .filter((c) => !profissionaisDesignados.some((d) => d.id === c.id))
+              .slice(0, 6)
+              .map((coop) => (
+                <button
+                  key={coop.id}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => onToggleCooperado(coop)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-white hover:bg-indigo-50 hover:text-indigo-700 text-slate-700 border border-slate-200 hover:border-indigo-300 rounded-lg text-xs font-medium transition-all shadow-2xs cursor-pointer active:scale-95"
+                >
+                  <Plus className="w-3 h-3 text-indigo-500 shrink-0" />
+                  <span>{coop.nome}</span>
+                </button>
+              ))}
+          </div>
+        )}
 
         {/* Dropdown de Resultados Pesquisáveis */}
         {isOpen && (

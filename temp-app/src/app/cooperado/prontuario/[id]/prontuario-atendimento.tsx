@@ -10,6 +10,7 @@ import {
   User, Check, X, Play, Square, Mic, Volume2, Clock, AlertTriangle, AlertCircle, FileText, CheckSquare, Pill, ChevronDown, Lock, RotateCw
 } from 'lucide-react';
 import axios from 'axios';
+import { fetchAutenticado } from '@/lib/api-cliente';
 
 /**
  * Onda sonora, isolada de propósito.
@@ -142,19 +143,50 @@ export default function ProntuarioAtendimento() {
 
   // Carregar dados na inicialização
   useEffect(() => {
-    // 1. Identificar cargo e profissional da sessão. O cache é preenchido pelo
-    // layout a partir de /api/cooperado/me; aqui ele serve só para rotular os
-    // registros otimistas gravados no IndexedDB antes da sincronização. A
-    // atribuição que vale é resolvida no servidor, pelo cookie.
+    // 1. Identificar cargo e profissional da sessão.
+    let sessaoPresente = false;
     if (typeof window !== 'undefined') {
       const savedSession = window.localStorage.getItem('cooperado_session');
       if (savedSession) {
         try {
           const s = JSON.parse(savedSession);
-          setSessionCargo(s.cargo);
-          if (s.id) setCooperadoId(s.id);
+          if (s && s.id) {
+            sessaoPresente = true;
+            setSessionCargo(s.cargo);
+            setCooperadoId(s.id);
+          }
         } catch {}
       }
+    }
+
+    // Se estiver deslogado, valida com o servidor antes de liberar a tela
+    if (typeof window !== 'undefined' && !sessaoPresente) {
+      fetchAutenticado('/api/cooperado/me')
+        .then(async (res) => {
+          if (!res.ok) {
+            if (navigator.onLine) {
+              const redirectPath = window.location.pathname + window.location.search;
+              window.location.href = `/login?redirect=${encodeURIComponent(redirectPath)}`;
+            }
+            return;
+          }
+          const dados = await res.json();
+          const coopId = dados?.cooperadoId || dados?.id;
+          if (coopId) {
+            setCooperadoId(coopId);
+            window.localStorage.setItem(
+              'cooperado_session',
+              JSON.stringify({
+                id: coopId,
+                nome: dados.nome,
+                cargo: dados.cargo || 'Tecnico_Enfermagem',
+              })
+            );
+          }
+        })
+        .catch(() => {
+          // em caso de indisponibilidade momentânea da rede, mantém fluxo local
+        });
     }
 
     // 2. Monitorar conectividade
@@ -177,10 +209,10 @@ export default function ProntuarioAtendimento() {
       if (p) {
         setPaciente(p);
       } else {
-        // Mock fallback se o prefetch não tiver sido feito
+        // Fallback rápido com persistência no IndexedDB local
         const mockP: PacienteLocal = {
           id: pacienteId,
-          nome: pacienteId === '1' ? 'João da Silva' : pacienteId === '2' ? 'Maria de Oliveira' : 'Paciente Desconhecido',
+          nome: pacienteId === '1' || pacienteId === 'p_1' ? 'João da Silva' : pacienteId === '2' ? 'Maria de Oliveira' : 'Paciente em Atendimento',
           cpf: '123.456.789-00',
           data_nascimento: '12/04/1958',
           endereco: 'Rua das Palmeiras, 102 - Centro',
