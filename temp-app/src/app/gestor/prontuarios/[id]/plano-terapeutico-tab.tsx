@@ -10,9 +10,6 @@ import {
   CheckCircle2,
   AlertTriangle,
   Users,
-  Shield,
-  Clock,
-  Sparkles,
   Save,
   X,
   Loader2,
@@ -554,7 +551,7 @@ export default function PlanoTerapeuticoTab({
           })
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500">
-            Nenhum plano terapêutico registrado ainda. Clique em "Novo Plano Terapêutico" para criar o primeiro.
+            Nenhum plano terapêutico registrado ainda. Clique em &quot;Novo Plano Terapêutico&quot; para criar o primeiro.
           </div>
         )}
       </div>

@@ -6,15 +6,12 @@ import axios from 'axios';
 import {
   FileText,
   Search,
-  Filter,
   Download,
   Eye,
   Calendar,
-  Clock,
   User,
   Plus,
   Activity,
-  Heart,
   Pill,
   CheckCircle2,
   AlertTriangle,
@@ -28,8 +25,6 @@ import {
   Building,
   Trash2,
   Check,
-  Layers,
-  ArrowRight,
   ShieldAlert,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -123,9 +118,6 @@ export default function ProntuariosAuditDashboard() {
   const [search, setSearch] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedComplexidade, setSelectedComplexidade] = useState('');
-  const [selectedTurno, setSelectedTurno] = useState('');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
 
   // Dados do Bubble & Cooperados para Admissão
   const [pacientesBubble, setPacientesBubble] = useState<any[]>([]);
@@ -174,6 +166,7 @@ export default function ProntuariosAuditDashboard() {
   useEffect(() => {
     carregarDados();
     carregarBasesAuxiliares();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSpecialty, selectedComplexidade]);
 
   const carregarDados = async () => {
@@ -416,17 +409,7 @@ export default function ProntuariosAuditDashboard() {
       (ev.paciente_cpf || '').includes(term) ||
       (ev.profissional_nome || '').toLowerCase().includes(term);
 
-    const matchTurno = selectedTurno ? ev.turno === selectedTurno : true;
-
-    let matchDates = true;
-    if (startDate) {
-      matchDates = matchDates && new Date(ev.check_in) >= new Date(startDate);
-    }
-    if (endDate) {
-      matchDates = matchDates && new Date(ev.check_in) <= new Date(endDate + 'T23:59:59');
-    }
-
-    return matchSearch && matchTurno && matchDates;
+    return matchSearch;
   });
 
   // Métricas

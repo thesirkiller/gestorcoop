@@ -8,20 +8,17 @@ import {
   CheckCircle2,
   Clock,
   Activity,
-  Layers,
   FileText,
   UserCheck,
   ChevronRight,
-  TrendingUp,
   Stethoscope,
   Wrench,
-  ShieldAlert,
   ShieldCheck,
 } from 'lucide-react';
 import { formatarNomeEspecialidade, PlanoTerapeutico } from '@/lib/tipos-clinicos';
 
 interface DashboardGeralProps {
-  paciente: any;
+  paciente?: any;
   planoVigente: PlanoTerapeutico | null;
   equipamentos: any[];
   evolucoes: any[];
@@ -31,7 +28,6 @@ interface DashboardGeralProps {
 }
 
 export default function DashboardGeral({
-  paciente,
   planoVigente,
   equipamentos,
   evolucoes,
