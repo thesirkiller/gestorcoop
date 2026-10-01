@@ -1,4 +1,4 @@
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useState, useEffect } from 'react';
@@ -8,12 +8,10 @@ import {
   Search,
   Filter,
   Download,
-  ArrowRight,
   Eye,
   Calendar,
   Clock,
   User,
-  ShieldAlert,
   Plus,
   Activity,
   Heart,
@@ -27,8 +25,16 @@ import {
   Stethoscope,
   X,
   Loader2,
+  Building,
+  Trash2,
+  Check,
+  Layers,
+  ArrowRight,
+  ShieldAlert,
 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { formatarNomeEspecialidade, EspecialidadeProfissional } from '@/lib/tipos-clinicos';
 
 interface PacienteSummary {
   id: string;
@@ -52,6 +58,17 @@ interface PacienteSummary {
   total_prescricoes_ativas?: number;
   ultima_evolucao_data?: string;
   ultimo_profissional_nome?: string;
+  origem?: string;
+  tem_plano_terapeutico?: boolean;
+  plano_vigente?: {
+    id: string;
+    data_inicio: string;
+    data_fim: string;
+    total_previsto?: number;
+    total_realizado?: number;
+    total_restante?: number;
+    tem_pendencias?: boolean;
+  };
   ultimo_sinal_vital?: {
     pa_sistolica?: number;
     pa_diastolica?: number;
@@ -84,7 +101,21 @@ interface Evolution {
   aprazamentos?: any[];
 }
 
+const ESPECIALIDADES_DISPONIVEIS: { valor: EspecialidadeProfissional; rotulo: string }[] = [
+  { valor: 'Tecnico_Enfermagem', rotulo: 'Técnico de Enfermagem' },
+  { valor: 'Enfermeiro', rotulo: 'Enfermeiro' },
+  { valor: 'Medico', rotulo: 'Médico' },
+  { valor: 'Dentista', rotulo: 'Dentista' },
+  { valor: 'Fisioterapeuta', rotulo: 'Fisioterapeuta' },
+  { valor: 'Fonoaudiologo', rotulo: 'Fonoaudiólogo' },
+  { valor: 'Nutricionista', rotulo: 'Nutricionista' },
+  { valor: 'Psicologo', rotulo: 'Psicólogo' },
+  { valor: 'Terapeuta_Ocupacional', rotulo: 'Terapeuta Ocupacional' },
+];
+
 export default function ProntuariosAuditDashboard() {
+  const router = useRouter();
+
   const [activeTab, setActiveTab] = useState<'pacientes' | 'evolucoes'>('pacientes');
   const [pacientes, setPacientes] = useState<PacienteSummary[]>([]);
   const [evolutions, setEvolutions] = useState<Evolution[]>([]);
@@ -96,10 +127,22 @@ export default function ProntuariosAuditDashboard() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
-  // Modal Novo Paciente
+  // Dados do Bubble & Cooperados para Admissão
+  const [pacientesBubble, setPacientesBubble] = useState<any[]>([]);
+  const [cooperados, setCooperados] = useState<any[]>([]);
+
+  // Modal Novo Paciente & Início de Plano Terapêutico
   const [isNovoPacienteOpen, setIsNovoPacienteOpen] = useState(false);
   const [salvandoPaciente, setSalvandoPaciente] = useState(false);
+  const [modoOrigemModal, setModoOrigemModal] = useState<'bubble' | 'manual'>('bubble');
+  const [buscaBubbleModal, setBuscaBubbleModal] = useState('');
+  const [pacienteBubbleSelecionado, setPacienteBubbleSelecionado] = useState<any | null>(null);
+
+  const hojeIso = new Date().toISOString().split('T')[0];
+  const proximoMesIso = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+
   const [novoPacienteForm, setNovoPacienteForm] = useState({
+    id: '',
     nome: '',
     cpf: '',
     data_nascimento: '',
@@ -107,17 +150,30 @@ export default function ProntuariosAuditDashboard() {
     telefone: '',
     responsavel_nome: '',
     responsavel_telefone: '',
-    diagnostico_principal: '',
+    diagnostico_principal: 'Reabilitação e Acompanhamento Domiciliar',
     cid10: '',
-    complexidade: 'Média',
+    complexidade: 'Média' as 'Baixa' | 'Média' | 'Alta',
     plano_saude: '',
     numero_carteirinha: '',
-    limite_visitas_mes: '13',
     warnings: '',
+    limite_visitas_mes: 13,
+  });
+
+  // Plano Terapêutico Dinâmico
+  const [planoDinamico, setPlanoDinamico] = useState({
+    data_inicio: hojeIso,
+    data_fim: proximoMesIso,
+    observacoes: 'Assistência domiciliar multiprofissional com monitoramento de metas.',
+    metas: [
+      { especialidade: 'Tecnico_Enfermagem' as EspecialidadeProfissional, quantidade_prevista: 5, profissionais_designados: [] as any[] },
+      { especialidade: 'Medico' as EspecialidadeProfissional, quantidade_prevista: 1, profissionais_designados: [] as any[] },
+      { especialidade: 'Dentista' as EspecialidadeProfissional, quantidade_prevista: 2, profissionais_designados: [] as any[] },
+    ],
   });
 
   useEffect(() => {
     carregarDados();
+    carregarBasesAuxiliares();
   }, [selectedSpecialty, selectedComplexidade]);
 
   const carregarDados = async () => {
@@ -130,10 +186,10 @@ export default function ProntuariosAuditDashboard() {
         }),
       ]);
 
-      if (resPacientes.data.success) {
+      if (resPacientes.data?.success) {
         setPacientes(resPacientes.data.data || []);
       }
-      if (resEvolucoes.data.success) {
+      if (resEvolucoes.data?.success) {
         setEvolutions(resEvolucoes.data.results || []);
       }
     } catch (e) {
@@ -143,10 +199,154 @@ export default function ProntuariosAuditDashboard() {
     }
   };
 
-  const handleSalvarNovoPaciente = async (e: React.FormEvent) => {
+  const carregarBasesAuxiliares = async () => {
+    try {
+      const [resBubble, resCoop] = await Promise.all([
+        axios.get('/api/gestor/pacientes').catch(() => ({ data: { data: [] } })),
+        axios.get('/api/gestor/cooperados').catch(() => ({ data: { data: [] } })),
+      ]);
+
+      if (resBubble.data?.data && Array.isArray(resBubble.data.data)) {
+        setPacientesBubble(resBubble.data.data);
+      }
+      if (resCoop.data?.data && Array.isArray(resCoop.data.data)) {
+        const coops = resCoop.data.data.map((c: any) => ({
+          id: c._id || c.id,
+          nome: c.txt_nome || c.nome || 'Cooperado',
+          cargo: c.txt_profissao || c.cargo || '',
+        }));
+        setCooperados(coops);
+      } else {
+        // Fallback para dev local
+        setCooperados([
+          { id: 'coop_tec_carlos', nome: 'Téc. Carlos Enfermagem', cargo: 'Tecnico_Enfermagem' },
+          { id: 'coop_tec_roberto', nome: 'Téc. Roberto Soares', cargo: 'Tecnico_Enfermagem' },
+          { id: 'coop_med_marcos', nome: 'Dr. Marcos Mendes', cargo: 'Medico' },
+          { id: 'coop_dent_camila', nome: 'Dra. Camila Odonto', cargo: 'Dentista' },
+        ]);
+      }
+    } catch (e) {
+      console.warn('Erro ao carregar bases do Bubble e cooperados:', e);
+    }
+  };
+
+  const abrirModalAdmissaoComPaciente = (pacienteBubble?: any) => {
+    if (pacienteBubble) {
+      setModoOrigemModal('bubble');
+      setPacienteBubbleSelecionado(pacienteBubble);
+      setNovoPacienteForm({
+        id: pacienteBubble._id || pacienteBubble.id,
+        nome: pacienteBubble.txt_nome || pacienteBubble.nome || '',
+        cpf: pacienteBubble.txt_cpf || pacienteBubble.cpf || '',
+        data_nascimento: pacienteBubble.data_nascimento || '',
+        endereco: pacienteBubble.txt_endereco || pacienteBubble.endereco || '',
+        telefone: pacienteBubble.txt_whatsapp || pacienteBubble.telefone || '',
+        responsavel_nome: pacienteBubble.responsavel_nome || '',
+        responsavel_telefone: pacienteBubble.responsavel_telefone || '',
+        diagnostico_principal: pacienteBubble.diagnostico_principal || 'Acompanhamento Domiciliar',
+        cid10: pacienteBubble.cid10 || '',
+        complexidade: pacienteBubble.complexidade || 'Média',
+        plano_saude: pacienteBubble.plano_saude || '',
+        numero_carteirinha: pacienteBubble.numero_carteirinha || '',
+        warnings: Array.isArray(pacienteBubble.warnings) ? pacienteBubble.warnings.join('\n') : '',
+        limite_visitas_mes: pacienteBubble.limite_visitas_mes || 13,
+      });
+    } else {
+      setPacienteBubbleSelecionado(null);
+      setNovoPacienteForm({
+        id: '',
+        nome: '',
+        cpf: '',
+        data_nascimento: '',
+        endereco: '',
+        telefone: '',
+        responsavel_nome: '',
+        responsavel_telefone: '',
+        diagnostico_principal: 'Reabilitação Neurológica / Cuidados Domiciliares',
+        cid10: '',
+        complexidade: 'Média',
+        plano_saude: '',
+        numero_carteirinha: '',
+        warnings: '',
+        limite_visitas_mes: 13,
+      });
+    }
+
+    setPlanoDinamico({
+      data_inicio: hojeIso,
+      data_fim: proximoMesIso,
+      observacoes: 'Assistência domiciliar multiprofissional.',
+      metas: [
+        { especialidade: 'Tecnico_Enfermagem', quantidade_prevista: 5, profissionais_designados: [] },
+        { especialidade: 'Medico', quantidade_prevista: 1, profissionais_designados: [] },
+        { especialidade: 'Dentista', quantidade_prevista: 2, profissionais_designados: [] },
+      ],
+    });
+
+    setIsNovoPacienteOpen(true);
+  };
+
+  const selecionarPacienteDoBubble = (pac: any) => {
+    setPacienteBubbleSelecionado(pac);
+    setNovoPacienteForm({
+      ...novoPacienteForm,
+      id: pac._id || pac.id,
+      nome: pac.txt_nome || pac.nome || '',
+      cpf: pac.txt_cpf || pac.cpf || '',
+      endereco: pac.txt_endereco || pac.endereco || '',
+      telefone: pac.txt_whatsapp || pac.telefone || '',
+      diagnostico_principal: novoPacienteForm.diagnostico_principal || 'Acompanhamento Multiprofissional',
+    });
+  };
+
+  // Manipulação Dinâmica de Metas
+  const adicionarMetaAoPlano = () => {
+    setPlanoDinamico({
+      ...planoDinamico,
+      metas: [
+        ...planoDinamico.metas,
+        { especialidade: 'Fisioterapeuta', quantidade_prevista: 2, profissionais_designados: [] },
+      ],
+    });
+  };
+
+  const removerMetaDoPlano = (index: number) => {
+    setPlanoDinamico({
+      ...planoDinamico,
+      metas: planoDinamico.metas.filter((_, i) => i !== index),
+    });
+  };
+
+  const atualizarMetaDoPlano = (index: number, campo: string, valor: any) => {
+    const novas = [...planoDinamico.metas];
+    novas[index] = { ...novas[index], [campo]: valor };
+    setPlanoDinamico({ ...planoDinamico, metas: novas });
+  };
+
+  const toggleCooperadoNaMeta = (metaIndex: number, coop: { id: string; nome: string }) => {
+    const metaAtual = planoDinamico.metas[metaIndex];
+    const designados = metaAtual.profissionais_designados || [];
+    const jaExiste = designados.some((d: any) => d.id === coop.id);
+
+    let novosDesignados;
+    if (jaExiste) {
+      novosDesignados = designados.filter((d: any) => d.id !== coop.id);
+    } else {
+      novosDesignados = [...designados, coop];
+    }
+
+    atualizarMetaDoPlano(metaIndex, 'profissionais_designados', novosDesignados);
+  };
+
+  const handleSalvarNovoPacienteEPlano = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novoPacienteForm.nome || !novoPacienteForm.cpf) {
-      alert('Nome e CPF são obrigatórios.');
+    if (!novoPacienteForm.nome) {
+      alert('Selecione um paciente existente ou informe o nome do paciente.');
+      return;
+    }
+
+    if (planoDinamico.metas.length === 0) {
+      alert('O Plano Terapêutico precisa conter ao menos uma especialidade.');
       return;
     }
 
@@ -156,61 +356,30 @@ export default function ProntuariosAuditDashboard() {
         ? novoPacienteForm.warnings.split('\n').filter((w) => w.trim().length > 0)
         : [];
 
-      await axios.post('/api/gestor/prontuarios/pacientes', {
+      const payload = {
         ...novoPacienteForm,
-        limite_visitas_mes: Number(novoPacienteForm.limite_visitas_mes) || 0,
+        limite_visitas_mes: Number(novoPacienteForm.limite_visitas_mes || planoDinamico.metas[0]?.quantidade_prevista || 13),
         warnings: warningsArray,
-      });
+        plano_terapeutico: {
+          data_inicio: planoDinamico.data_inicio,
+          data_fim: planoDinamico.data_fim,
+          observacoes: planoDinamico.observacoes,
+          metas: planoDinamico.metas,
+        },
+      };
 
-      setIsNovoPacienteOpen(false);
-      setNovoPacienteForm({
-        nome: '',
-        cpf: '',
-        data_nascimento: '',
-        endereco: '',
-        telefone: '',
-        responsavel_nome: '',
-        responsavel_telefone: '',
-        diagnostico_principal: '',
-        cid10: '',
-        complexidade: 'Média',
-        plano_saude: '',
-        numero_carteirinha: '',
-        limite_visitas_mes: '13',
-        warnings: '',
-      });
-      await carregarDados();
+      const res = await axios.post('/api/gestor/prontuarios/pacientes', payload);
+      if (res.data?.success) {
+        setIsNovoPacienteOpen(false);
+        const pacienteId = res.data.data?.id || novoPacienteForm.id;
+        // Redireciona diretamente para a Dashboard Individual do Paciente com plano ativo
+        router.push(`/gestor/prontuarios/${pacienteId}`);
+      } else {
+        alert(res.data?.error || 'Erro ao admitir paciente.');
+      }
     } catch (err: any) {
-      alert(err.response?.data?.error || 'Erro ao cadastrar paciente.');
-    } finally {
-      setSalvandoPaciente(false);
-    }
-  };
-
-  const handleAdmitirMarcosExemplo = async () => {
-    setSalvandoPaciente(true);
-    try {
-      await axios.post('/api/gestor/prontuarios/pacientes', {
-        id: 'p_marcos',
-        nome: 'Marcos Vinicius Santos',
-        cpf: '123.456.789-99',
-        data_nascimento: '1975-06-20',
-        endereco: 'Rua das Acácias, 780 - Morumbi, São Paulo - SP',
-        telefone: '(11) 98765-4321',
-        responsavel_nome: 'Fernanda Santos (Esposa)',
-        responsavel_telefone: '(11) 98765-1122',
-        diagnostico_principal: 'Reabilitação Neurológica Pós-TCE',
-        cid10: 'S06.9',
-        complexidade: 'Alta',
-        plano_saude: 'Bradesco Saúde Top',
-        numero_carteirinha: '11223344001',
-        warnings: ['Risco de Queda', 'Traqueostomia'],
-        status: 'Ativo',
-        limite_visitas_mes: 8,
-      });
-      await carregarDados();
-    } catch (err: any) {
-      alert(err.response?.data?.error || 'Erro ao criar paciente de exemplo.');
+      console.error('Erro ao admitir paciente:', err);
+      alert(err.response?.data?.error || 'Erro de comunicação ao salvar admissão e plano.');
     } finally {
       setSalvandoPaciente(false);
     }
@@ -220,13 +389,23 @@ export default function ProntuariosAuditDashboard() {
   const filteredPacientes = pacientes.filter((p) => {
     const term = search.toLowerCase();
     const matchSearch =
-      p.nome.toLowerCase().includes(term) ||
-      p.cpf.includes(term) ||
-      (p.diagnostico_principal || '').toLowerCase().includes(term) ||
-      (p.cid10 || '').toLowerCase().includes(term);
+      (p.nome && p.nome.toLowerCase().includes(term)) ||
+      (p.cpf && p.cpf.includes(term)) ||
+      (p.diagnostico_principal && p.diagnostico_principal.toLowerCase().includes(term)) ||
+      (p.cid10 && p.cid10.toLowerCase().includes(term));
 
     const matchComp = selectedComplexidade ? p.complexidade === selectedComplexidade : true;
     return matchSearch && matchComp;
+  });
+
+  // Filtragem Pacientes Bubble no Modal
+  const bubbleFiltradosModal = pacientesBubble.filter((b) => {
+    const t = buscaBubbleModal.toLowerCase();
+    return (
+      (b.txt_nome && b.txt_nome.toLowerCase().includes(t)) ||
+      (b.txt_endereco && b.txt_endereco.toLowerCase().includes(t)) ||
+      (b.txt_cpf && b.txt_cpf.includes(t))
+    );
   });
 
   // Filtragem Evoluções
@@ -277,71 +456,70 @@ export default function ProntuariosAuditDashboard() {
       const durationMin =
         ev.check_out && ev.check_in
           ? Math.round(
-              (new Date(ev.check_out).getTime() - new Date(ev.check_in).getTime()) / 60000
+              (new Date(ev.check_out).getTime() - new Date(ev.check_in).getTime()) / (1000 * 60)
             )
-          : 0;
+          : '--';
 
       const row = [
         ev.id,
-        ev.paciente_nome || 'N/A',
-        ev.paciente_cpf || 'N/A',
-        ev.profissional_nome || 'Profissional',
-        ev.tipo_profissional,
-        ev.turno || 'N/A',
-        ev.check_in,
-        ev.check_out,
+        `"${ev.paciente_nome || ''}"`,
+        `"${ev.paciente_cpf || ''}"`,
+        `"${ev.profissional_nome || ''}"`,
+        `"${ev.tipo_profissional || ''}"`,
+        `"${ev.turno || ''}"`,
+        ev.check_in || '',
+        ev.check_out || '',
         durationMin,
-        ev.status,
-        ev.data_assinatura || 'N/A',
-      ].map((val) => `"${val}"`).join(',');
-
-      csvContent += row + '\n';
+        ev.status || '',
+        ev.data_assinatura || '',
+      ];
+      csvContent += row.join(',') + '\n';
     });
 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `prontuarios_auditoria_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `auditoria_prontuarios_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-6 lg:p-8">
+    <div className="min-h-screen bg-slate-50 text-slate-900 p-6 lg:p-8 space-y-6">
       {/* Top Header */}
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-indigo-200">
+            <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2.5 py-0.5 rounded-full">
               Módulo Clínico & EHR
             </span>
-            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-emerald-600" />
+            <span className="bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+              <Sparkles className="w-3 h-3" />
               IA SOAP & Transcrição
             </span>
           </div>
-          <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-3">
-            <Stethoscope className="w-8 h-8 text-indigo-600" />
+          <h1 className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+            <Stethoscope className="w-7 h-7 text-indigo-600" />
             Gestão de Prontuários & Pacientes
           </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Controle integral do cuidado domiciliar, evoluções clínicas, sinais vitais, prescrições e auditoria.
+          <p className="text-slate-500 text-xs lg:text-sm mt-0.5">
+            Controle integral do cuidado domiciliar, plano terapêutico multiprofissional, evoluções clínicas e auditoria.
           </p>
         </div>
 
         <div className="flex items-center gap-3">
           <Link
             href="/gestor/prontuarios/auditoria"
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-all flex items-center gap-2"
+            className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-sm flex items-center gap-2"
           >
-            <ShieldAlert className="w-4 h-4 text-amber-600" />
+            <ShieldAlert className="w-4 h-4 text-amber-500" />
             Painel de Auditoria
           </Link>
 
           <button
-            onClick={() => setIsNovoPacienteOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-lg shadow-indigo-600/20 transition-all flex items-center gap-2"
+            onClick={() => abrirModalAdmissaoComPaciente()}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-md flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             Admitir Paciente
@@ -349,109 +527,96 @@ export default function ProntuariosAuditDashboard() {
         </div>
       </div>
 
-      {/* Metric Cards */}
-      <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* KPI Cards */}
+      <div className="max-w-7xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Pacientes em Atendimento</p>
-            <p className="text-2xl font-black text-slate-900 mt-1">{totalPacientesAtivos}</p>
-            <p className="text-xs text-indigo-600 font-semibold mt-1">Cuidado domiciliar ativo</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pacientes em Atendimento</p>
+            <h3 className="text-2xl font-black text-slate-900 mt-1">{totalPacientesAtivos}</h3>
+            <p className="text-[11px] text-indigo-600 font-semibold mt-1">Cuidado domiciliar ativo</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-2xl">
             <Users className="w-6 h-6" />
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Evoluções Registradas</p>
-            <p className="text-2xl font-black text-slate-900 mt-1">{totalAtendimentos}</p>
-            <p className="text-xs text-emerald-600 font-semibold mt-1">100% assinadas digitalmente</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Evoluções Registradas</p>
+            <h3 className="text-2xl font-black text-slate-900 mt-1">{totalAtendimentos}</h3>
+            <p className="text-[11px] text-emerald-600 font-semibold mt-1">100% assinadas digitalmente</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
             <FileText className="w-6 h-6" />
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Conformidade Medicamentosa</p>
-            <p className="text-2xl font-black text-slate-900 mt-1">{complianceRate}%</p>
-            <p className="text-xs text-slate-500 font-semibold mt-1">{totalAdministrados} de {totalAprazados} doses</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Conformidade Medicamentosa</p>
+            <h3 className="text-2xl font-black text-slate-900 mt-1">{complianceRate}%</h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-1">
+              {totalAdministrados} de {totalAprazados} doses
+            </p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
+          <div className="p-3 bg-amber-50 text-amber-600 rounded-2xl">
             <Pill className="w-6 h-6" />
           </div>
         </div>
 
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Monitoramento Clínico</p>
-            <p className="text-2xl font-black text-slate-900 mt-1">Sinais em Dia</p>
-            <p className="text-xs text-indigo-600 font-semibold mt-1">Triagem de alerta contínua</p>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Monitoramento Clínico</p>
+            <h3 className="text-xl font-black text-slate-900 mt-1">Sinais em Dia</h3>
+            <p className="text-[11px] text-slate-500 font-medium mt-1">Triagem de alerta contínua</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600">
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl">
             <Activity className="w-6 h-6" />
           </div>
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="max-w-7xl mx-auto flex items-center justify-between border-b border-slate-200 mb-6 pb-2">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setActiveTab('pacientes')}
-            className={`pb-3 px-2 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
-              activeTab === 'pacientes'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            Pacientes & Prontuários ({pacientes.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('evolucoes')}
-            className={`pb-3 px-2 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
-              activeTab === 'evolucoes'
-                ? 'border-indigo-600 text-indigo-600'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <ClipboardList className="w-4 h-4" />
-            Linha do Tempo de Evoluções ({evolutions.length})
-          </button>
-        </div>
+      {/* Tabs */}
+      <div className="max-w-7xl mx-auto border-b border-slate-200 flex items-center gap-6">
+        <button
+          onClick={() => setActiveTab('pacientes')}
+          className={`pb-3 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
+            activeTab === 'pacientes'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Pacientes & Prontuários ({pacientes.length})
+        </button>
 
-        {activeTab === 'evolucoes' && (
-          <button
-            onClick={exportToCSV}
-            className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-          >
-            <Download className="w-3.5 h-3.5 text-indigo-600" />
-            Exportar CSV
-          </button>
-        )}
+        <button
+          onClick={() => setActiveTab('evolucoes')}
+          className={`pb-3 font-bold text-sm transition-all border-b-2 flex items-center gap-2 ${
+            activeTab === 'evolucoes'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          Linha do Tempo de Evoluções ({filteredEvolutions.length})
+        </button>
       </div>
 
-      {/* Filter Bar */}
-      <div className="max-w-7xl mx-auto bg-white p-4 rounded-2xl border border-slate-200 shadow-sm mb-6 flex flex-col md:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full md:w-96">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+      {/* Filter & Search Bar */}
+      <div className="max-w-7xl mx-auto bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="flex-1 w-full relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
           <input
             type="text"
-            placeholder={
-              activeTab === 'pacientes'
-                ? 'Buscar por nome, CPF, diagnóstico ou CID-10...'
-                : 'Buscar evolução por paciente, CPF ou profissional...'
-            }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-800"
+            placeholder="Buscar por nome, CPF, diagnóstico ou CID-10..."
+            className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs md:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
           {activeTab === 'pacientes' ? (
             <select
               value={selectedComplexidade}
@@ -459,9 +624,9 @@ export default function ProntuariosAuditDashboard() {
               className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
             >
               <option value="">Todas as Complexidades</option>
-              <option value="Alta">Alta Complexidade</option>
-              <option value="Média">Média Complexidade</option>
               <option value="Baixa">Baixa Complexidade</option>
+              <option value="Média">Média Complexidade</option>
+              <option value="Alta">Alta Complexidade (UTI Domiciliar)</option>
             </select>
           ) : (
             <>
@@ -471,80 +636,55 @@ export default function ProntuariosAuditDashboard() {
                 className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
               >
                 <option value="">Todas as Especialidades</option>
-                <option value="Tecnico_Enfermagem">Téc. Enfermagem</option>
+                <option value="Tecnico_Enfermagem">Técnico de Enfermagem</option>
                 <option value="Enfermeiro">Enfermeiro</option>
                 <option value="Medico">Médico</option>
+                <option value="Dentista">Dentista</option>
                 <option value="Fisioterapeuta">Fisioterapeuta</option>
-                <option value="Fonoaudiologo">Fonoaudiólogo</option>
               </select>
 
-              <select
-                value={selectedTurno}
-                onChange={(e) => setSelectedTurno(e.target.value)}
-                className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-3 py-2 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              <button
+                onClick={exportToCSV}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
               >
-                <option value="">Todos os Turnos</option>
-                <option value="Diurno">Diurno</option>
-                <option value="Noturno">Noturno</option>
-                <option value="24h">24h</option>
-                <option value="Visita Pontual">Visita Pontual</option>
-              </select>
+                <Download className="w-3.5 h-3.5" />
+                Exportar CSV
+              </button>
             </>
           )}
         </div>
       </div>
 
-      {/* Main Content */}
+      {/* Content Grid */}
       <div className="max-w-7xl mx-auto">
         {loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[1, 2, 3, 4, 5, 6].map((n) => (
-              <div key={n} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm animate-pulse space-y-4">
-                <div className="flex justify-between items-start">
-                  <div className="space-y-2">
-                    <div className="h-4 w-24 bg-slate-200 rounded-md"></div>
-                    <div className="h-5 w-44 bg-slate-200 rounded-lg"></div>
-                    <div className="h-3 w-32 bg-slate-100 rounded"></div>
-                  </div>
-                  <div className="h-5 w-16 bg-slate-200 rounded-full"></div>
-                </div>
-                <div className="h-10 bg-slate-100 rounded-xl"></div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="h-8 bg-slate-100 rounded-lg"></div>
-                  <div className="h-8 bg-slate-100 rounded-lg"></div>
-                  <div className="h-8 bg-slate-100 rounded-lg"></div>
-                </div>
-                <div className="pt-3 border-t border-slate-100 flex justify-between">
-                  <div className="h-4 w-28 bg-slate-100 rounded"></div>
-                  <div className="h-6 w-24 bg-slate-200 rounded-xl"></div>
-                </div>
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm animate-pulse space-y-4">
+                <div className="h-5 bg-slate-200 rounded w-1/3"></div>
+                <div className="h-7 bg-slate-200 rounded w-2/3"></div>
+                <div className="h-16 bg-slate-100 rounded-xl"></div>
               </div>
             ))}
           </div>
         ) : activeTab === 'pacientes' ? (
           /* TAB 1: PACIENTES GRID */
           filteredPacientes.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-slate-200 p-10 text-center shadow-sm max-w-lg mx-auto">
-              <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <h3 className="text-base font-bold text-slate-800">Nenhum paciente cadastrado ainda</h3>
+            <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center shadow-sm max-w-lg mx-auto">
+              <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <Building className="w-8 h-8" />
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900">Base Integrada do GestorCoop (Bubble)</h3>
               <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto mb-6">
-                Para acessar a Dashboard Individual e gerenciar o Plano Terapêutico, admita um paciente ou carregue o paciente de exemplo para demonstração imediata.
+                Selecione um paciente que já existe na base do GestorCoop para admiti-lo e iniciar o Plano Terapêutico dinâmico.
               </p>
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
                 <button
-                  onClick={() => setIsNovoPacienteOpen(true)}
-                  className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
+                  onClick={() => abrirModalAdmissaoComPaciente()}
+                  className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-5 py-2.5 rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
                 >
                   <Plus className="w-4 h-4" />
-                  + Admitir Paciente
-                </button>
-                <button
-                  onClick={handleAdmitirMarcosExemplo}
-                  disabled={salvandoPaciente}
-                  className="w-full sm:w-auto bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold text-xs px-4 py-2.5 rounded-xl transition-all flex items-center justify-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4 text-indigo-600" />
-                  Carregar Paciente Marcos (Exemplo)
+                  Admitir da Base GestorCoop
                 </button>
               </div>
             </div>
@@ -573,7 +713,11 @@ export default function ProntuariosAuditDashboard() {
                         <h3 className="text-base font-bold text-slate-900 tracking-tight leading-tight">
                           {p.nome}
                         </h3>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">CPF: {p.cpf}</p>
+                        {p.cpf ? (
+                          <p className="text-xs text-slate-500 font-mono mt-0.5">CPF: {p.cpf}</p>
+                        ) : (
+                          <p className="text-xs text-indigo-600 font-semibold mt-0.5">Origem: Base GestorCoop (Bubble)</p>
+                        )}
                       </div>
 
                       <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded-full border border-emerald-200 flex items-center gap-1">
@@ -582,89 +726,63 @@ export default function ProntuariosAuditDashboard() {
                       </span>
                     </div>
 
-                    {/* Diagnóstico */}
-                    {p.diagnostico_principal && (
-                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs mb-3">
-                        <span className="text-slate-500 font-medium">Diagnóstico: </span>
-                        <span className="text-slate-800 font-semibold">{p.diagnostico_principal}</span>
-                        {p.cid10 && <span className="ml-1 text-slate-500 font-mono">({p.cid10})</span>}
+                    {/* Endereço / Local */}
+                    {p.endereco && (
+                      <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-xs mb-3 text-slate-700 truncate">
+                        <span className="text-slate-400 font-medium">Local: </span>
+                        {p.endereco}
                       </div>
                     )}
 
-                    {/* Alertas e Alergias */}
-                    {p.warnings && p.warnings.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {p.warnings.slice(0, 2).map((w, idx) => (
-                          <span
-                            key={idx}
-                            className="bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold px-2 py-0.5 rounded-md flex items-center gap-1"
-                          >
-                            <AlertTriangle className="w-2.5 h-2.5 text-rose-600" />
-                            {w}
+                    {/* Status do Plano Terapêutico */}
+                    {p.tem_plano_terapeutico && p.plano_vigente ? (
+                      <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 mb-3">
+                        <div className="flex items-center justify-between text-xs font-bold text-indigo-950 mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                            Plano Terapêutico Vigente
                           </span>
-                        ))}
-                        {p.warnings.length > 2 && (
-                          <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.5 rounded-md">
-                            +{p.warnings.length - 2}
+                          <span className="text-[11px] font-mono bg-indigo-200/60 px-1.5 py-0.5 rounded text-indigo-900">
+                            {p.plano_vigente.total_realizado || 0} / {p.plano_vigente.total_previsto || 0} visitas
                           </span>
-                        )}
+                        </div>
+                        <p className="text-[11px] text-indigo-700">
+                          Vigência: {p.plano_vigente.data_inicio} até {p.plano_vigente.data_fim}
+                        </p>
                       </div>
-                    )}
-
-                    {/* Últimos Sinais Vitais */}
-                    {p.ultimo_sinal_vital && (
-                      <div className="grid grid-cols-3 gap-1.5 py-2 border-t border-slate-100 text-center">
-                        <div className="bg-indigo-50/50 p-1.5 rounded-lg">
-                          <p className="text-[9px] text-slate-500 font-medium">PA</p>
-                          <p className="text-xs font-bold text-slate-800 font-mono">
-                            {p.ultimo_sinal_vital.pa_sistolica && p.ultimo_sinal_vital.pa_diastolica
-                              ? `${p.ultimo_sinal_vital.pa_sistolica}/${p.ultimo_sinal_vital.pa_diastolica}`
-                              : '--'}
-                          </p>
-                        </div>
-                        <div className="bg-indigo-50/50 p-1.5 rounded-lg">
-                          <p className="text-[9px] text-slate-500 font-medium">SpO2</p>
-                          <p className="text-xs font-bold text-slate-800 font-mono">
-                            {p.ultimo_sinal_vital.spo2_percent ? `${p.ultimo_sinal_vital.spo2_percent}%` : '--'}
-                          </p>
-                        </div>
-                        <div className="bg-indigo-50/50 p-1.5 rounded-lg">
-                          <p className="text-[9px] text-slate-500 font-medium">FC</p>
-                          <p className="text-xs font-bold text-slate-800 font-mono">
-                            {p.ultimo_sinal_vital.fc_bpm ? `${p.ultimo_sinal_vital.fc_bpm} bpm` : '--'}
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                    {/* Indicador de Cota Mensal de Visitas */}
-                    {p.limite_visitas_mes !== undefined && p.limite_visitas_mes > 0 && (
-                      <div className="mt-3 p-2 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
-                        <span className="font-semibold text-slate-700 flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-indigo-600" />
-                          Visitas no Mês:
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                          <span className={`font-mono font-bold px-2 py-0.5 rounded-md text-[11px] ${
-                            p.limite_atingido
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : (p.visitas_restantes_mes || 0) <= 2
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          }`}>
+                    ) : (p.limite_visitas_mes || 0) > 0 ? (
+                      <div className="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-100 mb-3">
+                        <div className="flex items-center justify-between text-xs font-bold text-indigo-950 mb-1">
+                          <span className="flex items-center gap-1.5">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                            Cota Mensal
+                          </span>
+                          <span className="text-[11px] font-mono bg-indigo-200/60 px-1.5 py-0.5 rounded text-indigo-900">
                             {p.visitas_realizadas_mes || 0} / {p.limite_visitas_mes}
                           </span>
-                          {p.limite_atingido ? (
-                            <span className="text-[10px] text-rose-600 font-bold">Cota Atingida</span>
-                          ) : (
-                            <span className="text-[10px] text-slate-500 font-medium">({p.visitas_restantes_mes} restam)</span>
-                          )}
                         </div>
+                        <p className="text-[11px] text-indigo-700">
+                          Visitas ambulatoriais e domiciliares do período
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 mb-3 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          Sem Plano Terapêutico
+                        </span>
+                        <button
+                          onClick={() => abrirModalAdmissaoComPaciente(p)}
+                          className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold px-2 py-1 rounded-lg transition-all shadow-xs"
+                        >
+                          Iniciar Plano
+                        </button>
                       </div>
                     )}
                   </div>
 
                   {/* Footer do Card */}
-                  <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between">
+                  <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-between">
                     <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
                       <Pill className="w-3.5 h-3.5 text-indigo-500" />
                       {p.total_prescricoes_ativas || 0} prescrições
@@ -693,66 +811,33 @@ export default function ProntuariosAuditDashboard() {
                     <th className="py-3.5 px-4">Profissional & Especialidade</th>
                     <th className="py-3.5 px-4">Turno / Data</th>
                     <th className="py-3.5 px-4">Resumo da Evolução (SOAP)</th>
-                    <th className="py-3.5 px-4 text-center">Status / Selo</th>
                     <th className="py-3.5 px-4 text-center">Ações</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-slate-100 text-xs">
                   {filteredEvolutions.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400">
-                        Nenhuma evolução encontrada com os filtros selecionados.
+                      <td colSpan={5} className="py-8 text-center text-slate-400">
+                        Nenhuma evolução registrada encontrada.
                       </td>
                     </tr>
                   ) : (
                     filteredEvolutions.map((ev) => (
-                      <tr key={ev.id} className="hover:bg-slate-50/60 transition-colors">
-                        <td className="py-3.5 px-4">
-                          <p className="font-bold text-slate-900">{ev.paciente_nome || 'Paciente'}</p>
-                          <p className="text-xs text-slate-450 font-mono">{ev.paciente_cpf || '--'}</p>
+                      <tr key={ev.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-4 font-bold text-slate-900">{ev.paciente_nome}</td>
+                        <td className="py-3.5 px-4 font-medium text-slate-700">
+                          {ev.profissional_nome} ({formatarNomeEspecialidade(ev.tipo_profissional)})
                         </td>
-
-                        <td className="py-3.5 px-4">
-                          <p className="font-semibold text-slate-800">{ev.profissional_nome || 'Profissional'}</p>
-                          <span className="inline-block bg-slate-100 text-slate-600 text-[10px] font-bold px-2 py-0.5 rounded-md mt-0.5">
-                            {ev.tipo_profissional.replace('_', ' ')}
-                          </span>
+                        <td className="py-3.5 px-4 text-slate-500 font-mono">
+                          {ev.check_in ? new Date(ev.check_in).toLocaleString('pt-BR') : '--'}
                         </td>
-
-                        <td className="py-3.5 px-4">
-                          <p className="text-xs font-bold text-slate-800">
-                            {new Date(ev.check_in).toLocaleDateString('pt-BR')}
-                          </p>
-                          <p className="text-[11px] text-slate-500">
-                            {new Date(ev.check_in).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                            {ev.turno ? ` • ${ev.turno}` : ''}
-                          </p>
+                        <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">
+                          {ev.soap_avaliacao || ev.transcricao_revisada || 'Sem resumo cadastrado'}
                         </td>
-
-                        <td className="py-3.5 px-4 max-w-md">
-                          <p className="text-xs text-slate-600 line-clamp-2">
-                            {ev.soap_objetivo || ev.transcricao_revisada || 'Sem anotações detalhadas.'}
-                          </p>
-                        </td>
-
-                        <td className="py-3.5 px-4 text-center">
-                          <span
-                            className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                              ev.status === 'Auditado'
-                                ? 'bg-indigo-100 text-indigo-800 border border-indigo-200'
-                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            }`}
-                          >
-                            <CheckCircle2 className="w-3 h-3" />
-                            {ev.status}
-                          </span>
-                        </td>
-
                         <td className="py-3.5 px-4 text-center">
                           <Link
                             href={`/gestor/prontuarios/${ev.paciente_id || ev.id}`}
                             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 p-2 rounded-lg text-xs font-semibold transition-all inline-flex items-center justify-center shadow-sm"
-                            title="Visualizar Prontuário do Paciente"
                           >
                             <Eye className="w-4 h-4 text-indigo-600" />
                           </Link>
@@ -767,17 +852,20 @@ export default function ProntuariosAuditDashboard() {
         )}
       </div>
 
-      {/* Modal: Admitir / Cadastrar Paciente */}
+      {/* MODAL INTELIGENTE: ADMISSÃO DO PACIENTE (DO BUBBLE OU NOVO) & INÍCIO DO PLANO TERAPÊUTICO DINÂMICO */}
       {isNovoPacienteOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-10">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] overflow-y-auto shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur z-20">
               <div>
-                <h2 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                  <User className="w-5 h-5 text-indigo-600" />
-                  Admissão Clínica de Paciente
+                <h2 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Stethoscope className="w-5 h-5 text-indigo-600" />
+                  Admissão Clínica de Paciente &amp; Plano Terapêutico
                 </h2>
-                <p className="text-xs text-slate-500">Cadastre os dados clínicos para acompanhamento domiciliar.</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Admissão Clínica &amp; Plano Terapêutico: Selecione um paciente da base do GestorCoop (Bubble) ou cadastre manualmente.
+                </p>
               </div>
               <button
                 onClick={() => setIsNovoPacienteOpen(false)}
@@ -787,154 +875,318 @@ export default function ProntuariosAuditDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleSalvarNovoPaciente} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Nome Completo *</label>
-                  <input
-                    type="text"
-                    required
-                    value={novoPacienteForm.nome}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, nome: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                    placeholder="Ex: Seu João da Silva"
-                  />
+            <form onSubmit={handleSalvarNovoPacienteEPlano} className="p-6 space-y-6">
+              {/* ETAPA 1: ESCOLHA DA ORIGEM DO PACIENTE */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                    <User className="w-4 h-4 text-indigo-600" />
+                    1. Identificação do Paciente
+                  </label>
+                  <div className="flex items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setModoOrigemModal('bubble')}
+                      className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                        modoOrigemModal === 'bubble'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      Base GestorCoop (Bubble)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModoOrigemModal('manual');
+                        setPacienteBubbleSelecionado(null);
+                      }}
+                      className={`px-3 py-1 rounded-lg font-bold transition-all ${
+                        modoOrigemModal === 'manual'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      Cadastrar Novo
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">CPF *</label>
-                  <input
-                    type="text"
-                    required
-                    value={novoPacienteForm.cpf}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, cpf: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                    placeholder="000.000.000-00"
-                  />
-                </div>
+                {modoOrigemModal === 'bubble' && (
+                  <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="relative flex-1">
+                        <Search className="w-3.5 h-3.5 text-indigo-400 absolute left-3 top-2.5" />
+                        <input
+                          type="text"
+                          value={buscaBubbleModal}
+                          onChange={(e) => setBuscaBubbleModal(e.target.value)}
+                          placeholder="Buscar paciente já existente na base do GestorCoop..."
+                          className="w-full pl-9 pr-3 py-1.5 bg-white border border-indigo-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                        />
+                      </div>
+                      <span className="text-[11px] font-bold text-indigo-700 shrink-0">
+                        {bubbleFiltradosModal.length} pacientes encontrados
+                      </span>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Data de Nascimento</label>
-                  <input
-                    type="date"
-                    value={novoPacienteForm.data_nascimento}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, data_nascimento: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                  />
-                </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                      {bubbleFiltradosModal.slice(0, 15).map((b) => {
+                        const selecionado = pacienteBubbleSelecionado?._id === b._id;
+                        return (
+                          <div
+                            key={b._id}
+                            onClick={() => selecionarPacienteDoBubble(b)}
+                            className={`cursor-pointer p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between ${
+                              selecionado
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                                : 'bg-white hover:bg-indigo-50/80 border-slate-200 text-slate-800'
+                            }`}
+                          >
+                            <div>
+                              <div className="font-bold flex items-center gap-2">
+                                <span>{b.txt_nome || 'Sem Nome'}</span>
+                                {b.txt_tipo && (
+                                  <span
+                                    className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
+                                      selecionado ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                                    }`}
+                                  >
+                                    {b.txt_tipo}
+                                  </span>
+                                )}
+                              </div>
+                              <p className={`text-[11px] truncate max-w-md ${selecionado ? 'text-indigo-100' : 'text-slate-500'}`}>
+                                {b.txt_endereco || 'Sem endereço'}
+                              </p>
+                            </div>
+                            {selecionado ? (
+                              <CheckCircle2 className="w-4 h-4 text-white shrink-0" />
+                            ) : (
+                              <span className="text-[11px] font-semibold text-indigo-600">Selecionar</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
 
+                    {pacienteBubbleSelecionado && (
+                      <div className="p-3 bg-white rounded-xl border border-indigo-200 flex items-center justify-between">
+                        <div>
+                          <p className="text-[10px] font-bold text-indigo-600 uppercase">Paciente Selecionado:</p>
+                          <p className="text-xs font-bold text-slate-900">{pacienteBubbleSelecionado.txt_nome}</p>
+                        </div>
+                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                          Pronto para Admissão
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Campos Cadastrais do Paciente */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Nome Completo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={novoPacienteForm.nome}
+                      onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, nome: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                      placeholder="Ex: Seu João da Silva"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">CPF</label>
+                    <input
+                      type="text"
+                      value={novoPacienteForm.cpf}
+                      onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, cpf: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                      placeholder="000.000.000-00"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Endereço do Domicílio</label>
+                    <input
+                      type="text"
+                      value={novoPacienteForm.endereco}
+                      onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, endereco: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                      placeholder="Rua, número, complemento e cidade"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* ETAPA 2: DADOS CLÍNICOS COMPLEMENTARES */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Grau de Complexidade</label>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Grau de Complexidade</label>
                   <select
                     value={novoPacienteForm.complexidade}
                     onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, complexidade: e.target.value as any })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold"
                   >
                     <option value="Baixa">Baixa Complexidade</option>
                     <option value="Média">Média Complexidade</option>
                     <option value="Alta">Alta Complexidade (UTI Domiciliar)</option>
                   </select>
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Endereço de Atendimento (Domicílio)</label>
-                <input
-                  type="text"
-                  value={novoPacienteForm.endereco}
-                  onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, endereco: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                  placeholder="Rua, número, complemento, bairro e cidade"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Diagnóstico Principal</label>
+                <div className="md:col-span-2">
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Diagnóstico Principal</label>
                   <input
                     type="text"
                     value={novoPacienteForm.diagnostico_principal}
                     onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, diagnostico_principal: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                    placeholder="Ex: Sequela de AVC Isquêmico"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Código CID-10</label>
-                  <input
-                    type="text"
-                    value={novoPacienteForm.cid10}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, cid10: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800 font-mono"
-                    placeholder="Ex: I69.3"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800"
+                    placeholder="Ex: Reabilitação Neurológica Pós-TCE"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Nome do Familiar / Responsável</label>
-                  <input
-                    type="text"
-                    value={novoPacienteForm.responsavel_nome}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, responsavel_nome: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                    placeholder="Ex: Maria da Silva (Esposa)"
-                  />
+              {/* ETAPA 3: PLANO TERAPÊUTICO MULTIPROFISSIONAL DINÂMICO */}
+              <div className="p-5 rounded-2xl bg-indigo-50/60 border border-indigo-200 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-100 pb-3">
+                  <div>
+                    <h3 className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-indigo-600" />
+                      2. Plano Terapêutico Multiprofissional (Dinâmico)
+                    </h3>
+                    <p className="text-[11px] text-indigo-700 mt-0.5">
+                      Defina a vigência e adicione livremente as categorias profissionais com suas cotas de visitas e cooperados escalados.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={adicionarMetaAoPlano}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] px-3 py-1.5 rounded-xl transition-all shadow-xs flex items-center gap-1 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    + Adicionar Especialidade
+                  </button>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Telefone / WhatsApp Responsável</label>
-                  <input
-                    type="text"
-                    value={novoPacienteForm.responsavel_telefone}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, responsavel_telefone: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                    placeholder="(00) 00000-0000"
-                  />
+                {/* Vigência */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3.5 rounded-xl border border-indigo-100">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Data Início da Vigência</label>
+                    <input
+                      type="date"
+                      value={planoDinamico.data_inicio}
+                      onChange={(e) => setPlanoDinamico({ ...planoDinamico, data_inicio: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Data Fim da Vigência</label>
+                    <input
+                      type="date"
+                      value={planoDinamico.data_fim}
+                      onChange={(e) => setPlanoDinamico({ ...planoDinamico, data_fim: e.target.value })}
+                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
+                    />
+                  </div>
+                </div>
+
+                {/* Metas Dinâmicas */}
+                <div className="space-y-3">
+                  <p className="text-[11px] font-bold text-slate-700">Metas Contratadas por Categoria Profissional:</p>
+
+                  {planoDinamico.metas.map((meta, idx) => (
+                    <div key={idx} className="bg-white p-4 rounded-xl border border-indigo-100 shadow-xs space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1">
+                          <div className="sm:col-span-2">
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Especialidade</label>
+                            <select
+                              value={meta.especialidade}
+                              onChange={(e) => atualizarMetaDoPlano(idx, 'especialidade', e.target.value)}
+                              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-900"
+                            >
+                              {ESPECIALIDADES_DISPONIVEIS.map((esp) => (
+                                <option key={esp.valor} value={esp.valor}>
+                                  {esp.rotulo}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Qtd. Visitas</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="120"
+                              placeholder="Ex: 13"
+                              value={meta.quantidade_prevista || ''}
+                              onChange={(e) => {
+                                const val = Number(e.target.value);
+                                atualizarMetaDoPlano(idx, 'quantidade_prevista', val);
+                                if (idx === 0) {
+                                  setNovoPacienteForm((prev) => ({ ...prev, limite_visitas_mes: val }));
+                                }
+                              }}
+                              className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-black text-indigo-950 text-center"
+                            />
+                          </div>
+                        </div>
+
+                        {planoDinamico.metas.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => removerMetaDoPlano(idx)}
+                            className="p-2 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                            title="Remover especialidade"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Seletor de Cooperados Designados para a Meta */}
+                      <div>
+                        <p className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">
+                          Cooperados Escalados para esta Cota (Seleção Múltipla):
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {cooperados
+                            .filter((c) => !c.cargo || c.cargo === meta.especialidade || true)
+                            .slice(0, 6)
+                            .map((coop) => {
+                              const selecionado = (meta.profissionais_designados || []).some((p: any) => p.id === coop.id);
+                              return (
+                                <button
+                                  key={coop.id}
+                                  type="button"
+                                  onClick={() => toggleCooperadoNaMeta(idx, coop)}
+                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border flex items-center gap-1 ${
+                                    selecionado
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}
+                                >
+                                  {selecionado && <Check className="w-3 h-3 text-white" />}
+                                  {coop.nome}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
-              <div className="bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100">
-                <label className="block text-xs font-bold text-indigo-900 mb-1">
-                  Cota Mensal de Visitas Técnicas (Teto Contratado) *
-                </label>
-                <p className="text-[11px] text-indigo-700 mb-2">
-                  Define o número máximo de visitas que os técnicos de enfermagem podem realizar no mês. O sistema bloqueia automaticamente novas visitas ao atingir este teto.
-                </p>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="0"
-                    max="120"
-                    value={novoPacienteForm.limite_visitas_mes}
-                    onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, limite_visitas_mes: e.target.value })}
-                    className="w-36 px-3 py-2 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                    placeholder="Ex: 13"
-                  />
-                  <span className="text-xs text-indigo-800 font-semibold">visitas / mês</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Alergias e Alertas Clínicos Críticos (um por linha)
-                </label>
-                <textarea
-                  rows={2}
-                  value={novoPacienteForm.warnings}
-                  onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, warnings: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 text-slate-800"
-                  placeholder="Ex: Alergia severa a Dipirona&#10;Risco Alto de Queda&#10;Dieta exclusiva por SNE"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3">
+              {/* Botões do Modal */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-3 sticky bottom-0 bg-white/95 backdrop-blur py-2">
                 <button
                   type="button"
                   onClick={() => setIsNovoPacienteOpen(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-colors"
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors"
                 >
                   Cancelar
                 </button>
@@ -942,17 +1194,19 @@ export default function ProntuariosAuditDashboard() {
                 <button
                   type="submit"
                   disabled={salvandoPaciente}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                  title="Admitir Paciente & Ativar Plano Terapêutico"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
                 >
+                  <span className="sr-only">Admitir Paciente &amp; Ativar Plano Terapêutico</span>
                   {salvandoPaciente ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      Salvando...
+                      Iniciando Plano Terapêutico...
                     </>
                   ) : (
                     <>
                       <CheckCircle2 className="w-4 h-4" />
-                      Salvar Admissão
+                      Salvar Admissão &amp; Ativar Plano Terapêutico
                     </>
                   )}
                 </button>

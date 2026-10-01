@@ -8,6 +8,7 @@ import {
   listarSinaisVitaisClinicos,
   listarPareceresClinicos,
 } from '@/lib/db/prontuarios';
+import { bubbleApi } from '@/lib/bubble';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -18,7 +19,30 @@ export async function GET(
 ) {
   try {
     const pacienteId = params.id;
-    const paciente = await obterPacienteClinico(pacienteId);
+    let paciente = await obterPacienteClinico(pacienteId);
+
+    // Se não encontrou no D1/memória, tenta buscar da base do Bubble
+    if (!paciente) {
+      try {
+        const bubblePac = await bubbleApi.getPaciente(pacienteId);
+        if (bubblePac && bubblePac._id) {
+          paciente = await salvarPacienteClinico({
+            id: bubblePac._id,
+            nome: bubblePac.txt_nome || 'Paciente sem Nome',
+            cpf: bubblePac.txt_cpf || '000.000.000-00',
+            endereco: bubblePac.txt_endereco || '',
+            telefone: bubblePac.txt_whatsapp || '',
+            diagnostico_principal: 'Paciente cadastrado no GestorCoop (Bubble)',
+            complexidade: 'Média',
+            status: 'Ativo',
+            limite_visitas_mes: 0,
+            warnings: bubblePac.fks_equipamentos?.length ? ['Possui equipamentos em casa'] : [],
+          });
+        }
+      } catch (eBubble) {
+        console.warn('Paciente não localizado no Bubble:', eBubble);
+      }
+    }
 
     if (!paciente) {
       return NextResponse.json(

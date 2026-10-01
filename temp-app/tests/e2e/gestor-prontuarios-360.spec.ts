@@ -136,6 +136,21 @@ test.describe('Gestor - Módulo de Prontuários & Gestão 360 do Paciente', () =
       })
     );
 
+    await page.route('**/api/gestor/prontuarios/pacientes/*/dashboard', (route) =>
+      route.fulfill({
+        json: {
+          success: true,
+          data: {
+            paciente: mockPaciente,
+            planoVigente: null,
+            planos: [],
+            equipamentos: [],
+            estatisticas: { totalEvolucoes: 2, prescricoesAtivas: 1, sinaisRegistrados: 1 },
+          },
+        },
+      })
+    );
+
     await page.route('**/api/gestor/prontuarios/pacientes/p_1/prescricoes', async (route) => {
       if (route.request().method() === 'POST') {
         const body = route.request().postDataJSON();
@@ -196,8 +211,9 @@ test.describe('Gestor - Módulo de Prontuários & Gestão 360 do Paciente', () =
     await link360.click();
 
     // Deve estar na tela 360 do paciente
+    await page.waitForURL('**/gestor/prontuarios/p_1');
     await expect(page.getByText('Seu João da Silva')).toBeVisible({ timeout: 15000 });
-    await expect(page.getByText('Diagnóstico Clínico Principal')).toBeVisible();
+    await expect(page.getByText('Diagnóstico Clínico Principal')).toBeVisible({ timeout: 15000 });
     await expect(page.getByText('Alergia a Dipirona e Penicilina')).toBeVisible();
 
     // Abas visíveis
