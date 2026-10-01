@@ -9,13 +9,14 @@ import {
   Trash2,
   CheckCircle2,
   AlertTriangle,
-  Users,
   Save,
   X,
   Loader2,
   Edit3,
 } from 'lucide-react';
 import { formatarNomeEspecialidade, PlanoTerapeutico } from '@/lib/tipos-clinicos';
+import { fetchFullDataset } from '@/lib/client-fetch';
+import SeletorCooperadosMeta, { CooperadoItem } from '../_components/SeletorCooperadosMeta';
 
 interface PlanoTerapeuticoTabProps {
   pacienteId: string;
@@ -48,7 +49,7 @@ export default function PlanoTerapeuticoTab({
   const [sucesso, setSucesso] = useState<string | null>(null);
 
   // Lista de cooperados do sistema
-  const [todosCooperados, setTodosCooperados] = useState<Array<{ id: string; nome: string; cargo?: string }>>([]);
+  const [todosCooperados, setTodosCooperados] = useState<CooperadoItem[]>([]);
 
   // Estado do formulário
   const hoje = new Date().toISOString().split('T')[0];
@@ -64,7 +65,7 @@ export default function PlanoTerapeuticoTab({
       id?: string;
       especialidade: string;
       quantidade_prevista: number;
-      profissionais_designados: Array<{ id: string; nome: string }>;
+      profissionais_designados: Array<{ id: string; nome: string; cargo?: string }>;
     }>;
   }>({
     data_inicio: hoje,
@@ -84,24 +85,47 @@ export default function PlanoTerapeuticoTab({
   }, []);
 
   const carregarCooperados = async () => {
+    const formatar = (raw: any[]): CooperadoItem[] =>
+      raw.map((c: any) => ({
+        id: c._id || c.id,
+        nome:
+          (c.txt_nomeCompleto || c.nomeCompleto || c.nome_text || c.txt_nome || c.nome || '').trim() ||
+          `Cooperado ${(c._id || c.id || '').substring(0, 6)}`,
+        cargo:
+          Array.isArray(c.fks_profissoes) && c.fks_profissoes.length > 0
+            ? c.fks_profissoes.join(', ')
+            : c.txt_profissao || c.cargo || '',
+        profissoes: Array.isArray(c.fks_profissoes)
+          ? c.fks_profissoes
+          : c.txt_profissao
+          ? [c.txt_profissao]
+          : [],
+        cpf: c.txt_CPF || c.cpf || '',
+        email: c.txt_email || c.email || '',
+      }));
+
     try {
-      const res = await axios.get('/api/gestor/cooperados');
-      if (res.data.success && Array.isArray(res.data.data)) {
-        const lista = res.data.data.map((c: any) => ({
-          id: c._id || c.id,
-          nome: c.txt_nome || c.nome || 'Cooperado',
-          cargo: c.txt_profissao || c.cargo || '',
-        }));
-        setTodosCooperados(lista);
-      }
+      await fetchFullDataset<any>('/api/gestor/cooperados', (raw) => {
+        setTodosCooperados(formatar(raw));
+      });
     } catch (e) {
-      console.warn('Não foi possível carregar cooperados para o seletor:', e);
+      console.warn('Tentando fallback GET para cooperados:', e);
+      try {
+        const res = await axios.get('/api/gestor/cooperados');
+        if (res.data.success && Array.isArray(res.data.data)) {
+          setTodosCooperados(formatar(res.data.data));
+          return;
+        }
+      } catch (err) {
+        console.warn('Erro ao carregar cooperados para o seletor:', err);
+      }
+
       // Fallback cooperados para testes e dev local
       setTodosCooperados([
-        { id: 'coop_123', nome: 'Téc. Carlos Enfermagem', cargo: 'Tecnico_Enfermagem' },
-        { id: 'coop_tec_2', nome: 'Téc. Roberto Soares', cargo: 'Tecnico_Enfermagem' },
-        { id: 'coop_med_1', nome: 'Dr. Marcos Mendes', cargo: 'Medico' },
-        { id: 'coop_dent_1', nome: 'Dra. Camila Odonto', cargo: 'Dentista' },
+        { id: 'coop_123', nome: 'Carlos Enfermagem (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
+        { id: 'coop_tec_2', nome: 'Roberto Soares (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
+        { id: 'coop_med_1', nome: 'Dr. Marcos Mendes', cargo: 'Médico', profissoes: ['Médico'] },
+        { id: 'coop_dent_1', nome: 'Dra. Camila Odonto', cargo: 'Dentista', profissoes: ['Dentista'] },
       ]);
     }
   };
@@ -165,7 +189,7 @@ export default function PlanoTerapeuticoTab({
     setFormPlano({ ...formPlano, metas: novasMetas });
   };
 
-  const toggleCooperadoNaMeta = (metaIndex: number, coop: { id: string; nome: string }) => {
+  const toggleCooperadoNaMeta = (metaIndex: number, coop: CooperadoItem | { id: string; nome: string; cargo?: string }) => {
     const metaAtual = formPlano.metas[metaIndex];
     const designados = metaAtual.profissionais_designados || [];
     const jaExiste = designados.some((d) => d.id === coop.id);
@@ -174,7 +198,7 @@ export default function PlanoTerapeuticoTab({
     if (jaExiste) {
       novosDesignados = designados.filter((d) => d.id !== coop.id);
     } else {
-      novosDesignados = [...designados, coop];
+      novosDesignados = [...designados, { id: coop.id, nome: coop.nome, cargo: coop.cargo }];
     }
 
     atualizarMeta(metaIndex, 'profissionais_designados', novosDesignados);
@@ -380,34 +404,16 @@ export default function PlanoTerapeuticoTab({
 
                   {/* Seleção de Múltiplos Cooperados para esta mesma especialidade */}
                   <div className="pt-2 border-t border-slate-200/60">
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                      <Users className="w-3.5 h-3.5 text-indigo-600" />
-                      Cooperados Designados (Pode selecionar mais de um técnico, médico, etc.):
-                    </label>
-
-                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-1 bg-white rounded-lg border border-slate-200">
-                      {todosCooperados.map((coop) => {
-                        const selecionado = (meta.profissionais_designados || []).some((d) => d.id === coop.id);
-                        return (
-                          <button
-                            type="button"
-                            key={coop.id}
-                            onClick={() => toggleCooperadoNaMeta(idx, coop)}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all border ${
-                              selecionado
-                                ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-xs'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                          >
-                            {selecionado && '✓ '}
-                            {coop.nome} {coop.cargo ? `(${coop.cargo})` : ''}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <span className="text-[10px] text-slate-400 mt-1 block">
-                      Dica: Se nenhum cooperado for marcado, qualquer cooperado daquela especialidade poderá realizar as visitas até a cota.
-                    </span>
+                    <SeletorCooperadosMeta
+                      especialidade={meta.especialidade}
+                      especialidadeRotulo={
+                        ESPECIALIDADES_DISPONIVEIS.find((esp) => esp.valor === meta.especialidade)?.label
+                      }
+                      profissionaisDesignados={meta.profissionais_designados || []}
+                      todosCooperados={todosCooperados}
+                      onToggleCooperado={(coop) => toggleCooperadoNaMeta(idx, coop)}
+                      disabled={salvando}
+                    />
                   </div>
                 </div>
               ))}

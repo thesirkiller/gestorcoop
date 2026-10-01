@@ -33,6 +33,10 @@ import {
   Play,
   Volume2,
   CheckCircle2,
+  Copy,
+  Link2,
+  MessageCircle,
+  Check,
 } from 'lucide-react';
 import Link from 'next/link';
 import type { PlanoTerapeutico } from '@/lib/tipos-clinicos';
@@ -155,6 +159,36 @@ export default function Prontuario360Detalhe() {
   const [isNovoSinalOpen, setIsNovoSinalOpen] = useState(false);
   const [isNovoParecerOpen, setIsNovoParecerOpen] = useState(false);
   const [salvando, setSalvando] = useState(false);
+
+  // Compartilhamento com Cooperado
+  const [copiadoLink, setCopiadoLink] = useState(false);
+  const [toastDetalhe, setToastDetalhe] = useState<string | null>(null);
+
+  const copiarLinkCooperado = async () => {
+    if (!paciente) return;
+    try {
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const url = `${baseUrl}/cooperado/prontuario/${paciente.id}`;
+      if (typeof window !== 'undefined' && navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else if (typeof document !== 'undefined') {
+        const textArea = document.createElement('textarea');
+        textArea.value = url;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      setCopiadoLink(true);
+      setToastDetalhe(`Link de atendimento copiado para o paciente ${paciente.nome}!`);
+      setTimeout(() => {
+        setCopiadoLink(false);
+        setToastDetalhe(null);
+      }, 3500);
+    } catch (e) {
+      console.error('Erro ao copiar link:', e);
+    }
+  };
 
   // Forms
   const [novaPrescricaoForm, setNovaPrescricaoForm] = useState({
@@ -435,7 +469,43 @@ export default function Prontuario360Detalhe() {
           </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={copiarLinkCooperado}
+            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm border ${
+              copiadoLink
+                ? 'bg-emerald-600 text-white border-emerald-600'
+                : 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'
+            }`}
+            title="Copiar link de atendimento deste paciente para o cooperado"
+          >
+            {copiadoLink ? (
+              <>
+                <Check className="w-4 h-4 text-white" />
+                <span>Link Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                <span>Copiar Link do Cooperado</span>
+              </>
+            )}
+          </button>
+
+          <a
+            href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+              `Olá! Segue o link de acesso ao prontuário do paciente *${paciente.nome}* no GestorCoop:\n\n${typeof window !== 'undefined' ? window.location.origin : ''}/cooperado/prontuario/${paciente.id}`
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-sm"
+            title="Enviar link via WhatsApp para o cooperado"
+          >
+            <MessageCircle className="w-4 h-4" />
+            <span className="hidden sm:inline">WhatsApp</span>
+          </a>
+
           <button
             onClick={() => window.print()}
             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
@@ -1426,6 +1496,15 @@ export default function Prontuario360Detalhe() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {/* Toast Flutuante de Confirmação de Cópia */}
+      {toastDetalhe && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200 max-w-md">
+          <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-xl">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <p className="text-xs font-semibold leading-relaxed">{toastDetalhe}</p>
         </div>
       )}
     </div>

@@ -26,10 +26,15 @@ import {
   Trash2,
   Check,
   ShieldAlert,
+  Copy,
+  Link2,
+  MessageCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { fetchFullDataset } from '@/lib/client-fetch';
 import { formatarNomeEspecialidade, EspecialidadeProfissional } from '@/lib/tipos-clinicos';
+import SeletorCooperadosMeta, { CooperadoItem } from './_components/SeletorCooperadosMeta';
 
 interface PacienteSummary {
   id: string;
@@ -121,7 +126,7 @@ export default function ProntuariosAuditDashboard() {
 
   // Dados do Bubble & Cooperados para Admissão
   const [pacientesBubble, setPacientesBubble] = useState<any[]>([]);
-  const [cooperados, setCooperados] = useState<any[]>([]);
+  const [cooperados, setCooperados] = useState<CooperadoItem[]>([]);
 
   // Modal Novo Paciente & Início de Plano Terapêutico
   const [isNovoPacienteOpen, setIsNovoPacienteOpen] = useState(false);
@@ -163,6 +168,55 @@ export default function ProntuariosAuditDashboard() {
     ],
   });
 
+  // Estados para cópia do link do cooperado
+  const [copiadoId, setCopiadoId] = useState<string | null>(null);
+  const [copiadoGeral, setCopiadoGeral] = useState(false);
+  const [toastMensagem, setToastMensagem] = useState<string | null>(null);
+
+  const exibirToast = (msg: string) => {
+    setToastMensagem(msg);
+    setTimeout(() => setToastMensagem(null), 3500);
+  };
+
+  const copiarTextoParaClipboard = async (texto: string) => {
+    if (typeof window !== 'undefined' && navigator?.clipboard?.writeText) {
+      await navigator.clipboard.writeText(texto);
+    } else if (typeof document !== 'undefined') {
+      const textArea = document.createElement('textarea');
+      textArea.value = texto;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const copiarLinkPacienteCooperado = async (p: PacienteSummary) => {
+    try {
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const url = `${baseUrl}/cooperado/prontuario/${p.id}`;
+      await copiarTextoParaClipboard(url);
+      setCopiadoId(p.id);
+      exibirToast(`Link copiado para o paciente ${p.nome}! Pronto para enviar no WhatsApp ou chat.`);
+      setTimeout(() => setCopiadoId(null), 3000);
+    } catch (e) {
+      console.error('Erro ao copiar link do paciente:', e);
+    }
+  };
+
+  const copiarLinkGeralCooperado = async () => {
+    try {
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+      const url = `${baseUrl}/cooperado`;
+      await copiarTextoParaClipboard(url);
+      setCopiadoGeral(true);
+      exibirToast('Link do Portal de Atendimento do Cooperado copiado com sucesso!');
+      setTimeout(() => setCopiadoGeral(false), 3000);
+    } catch (e) {
+      console.error('Erro ao copiar link geral:', e);
+    }
+  };
+
   useEffect(() => {
     carregarDados();
     carregarBasesAuxiliares();
@@ -194,29 +248,52 @@ export default function ProntuariosAuditDashboard() {
 
   const carregarBasesAuxiliares = async () => {
     try {
-      const [resBubble, resCoop] = await Promise.all([
+      const [resBubble] = await Promise.all([
         axios.get('/api/gestor/pacientes').catch(() => ({ data: { data: [] } })),
-        axios.get('/api/gestor/cooperados').catch(() => ({ data: { data: [] } })),
       ]);
 
       if (resBubble.data?.data && Array.isArray(resBubble.data.data)) {
         setPacientesBubble(resBubble.data.data);
       }
-      if (resCoop.data?.data && Array.isArray(resCoop.data.data)) {
-        const coops = resCoop.data.data.map((c: any) => ({
+
+      const formatarCooperados = (lista: any[]): CooperadoItem[] =>
+        lista.map((c: any) => ({
           id: c._id || c.id,
-          nome: c.txt_nome || c.nome || 'Cooperado',
-          cargo: c.txt_profissao || c.cargo || '',
+          nome:
+            (c.txt_nomeCompleto || c.nomeCompleto || c.nome_text || c.txt_nome || c.nome || '').trim() ||
+            `Cooperado ${(c._id || c.id || '').substring(0, 6)}`,
+          cargo:
+            Array.isArray(c.fks_profissoes) && c.fks_profissoes.length > 0
+              ? c.fks_profissoes.join(', ')
+              : c.txt_profissao || c.cargo || '',
+          profissoes: Array.isArray(c.fks_profissoes)
+            ? c.fks_profissoes
+            : c.txt_profissao
+            ? [c.txt_profissao]
+            : [],
+          cpf: c.txt_CPF || c.cpf || '',
+          email: c.txt_email || c.email || '',
         }));
-        setCooperados(coops);
-      } else {
-        // Fallback para dev local
-        setCooperados([
-          { id: 'coop_tec_carlos', nome: 'Téc. Carlos Enfermagem', cargo: 'Tecnico_Enfermagem' },
-          { id: 'coop_tec_roberto', nome: 'Téc. Roberto Soares', cargo: 'Tecnico_Enfermagem' },
-          { id: 'coop_med_marcos', nome: 'Dr. Marcos Mendes', cargo: 'Medico' },
-          { id: 'coop_dent_camila', nome: 'Dra. Camila Odonto', cargo: 'Dentista' },
-        ]);
+
+      try {
+        await fetchFullDataset<any>('/api/gestor/cooperados', (rawCoops) => {
+          setCooperados(formatarCooperados(rawCoops));
+        });
+      } catch (errPaging) {
+        console.warn('Falha ao paginar cooperados, buscando via GET simples:', errPaging);
+        const resCoop = await axios.get('/api/gestor/cooperados').catch(() => ({ data: { data: [] } }));
+        if (resCoop.data?.data && Array.isArray(resCoop.data.data) && resCoop.data.data.length > 0) {
+          setCooperados(formatarCooperados(resCoop.data.data));
+        } else {
+          // Fallback para dev local com dados realistas
+          setCooperados([
+            { id: 'coop_tec_carlos', nome: 'Carlos Enfermagem (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
+            { id: 'coop_tec_roberto', nome: 'Roberto Soares (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
+            { id: 'coop_med_marcos', nome: 'Dr. Marcos Mendes', cargo: 'Médico', profissoes: ['Médico'] },
+            { id: 'coop_dent_camila', nome: 'Dra. Camila Odonto', cargo: 'Dentista', profissoes: ['Dentista'] },
+            { id: 'coop_fisio_lucas', nome: 'Lucas Fisioterapeuta', cargo: 'Fisioterapeuta', profissoes: ['Fisioterapeuta'] },
+          ]);
+        }
       }
     } catch (e) {
       console.warn('Erro ao carregar bases do Bubble e cooperados:', e);
@@ -316,7 +393,7 @@ export default function ProntuariosAuditDashboard() {
     setPlanoDinamico({ ...planoDinamico, metas: novas });
   };
 
-  const toggleCooperadoNaMeta = (metaIndex: number, coop: { id: string; nome: string }) => {
+  const toggleCooperadoNaMeta = (metaIndex: number, coop: CooperadoItem | { id: string; nome: string; cargo?: string }) => {
     const metaAtual = planoDinamico.metas[metaIndex];
     const designados = metaAtual.profissionais_designados || [];
     const jaExiste = designados.some((d: any) => d.id === coop.id);
@@ -325,7 +402,7 @@ export default function ProntuariosAuditDashboard() {
     if (jaExiste) {
       novosDesignados = designados.filter((d: any) => d.id !== coop.id);
     } else {
-      novosDesignados = [...designados, coop];
+      novosDesignados = [...designados, { id: coop.id, nome: coop.nome, cargo: coop.cargo }];
     }
 
     atualizarMetaDoPlano(metaIndex, 'profissionais_designados', novosDesignados);
@@ -491,7 +568,30 @@ export default function ProntuariosAuditDashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            type="button"
+            onClick={copiarLinkGeralCooperado}
+            className={`px-3.5 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-sm flex items-center gap-2 border ${
+              copiadoGeral
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200'
+            }`}
+            title="Copiar link de acesso ao portal do cooperado"
+          >
+            {copiadoGeral ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span className="text-emerald-700 font-bold">Link Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Link2 className="w-4 h-4 text-indigo-600" />
+                <span>Link do Cooperado</span>
+              </>
+            )}
+          </button>
+
           <Link
             href="/gestor/prontuarios/auditoria"
             className="bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all shadow-sm flex items-center gap-2"
@@ -765,19 +865,56 @@ export default function ProntuariosAuditDashboard() {
                   </div>
 
                   {/* Footer do Card */}
-                  <div className="pt-3 mt-2 border-t border-slate-100 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1">
+                  <div className="pt-3 mt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-[11px] text-slate-500 font-medium flex items-center gap-1 shrink-0">
                       <Pill className="w-3.5 h-3.5 text-indigo-500" />
                       {p.total_prescricoes_ativas || 0} prescrições
                     </span>
 
-                    <Link
-                      href={`/gestor/prontuarios/${p.id}`}
-                      className="bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm"
-                    >
-                      Ver Prontuário 360°
-                      <ChevronRight className="w-3.5 h-3.5" />
-                    </Link>
+                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                      <button
+                        type="button"
+                        onClick={() => copiarLinkPacienteCooperado(p)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition-all flex items-center gap-1 shadow-xs border ${
+                          copiadoId === p.id
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200 hover:border-slate-300'
+                        }`}
+                        title={`Copiar link direto para o cooperado acessar o prontuário de ${p.nome}`}
+                      >
+                        {copiadoId === p.id ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Copiado!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Copiar Link</span>
+                          </>
+                        )}
+                      </button>
+
+                      <a
+                        href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
+                          `Olá! Segue o link de acesso ao prontuário do paciente *${p.nome}* no GestorCoop:\n\n${typeof window !== 'undefined' ? window.location.origin : ''}/cooperado/prontuario/${p.id}`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-xl transition-colors border border-emerald-200 bg-white"
+                        title={`Enviar link de atendimento de ${p.nome} via WhatsApp`}
+                      >
+                        <MessageCircle className="w-3.5 h-3.5" />
+                      </a>
+
+                      <Link
+                        href={`/gestor/prontuarios/${p.id}`}
+                        className="bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-sm shrink-0"
+                      >
+                        Ver Prontuário 360°
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1131,34 +1268,16 @@ export default function ProntuariosAuditDashboard() {
                       </div>
 
                       {/* Seletor de Cooperados Designados para a Meta */}
-                      <div>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase mb-1.5">
-                          Cooperados Escalados para esta Cota (Seleção Múltipla):
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {cooperados
-                            .filter((c) => !c.cargo || c.cargo === meta.especialidade || true)
-                            .slice(0, 6)
-                            .map((coop) => {
-                              const selecionado = (meta.profissionais_designados || []).some((p: any) => p.id === coop.id);
-                              return (
-                                <button
-                                  key={coop.id}
-                                  type="button"
-                                  onClick={() => toggleCooperadoNaMeta(idx, coop)}
-                                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all border flex items-center gap-1 ${
-                                    selecionado
-                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                                  }`}
-                                >
-                                  {selecionado && <Check className="w-3 h-3 text-white" />}
-                                  {coop.nome}
-                                </button>
-                              );
-                            })}
-                        </div>
-                      </div>
+                      <SeletorCooperadosMeta
+                        especialidade={meta.especialidade}
+                        especialidadeRotulo={
+                          ESPECIALIDADES_DISPONIVEIS.find((esp) => esp.valor === meta.especialidade)?.rotulo
+                        }
+                        profissionaisDesignados={meta.profissionais_designados || []}
+                        todosCooperados={cooperados}
+                        onToggleCooperado={(coop) => toggleCooperadoNaMeta(idx, coop)}
+                        disabled={salvandoPaciente}
+                      />
                     </div>
                   ))}
                 </div>
@@ -1196,6 +1315,15 @@ export default function ProntuariosAuditDashboard() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {/* Toast Flutuante de Confirmação de Cópia */}
+      {toastMensagem && (
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200 max-w-md">
+          <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-xl">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <p className="text-xs font-semibold leading-relaxed">{toastMensagem}</p>
         </div>
       )}
     </div>
