@@ -119,3 +119,22 @@ export function obterUrlCooperacao(caminho: string = ''): string {
 
   return `https://cooperacao.${DOMINIO_PRINCIPAL}`;
 }
+
+export const URL_BUBBLE_GESTORCOOP = 'https://appgestorcoop.bubbleapps.io';
+export const URL_APEX_GESTORCOOP = 'https://gestorcoop.app';
+
+/**
+ * Retorna o domínio raiz para gravação de cookie compartilhado.
+ * Quando o host pertence ao ecossistema gestorcoop.app, retorna '.gestorcoop.app'
+ * para que a sessão seja compartilhada entre gestao, cooperado e o apex.
+ * Em localhost ou *.pages.dev, retorna undefined (comportamento host-only seguro).
+ */
+export function obterDominioCookie(host?: string | null): string | undefined {
+  if (!host) return undefined;
+  const hostLimpo = host.toLowerCase().split(':')[0].trim();
+  if (hostLimpo.endsWith('gestorcoop.app')) {
+    return '.gestorcoop.app';
+  }
+  return undefined;
+}
+

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 import { emitirTokenSessao } from '@/lib/sessao-token';
 import { getDb } from '@/lib/db/client';
+import { obterDominioCookie } from '@/lib/subdominios';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -124,11 +125,14 @@ export async function POST(request: NextRequest) {
       { headers: { 'Cache-Control': 'no-store' } }
     );
 
+    const cookieDomain = obterDominioCookie(request.headers.get('host') || request.nextUrl.hostname);
+
     response.cookies.set('cooperado_session', token, {
       path: '/',
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
+      domain: cookieDomain,
       maxAge: VALIDADE_COOPERADO_SEGUNDOS,
     });
 
@@ -136,6 +140,7 @@ export async function POST(request: NextRequest) {
       path: '/',
       secure: isProduction,
       sameSite: 'lax',
+      domain: cookieDomain,
       maxAge: VALIDADE_COOPERADO_SEGUNDOS,
     });
 

@@ -165,4 +165,31 @@ test.describe('Middleware de Subdomínios e Isolamento de Segurança', () => {
     await expect(page.getByText('cooperado.gestorcoop.app')).toBeVisible();
     await expect(page.getByText('gestao.gestorcoop.app')).toBeVisible();
   });
+
+  test('9. gestao.gestorcoop.app: tela de login exibe acesso gestor com botão para Bubble e troca de perfil', async ({ page }) => {
+    await page.goto('/login?area=gestor&error=token_missing');
+
+    // Valida títulos e textos da área de gestão
+    await expect(page.getByRole('heading', { name: 'Acesso Administrativo & Gestão' })).toBeVisible();
+    await expect(page.getByText('Painel exclusivo para diretores, coordenadores e gestores da cooperativa.')).toBeVisible();
+
+    // Valida botão direto para o GestorCoop Bubble
+    const bubbleBtn = page.getByRole('link', { name: 'Ir para o GestorCoop (Bubble)' });
+    await expect(bubbleBtn).toBeVisible();
+    await expect(bubbleBtn).toHaveAttribute('href', 'https://appgestorcoop.bubbleapps.io');
+
+    // Valida link secundário para o domínio principal
+    const apexLink = page.getByRole('link', { name: 'Acessar portal principal (gestorcoop.app)' });
+    await expect(apexLink).toBeVisible();
+    await expect(apexLink).toHaveAttribute('href', 'https://gestorcoop.app');
+
+    // Valida troca de abas para Portal do Cooperado
+    await page.getByRole('button', { name: 'Portal do Cooperado' }).click();
+    await expect(page.locator('#cpf-input')).toBeVisible();
+
+    // Valida retorno para a aba de Gestão
+    await page.getByRole('button', { name: 'Gestão & Diretoria' }).click();
+    await expect(bubbleBtn).toBeVisible();
+  });
 });
+

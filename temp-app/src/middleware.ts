@@ -30,16 +30,12 @@ const ORIGEM_EMBED =
   process.env.EMBED_ORIGEM ||
   'https://gestorcoop.app https://cooperado.gestorcoop.app https://gestao.gestorcoop.app https://cooperacao.gestorcoop.app https://appgestorcoop.bubbleapps.io';
 
-function aplicarHeadersSeguranca(resposta: NextResponse, ehRotaCooperado: boolean): NextResponse {
-  if (ehRotaCooperado) {
-    resposta.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${ORIGEM_EMBED}`);
-  } else {
-    resposta.headers.set('X-Frame-Options', 'DENY');
-  }
+function aplicarHeadersSeguranca(resposta: NextResponse, _ehRotaCooperado: boolean): NextResponse {
+  resposta.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${ORIGEM_EMBED}`);
   return resposta;
 }
 
-function naoAutenticado(request: NextRequest, motivo: string) {
+function naoAutenticado(request: NextRequest, motivo: string, area?: 'gestor' | 'cooperado') {
   if (request.nextUrl.pathname.startsWith('/api/')) {
     return new NextResponse(
       JSON.stringify({ success: false, error: 'Sessão inválida ou não autenticada.' }),
@@ -47,7 +43,18 @@ function naoAutenticado(request: NextRequest, motivo: string) {
     );
   }
   const loginUrl = new URL('/login', request.url);
+  const redirectPath = request.nextUrl.pathname + request.nextUrl.search;
+  if (redirectPath !== '/' && redirectPath !== '/login') {
+    loginUrl.searchParams.set('redirect', redirectPath);
+  }
   loginUrl.searchParams.set('error', motivo);
+  if (area) {
+    loginUrl.searchParams.set('area', area);
+  } else if (request.nextUrl.pathname.startsWith('/gestor')) {
+    loginUrl.searchParams.set('area', 'gestor');
+  } else if (request.nextUrl.pathname.startsWith('/cooperado')) {
+    loginUrl.searchParams.set('area', 'cooperado');
+  }
   return NextResponse.redirect(loginUrl);
 }
 
@@ -58,9 +65,10 @@ function rotaBloqueada(request: NextRequest, mensagem: string) {
       { status: 403, headers: { 'content-type': 'application/json' } }
     );
   }
-  // Redireciona páginas para o portal apropriado
+  // Redireciona páginas para o portal apropriado de gestão
   const loginGestao = new URL('https://gestao.gestorcoop.app/login');
   loginGestao.searchParams.set('error', 'acesso_restrito_gestao');
+  loginGestao.searchParams.set('area', 'gestor');
   return NextResponse.redirect(loginGestao);
 }
 
@@ -152,6 +160,7 @@ export function middleware(request: NextRequest) {
       if (pathname !== '/' && pathname !== '/cooperado') {
         loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search);
       }
+      loginUrl.searchParams.set('area', 'cooperado');
       return NextResponse.redirect(loginUrl, 302);
     }
 
@@ -180,7 +189,7 @@ export function middleware(request: NextRequest) {
       if (!ehPublica) {
         const temToken = !!request.headers.get('authorization');
         if (!temCookie && !temToken) {
-          return naoAutenticado(request, 'cooperado_token_missing');
+          return naoAutenticado(request, 'cooperado_token_missing', 'cooperado');
         }
       }
       return NextResponse.next();
@@ -194,12 +203,17 @@ export function middleware(request: NextRequest) {
   // Destinado a gestores: prontuários 360°, auditoria, equipamentos, financeiro
   // =========================================================================
   if (subdominio === 'gestao') {
+    // Permite livremente tela de login, rotas de autenticação e iframe embed exchange
+    if (pathname === '/login' || pathname.startsWith('/api/auth') || pathname === '/entrar') {
+      return aplicarHeadersSeguranca(NextResponse.next(), false);
+    }
+
     const temCookieGestor = !!request.cookies.get(COOKIE_SESSAO_GESTOR);
 
     // Raiz na gestão rewrites para prontuários (ou login se sem sessão)
     if (pathname === '/') {
       if (!temCookieGestor) {
-        return naoAutenticado(request, 'token_missing');
+        return naoAutenticado(request, 'token_missing', 'gestor');
       }
       const url = request.nextUrl.clone();
       url.pathname = '/gestor/prontuarios';
@@ -223,7 +237,7 @@ export function middleware(request: NextRequest) {
 
     if (aliasMatch) {
       if (!temCookieGestor) {
-        return naoAutenticado(request, 'token_missing');
+        return naoAutenticado(request, 'token_missing', 'gestor');
       }
       const url = request.nextUrl.clone();
       url.pathname = pathname.replace(aliasMatch, aliasesGestor[aliasMatch]);
@@ -233,7 +247,7 @@ export function middleware(request: NextRequest) {
     // Rotas com prefixo /gestor e /api/gestor
     if (pathname.startsWith('/gestor') || pathname.startsWith('/api/gestor')) {
       if (!temCookieGestor) {
-        return naoAutenticado(request, 'token_missing');
+        return naoAutenticado(request, 'token_missing', 'gestor');
       }
       return aplicarHeadersSeguranca(NextResponse.next(), false);
     }
@@ -250,7 +264,7 @@ export function middleware(request: NextRequest) {
   const ehPublicaDoCooperado = ROTAS_COOPERADO_PUBLICAS.some((rota) => pathname.startsWith(rota));
 
   if (ehRotaGestor && !request.cookies.get(COOKIE_SESSAO_GESTOR)) {
-    return naoAutenticado(request, 'token_missing');
+    return naoAutenticado(request, 'token_missing', 'gestor');
   }
 
   const ehProntuario =

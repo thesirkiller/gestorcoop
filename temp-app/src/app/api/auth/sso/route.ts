@@ -4,6 +4,7 @@ import { bubbleApi } from '@/lib/bubble';
 import { emitirTokenSessao, VALIDADE_PADRAO_SEGUNDOS, AreaSessao } from '@/lib/sessao-token';
 import { requireDb } from '@/lib/db/client';
 import { normalizarEspecialidade } from '@/lib/db/prontuarios';
+import { obterDominioCookie } from '@/lib/subdominios';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
@@ -89,12 +90,15 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(redirectUrl.toString(), 302);
     response.headers.set('Cache-Control', 'no-store');
 
+    const cookieDomain = obterDominioCookie(request.headers.get('host') || request.nextUrl.hostname);
+
     // Cookies para suporte a acesso direto e embedded/iframe
     response.cookies.set(`${area}_session`, token, {
       path: '/',
       httpOnly: true,
       secure: true,
       sameSite: 'none',
+      domain: cookieDomain,
       maxAge: VALIDADE_PADRAO_SEGUNDOS,
     });
     response.cookies.set('cooperado_session', token, {
@@ -102,12 +106,14 @@ export async function GET(request: NextRequest) {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
+      domain: cookieDomain,
       maxAge: VALIDADE_PADRAO_SEGUNDOS,
     });
     response.cookies.set('gc_user_id', user._id, {
       path: '/',
       secure: true,
       sameSite: 'none',
+      domain: cookieDomain,
       maxAge: VALIDADE_PADRAO_SEGUNDOS,
     });
 
@@ -149,11 +155,14 @@ export async function POST(request: NextRequest) {
       },
     }, { headers: { 'Cache-Control': 'no-store' } });
 
+    const cookieDomain = obterDominioCookie(request.headers.get('host') || request.nextUrl.hostname);
+
     response.cookies.set(`${area}_session`, token, {
       path: '/',
       httpOnly: true,
       secure: true,
       sameSite: 'none',
+      domain: cookieDomain,
       maxAge: VALIDADE_PADRAO_SEGUNDOS,
     });
     response.cookies.set('cooperado_session', token, {
@@ -161,6 +170,7 @@ export async function POST(request: NextRequest) {
       httpOnly: true,
       secure: true,
       sameSite: 'none',
+      domain: cookieDomain,
       maxAge: VALIDADE_PADRAO_SEGUNDOS,
     });
 
