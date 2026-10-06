@@ -424,12 +424,34 @@ function seedClinicalMemory() {
 
 let schemaGarantido = false;
 let schemaEmAndamento: Promise<void> | null = null;
+
+async function executarComandoDdl(db: any, sql: string): Promise<void> {
+  const sqlLimpo = sql.replace(/\r?\n+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!sqlLimpo) return;
+  try {
+    if (typeof db.prepare === 'function') {
+      await db.prepare(sqlLimpo).run();
+    } else if (typeof db.exec === 'function') {
+      await db.exec(sqlLimpo);
+    }
+  } catch (error) {
+    const msg = String(error);
+    if (
+      /duplicate column name/i.test(msg) ||
+      /already exists/i.test(msg)
+    ) {
+      return;
+    }
+    console.warn(`[garantirSchemaD1] Aviso DDL: ${sqlLimpo.slice(0, 45)}... -> ${msg}`);
+  }
+}
+
 export async function garantirSchemaD1(db: any): Promise<void> {
   if (!db || schemaGarantido) return;
   if (schemaEmAndamento) return schemaEmAndamento;
   schemaEmAndamento = (async () => {
   try {
-    await db.exec(`
+    await executarComandoDdl(db, `
       CREATE TABLE IF NOT EXISTS pacientes (
         id TEXT PRIMARY KEY,
         nome TEXT NOT NULL,
@@ -546,11 +568,7 @@ export async function garantirSchemaD1(db: any): Promise<void> {
       )`
     ];
     for (const cmd of comandos) {
-      try {
-        await db.exec(cmd);
-      } catch (error) {
-        if (!cmd.startsWith('ALTER TABLE') || !/duplicate column name/i.test(String(error))) throw error;
-      }
+      await executarComandoDdl(db, cmd);
     }
   } catch (err) {
     console.error('Erro ao inicializar schema do D1:', err);
