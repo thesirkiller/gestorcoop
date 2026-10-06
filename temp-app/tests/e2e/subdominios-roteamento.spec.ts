@@ -82,15 +82,30 @@ test.describe('Middleware de Subdomínios e Isolamento de Segurança', () => {
     await req.dispose();
   });
 
-  test('4. cooperado.gestorcoop.app: raiz rewrites para o portal do cooperado', async ({ baseURL }) => {
-    const req = await playwrightRequest.newContext({
+  test('4. cooperado.gestorcoop.app: raiz deslogada redireciona para login e autenticada entrega o portal', async ({
+    baseURL,
+  }) => {
+    // Deslogado -> redireciona para /login
+    const reqDeslogado = await playwrightRequest.newContext({
       baseURL,
       extraHTTPHeaders: { 'x-subdomain': 'cooperado' },
     });
+    const resDeslogado = await reqDeslogado.get('/', { maxRedirects: 0 });
+    expect([302, 307]).toContain(resDeslogado.status());
+    expect(resDeslogado.headers()['location']).toContain('/login');
+    await reqDeslogado.dispose();
 
-    const res = await req.get('/');
-    expect(res.status()).toBe(200);
-    await req.dispose();
+    // Autenticado com cooperado_session -> 200 OK
+    const reqLogado = await playwrightRequest.newContext({
+      baseURL,
+      extraHTTPHeaders: {
+        'x-subdomain': 'cooperado',
+        Cookie: 'cooperado_session=token-mock-cooperado',
+      },
+    });
+    const resLogado = await reqLogado.get('/');
+    expect(resLogado.status()).toBe(200);
+    await reqLogado.dispose();
   });
 
   test('5. cooperado.gestorcoop.app: rota limpa /prontuario/:id sem cookie redireciona para login', async ({

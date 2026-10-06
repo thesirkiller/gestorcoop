@@ -133,9 +133,26 @@ export function middleware(request: NextRequest) {
   // Isolado de qualquer visão de gestão administrativa
   // =========================================================================
   if (subdominio === 'cooperado') {
+    // Permite tela de login e rotas de autenticação
+    if (pathname === '/login' || pathname.startsWith('/api/auth')) {
+      return aplicarHeadersSeguranca(NextResponse.next(), true);
+    }
+
     // Segurança rígida: cooperado NÃO tem acesso ao painel de gestão nem suas APIs
     if (pathname.startsWith('/gestor') || pathname.startsWith('/api/gestor')) {
       return rotaBloqueada(request, 'Acesso restrito ao painel de gestão administrativa.');
+    }
+
+    const temCookie =
+      !!request.cookies.get(COOKIE_SESSAO_COOPERADO) || !!request.cookies.get(COOKIE_SESSAO_GESTOR);
+
+    // Se estiver deslogado, redireciona imediatamente para o login do cooperado
+    if (!temCookie) {
+      const loginUrl = new URL('/login', request.url);
+      if (pathname !== '/' && pathname !== '/cooperado') {
+        loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search);
+      }
+      return NextResponse.redirect(loginUrl, 302);
     }
 
     // Raiz rewrites para /cooperado (agenda/atividades)
@@ -147,14 +164,6 @@ export function middleware(request: NextRequest) {
 
     // Rota limpa de prontuário: /prontuario/:id -> rewrites para /cooperado/prontuario/:id
     if (pathname.startsWith('/prontuario/')) {
-      const temCookie =
-        !!request.cookies.get(COOKIE_SESSAO_COOPERADO) || !!request.cookies.get(COOKIE_SESSAO_GESTOR);
-      if (!temCookie) {
-        const loginUrl = new URL('/login', request.url);
-        loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search);
-        return NextResponse.redirect(loginUrl);
-      }
-
       const url = request.nextUrl.clone();
       url.pathname = `/cooperado${pathname}`;
       return aplicarHeadersSeguranca(NextResponse.rewrite(url), true);
@@ -162,13 +171,6 @@ export function middleware(request: NextRequest) {
 
     // Rota direta: /cooperado/prontuario/:id
     if (pathname.startsWith('/cooperado/prontuario')) {
-      const temCookie =
-        !!request.cookies.get(COOKIE_SESSAO_COOPERADO) || !!request.cookies.get(COOKIE_SESSAO_GESTOR);
-      if (!temCookie) {
-        const loginUrl = new URL('/login', request.url);
-        loginUrl.searchParams.set('redirect', pathname + request.nextUrl.search);
-        return NextResponse.redirect(loginUrl);
-      }
       return aplicarHeadersSeguranca(NextResponse.next(), true);
     }
 
@@ -176,8 +178,6 @@ export function middleware(request: NextRequest) {
     if (pathname.startsWith('/api/cooperado')) {
       const ehPublica = ROTAS_COOPERADO_PUBLICAS.some((rota) => pathname.startsWith(rota));
       if (!ehPublica) {
-        const temCookie =
-          !!request.cookies.get(COOKIE_SESSAO_COOPERADO) || !!request.cookies.get(COOKIE_SESSAO_GESTOR);
         const temToken = !!request.headers.get('authorization');
         if (!temCookie && !temToken) {
           return naoAutenticado(request, 'cooperado_token_missing');
