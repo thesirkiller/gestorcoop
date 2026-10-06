@@ -30,8 +30,13 @@ const ORIGEM_EMBED =
   process.env.EMBED_ORIGEM ||
   'https://gestorcoop.app https://cooperado.gestorcoop.app https://gestao.gestorcoop.app https://cooperacao.gestorcoop.app https://appgestorcoop.bubbleapps.io';
 
-function aplicarHeadersSeguranca(resposta: NextResponse, _ehRotaCooperado: boolean): NextResponse {
-  resposta.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${ORIGEM_EMBED}`);
+function aplicarHeadersSeguranca(resposta: NextResponse, ehRotaCooperado?: boolean): NextResponse {
+  // Permite renderizacao em iframe nos portais autorizados (Bubble e subdominios)
+  if (ehRotaCooperado !== undefined) {
+    resposta.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${ORIGEM_EMBED}`);
+  } else {
+    resposta.headers.set('Content-Security-Policy', `frame-ancestors 'self' ${ORIGEM_EMBED}`);
+  }
   return resposta;
 }
 
