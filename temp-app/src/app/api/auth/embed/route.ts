@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 import { criarTicket, validarChaveIntegracao } from '@/lib/auth-embed';
+import { normalizarEspecialidade } from '@/lib/db/prontuarios';
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
@@ -24,7 +25,11 @@ export async function POST(request: NextRequest) {
     const liberadosPorAmbiente = (process.env.GESTOR_USER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
     const ehGestor = user?.bool_colaborador_interno === true || liberadosPorAmbiente.includes(user_id);
     if (!user?._id || user._id !== user_id || (area === 'gestor' && !ehGestor) || (area === 'cooperado' && !user.fk_cooperado)) return NextResponse.json({ error: 'Usuário sem acesso a esta área.' }, { status: 403, headers });
-    const ticket = await criarTicket({ userId: user_id, area, cooperadoId: area === 'cooperado' ? user.fk_cooperado : undefined, nome: user.txt_nome || 'Profissional', cargo: 'Tecnico_Enfermagem' });
+    const cooperado = area === 'cooperado' ? await bubbleApi.getCooperado(user.fk_cooperado) : null;
+    const cargoBruto = cooperado?.txt_profissao || user.txt_profissao || undefined;
+    const cargo = cargoBruto ? normalizarEspecialidade(cargoBruto) : undefined;
+    if (area === 'cooperado' && !cargo) return NextResponse.json({ error: 'Profissão do cooperado não cadastrada.' }, { status: 403, headers });
+    const ticket = await criarTicket({ userId: user_id, area, cooperadoId: area === 'cooperado' ? user.fk_cooperado : undefined, nome: user.txt_nome || 'Profissional', cargo });
     return NextResponse.json({ success: true, embed_url: `${origin.replace(/\/$/, '')}/entrar#ticket=${ticket}`, expires_in: 60 }, { headers });
   } catch { return NextResponse.json({ error: 'Não foi possível emitir acesso. Verifique a configuração da integração.' }, { status: 503, headers }); }
 }

@@ -1670,6 +1670,7 @@ export const bubbleApi = {
       await bubbleClient.patch(`/obj/user/${userId}`, payload);
     } catch (e) {
       console.warn("Failed to clear SSO token fields:", e);
+      throw e;
     }
   },
 

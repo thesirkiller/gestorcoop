@@ -25,6 +25,7 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import ModalDocumentosCooperado from './_components/ModalDocumentosCooperado';
+import { obterUrlCooperacao } from '@/lib/subdominios';
 
 interface Cooperado {
   _id: string;
@@ -97,6 +98,7 @@ export default function GestorDashboard() {
   const [generatingTermId, setGeneratingTermId] = useState<string | null>(null);
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [copiedAdesao, setCopiedAdesao] = useState(false);
   const [generatedLinks, setGeneratedLinks] = useState<Record<string, string>>({});
 
   // Pagination state
@@ -279,7 +281,32 @@ export default function GestorDashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={async () => {
+              const url = obterUrlCooperacao();
+              if (typeof window !== 'undefined' && navigator.clipboard) {
+                await navigator.clipboard.writeText(url);
+              }
+              setCopiedAdesao(true);
+              setTimeout(() => setCopiedAdesao(false), 3000);
+            }}
+            className="inline-flex items-center gap-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+            title="Copiar link de cooperação online para enviar aos novos cooperados"
+          >
+            {copiedAdesao ? (
+              <>
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span className="text-emerald-700">Link Copiado!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-4 h-4" />
+                <span>Copiar Link de Adesão</span>
+              </>
+            )}
+          </button>
+
           <button
             onClick={fetchData}
             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm"

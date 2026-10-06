@@ -47,5 +47,6 @@ befree-bubble-mcp/
 
 # Agent local customizations
 .agents/
+.maestri/
 
 

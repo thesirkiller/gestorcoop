@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { obterSessao } from '@/lib/sessao';
 import {
   obterPacienteClinico,
   obterPlanoTerapeuticoVigente,
@@ -16,12 +17,14 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
     if (!pacienteId) {
       return NextResponse.json({ success: false, error: 'ID do paciente ausente.' }, { status: 400 });
     }
 
     const paciente = await obterPacienteClinico(pacienteId);
+
     if (!paciente) {
       return NextResponse.json({ success: false, error: 'Paciente não encontrado.' }, { status: 404 });
     }

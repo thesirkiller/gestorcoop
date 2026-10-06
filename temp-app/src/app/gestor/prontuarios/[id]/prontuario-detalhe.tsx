@@ -42,6 +42,7 @@ import Link from 'next/link';
 import type { PlanoTerapeutico } from '@/lib/tipos-clinicos';
 import DashboardGeral from './dashboard-geral';
 import PlanoTerapeuticoTab from './plano-terapeutico-tab';
+import { obterUrlCooperado } from '@/lib/subdominios';
 
 interface PacienteData {
   id: string;
@@ -139,6 +140,7 @@ export default function Prontuario360Detalhe() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [partialWarning, setPartialWarning] = useState<string | null>(null);
 
   const [paciente, setPaciente] = useState<PacienteData | null>(null);
   const [evolucoes, setEvolucoes] = useState<EvolucaoData[]>([]);
@@ -167,8 +169,7 @@ export default function Prontuario360Detalhe() {
   const copiarLinkCooperado = async () => {
     if (!paciente) return;
     try {
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-      const url = `${baseUrl}/cooperado/prontuario/${paciente.id}`;
+      const url = obterUrlCooperado(`/prontuario/${paciente.id}`);
       if (typeof window !== 'undefined' && navigator?.clipboard?.writeText) {
         await navigator.clipboard.writeText(url);
       } else if (typeof document !== 'undefined') {
@@ -228,6 +229,7 @@ export default function Prontuario360Detalhe() {
   const carregarProntuarioCompleto = async (silencioso = false) => {
     if (!silencioso) setLoading(true);
     setError(null);
+    setPartialWarning(null);
     try {
       // Tenta buscar pelo endpoint 360 de paciente
       const res = await axios.get(`/api/gestor/prontuarios/pacientes/${id}`);
@@ -242,18 +244,62 @@ export default function Prontuario360Detalhe() {
           setExpandedEvolucaoId(d.evolucoes[0].id);
         }
 
-        // Buscar dados unificados da dashboard do paciente em background
-        axios
-          .get(`/api/gestor/prontuarios/pacientes/${id}/dashboard`)
-          .then((resDash) => {
-            if (resDash.data?.success && resDash.data?.data) {
-              const dash = resDash.data.data;
-              setPlanoVigente(dash.planoVigente || null);
-              setPlanos(dash.planos || []);
-              setEquipamentos(dash.equipamentos || []);
+        // Buscar dados unificados da dashboard do paciente, planos, prescrições, sinais e pareceres em paralelo
+        try {
+          const [resDash, resPlanos, resPresc, resSinais, resPareceres] = await Promise.allSettled([
+            axios.get(`/api/gestor/prontuarios/pacientes/${id}/dashboard`),
+            axios.get(`/api/gestor/prontuarios/pacientes/${id}/planos`),
+            axios.get(`/api/gestor/prontuarios/pacientes/${id}/prescricoes`),
+            axios.get(`/api/gestor/prontuarios/pacientes/${id}/sinais-vitais`),
+            axios.get(`/api/gestor/prontuarios/pacientes/${id}/parecer`),
+          ]);
+          if ([resDash, resPlanos, resPresc, resSinais, resPareceres].some((result) => result.status === 'rejected' ||
+            (result.status === 'fulfilled' && result.value.data?.success !== true))) {
+            setPartialWarning('Parte dos dados do prontuário não pôde ser carregada. Atualize a página antes de tomar decisões clínicas.');
+          }
+
+          let planosCarregados: PlanoTerapeutico[] = [];
+          let planoVigenteCarregado: PlanoTerapeutico | null = null;
+
+          if (resDash.status === 'fulfilled' && resDash.value.data?.success && resDash.value.data?.data) {
+            const dash = resDash.value.data.data;
+            planoVigenteCarregado = dash.planoVigente || null;
+            if (Array.isArray(dash.planos) && dash.planos.length > 0) {
+              planosCarregados = dash.planos;
             }
-          })
-          .catch(() => {});
+            setEquipamentos(dash.equipamentos || []);
+          }
+
+          if (resPlanos.status === 'fulfilled' && resPlanos.value.data?.success && Array.isArray(resPlanos.value.data?.data)) {
+            const listaPlanos = resPlanos.value.data.data;
+            if (listaPlanos.length > 0) {
+              planosCarregados = listaPlanos;
+              const ativoRecente = listaPlanos.find((p: any) => p.status === 'Ativo');
+              if (ativoRecente) {
+                planoVigenteCarregado = ativoRecente;
+              } else if (!planoVigenteCarregado) {
+                planoVigenteCarregado = listaPlanos[0];
+              }
+            }
+          }
+
+          if (resPresc.status === 'fulfilled' && resPresc.value.data?.success && Array.isArray(resPresc.value.data?.data) && resPresc.value.data.data.length > 0) {
+            setPrescricoes(resPresc.value.data.data);
+          }
+
+          if (resSinais.status === 'fulfilled' && resSinais.value.data?.success && Array.isArray(resSinais.value.data?.data) && resSinais.value.data.data.length > 0) {
+            setSinaisVitais(resSinais.value.data.data);
+          }
+
+          if (resPareceres.status === 'fulfilled' && resPareceres.value.data?.success && Array.isArray(resPareceres.value.data?.data) && resPareceres.value.data.data.length > 0) {
+            setPareceres(resPareceres.value.data.data);
+          }
+
+          setPlanos(planosCarregados);
+          setPlanoVigente(planoVigenteCarregado);
+        } catch (err) {
+          console.warn('Erro ao carregar dashboard e planos:', err);
+        }
       } else {
         // Fallback: se id for de uma evolução, busca paciente correspondente
         const resEvo = await axios.get('/api/gestor/prontuarios');
@@ -291,11 +337,15 @@ export default function Prontuario360Detalhe() {
         .map((h) => h.trim())
         .filter((h) => h.length > 0);
 
-      await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/prescricoes`, {
+      const res = await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/prescricoes`, {
         ...novaPrescricaoForm,
         horarios_padrao: horarios,
         frequencia_horas: Number(novaPrescricaoForm.frequencia_horas),
       });
+
+      if (res.data?.success && res.data?.data) {
+        setPrescricoes((prev) => [res.data.data, ...prev]);
+      }
 
       setIsNovaPrescricaoOpen(false);
       setNovaPrescricaoForm({
@@ -308,7 +358,7 @@ export default function Prontuario360Detalhe() {
         medico_nome: 'Dr. Roberto Cardozo',
         medico_crm: 'CRM-SP 114520',
       });
-      await carregarProntuarioCompleto();
+      await carregarProntuarioCompleto(true);
     } catch (err: any) {
       console.error('Erro ao salvar prescrição:', err);
     } finally {
@@ -321,7 +371,11 @@ export default function Prontuario360Detalhe() {
     if (!paciente) return;
     setSalvando(true);
     try {
-      await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/sinais-vitais`, novoSinalForm);
+      const res = await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/sinais-vitais`, novoSinalForm);
+      if (res.data?.success && res.data?.data) {
+        setSinaisVitais((prev) => [res.data.data, ...prev]);
+      }
+
       setIsNovoSinalOpen(false);
       setNovoSinalForm({
         pa_sistolica: '120',
@@ -335,7 +389,7 @@ export default function Prontuario360Detalhe() {
         nivel_consciencia: 'Alerta',
         observacoes: '',
       });
-      await carregarProntuarioCompleto();
+      await carregarProntuarioCompleto(true);
     } catch (err: any) {
       console.error('Erro ao registrar sinal vital:', err);
     } finally {
@@ -348,14 +402,18 @@ export default function Prontuario360Detalhe() {
     if (!paciente) return;
     setSalvando(true);
     try {
-      await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/parecer`, novoParecerForm);
+      const res = await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/parecer`, novoParecerForm);
+      if (res.data?.success && res.data?.data) {
+        setPareceres((prev) => [res.data.data, ...prev]);
+      }
+
       setIsNovoParecerOpen(false);
       setNovoParecerForm({
         tipo_parecer: 'Conforme',
         descricao: '',
         auditor_nome: 'Dr. Marcos Gestor',
       });
-      await carregarProntuarioCompleto();
+      await carregarProntuarioCompleto(true);
     } catch (err: any) {
       alert(err.response?.data?.error || 'Erro ao registrar parecer.');
     } finally {
@@ -410,7 +468,7 @@ export default function Prontuario360Detalhe() {
             <div className="h-16 bg-slate-100 rounded-xl"></div>
             <div className="h-16 bg-slate-100 rounded-xl"></div>
           </div>
-          <div className="h-24 bg-slate-900/10 rounded-2xl"></div>
+          <div className="h-24 bg-slate-100 rounded-2xl"></div>
         </div>
         <div className="max-w-7xl mx-auto space-y-4">
           <div className="h-10 w-96 bg-slate-200 rounded-xl animate-pulse"></div>
@@ -441,6 +499,7 @@ export default function Prontuario360Detalhe() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 lg:p-8 print:bg-white print:p-2">
+      {partialWarning && <div role="alert" className="max-w-7xl mx-auto mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-900">{partialWarning}</div>}
       {/* Action Bar / Navigation com Breadcrumb */}
       <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 print:hidden">
         <div className="flex items-center gap-2 text-xs">
@@ -495,7 +554,7 @@ export default function Prontuario360Detalhe() {
 
           <a
             href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-              `Olá! Segue o link de acesso ao prontuário do paciente *${paciente.nome}* no GestorCoop:\n\n${typeof window !== 'undefined' ? window.location.origin : ''}/cooperado/prontuario/${paciente.id}`
+              `Olá! Segue o link de acesso ao prontuário do paciente *${paciente.nome}* no GestorCoop:\n\n${obterUrlCooperado(`/prontuario/${paciente.id}`)}`
             )}`}
             target="_blank"
             rel="noopener noreferrer"
@@ -532,15 +591,17 @@ export default function Prontuario360Detalhe() {
                       ? 'bg-rose-100 text-rose-800 border border-rose-200'
                       : paciente.complexidade === 'Média'
                       ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                      : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : paciente.complexidade === 'Baixa'
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                      : 'bg-slate-100 text-slate-700 border border-slate-200'
                   }`}
                 >
-                  Complexidade {paciente.complexidade || 'Média'}
+                  Complexidade {paciente.complexidade || 'não informada'}
                 </span>
 
                 <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  {paciente.status || 'Em Cuidado Domiciliar'}
+                  {paciente.status || 'Status não informado'}
                 </span>
 
                 {paciente.plano_saude && (
@@ -612,44 +673,45 @@ export default function Prontuario360Detalhe() {
                   </span>
                 ))
               ) : (
-                <span className="text-rose-700 italic">Nenhuma alergia ou alerta crítico relatado.</span>
+                <span className="text-rose-700 italic">Sem registro de alergias ou alertas críticos.</span>
               )}
             </div>
           </div>
         </div>
 
-        {/* Card de Controle de Cota Mensal de Visitas do Técnico */}
-        <div className="mt-4 p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-indigo-950 text-white shadow-md">
+        {/* A cota por especialidade pertence ao plano terapêutico. A cota legada
+            só aparece enquanto não existe um plano para este paciente. */}
+        {planos.length === 0 && Number(paciente.limite_visitas_mes) > 0 && <div className="mt-4 p-4 rounded-xl border border-slate-200 bg-slate-50 text-slate-900">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <span className="bg-indigo-500/30 text-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border border-indigo-400/30">
-                  Cota Contratada de Visitas Técnicas
+                <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border border-slate-200">
+                  Cota mensal legada de visitas
                 </span>
                 {paciente.limite_atingido ? (
-                  <span className="bg-rose-500/30 text-rose-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-rose-400/30 flex items-center gap-1">
+                  <span className="bg-rose-50 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-md border border-rose-200 flex items-center gap-1">
                     <AlertTriangle className="w-3 h-3 text-rose-400" />
                     Cota Esgotada - Bloqueio Ativo
                   </span>
                 ) : (
-                  <span className="bg-emerald-500/30 text-emerald-300 text-[10px] font-bold px-2 py-0.5 rounded-md border border-emerald-400/30">
+                  <span className="bg-emerald-50 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-md border border-emerald-200">
                     {paciente.visitas_restantes_mes !== undefined ? `${paciente.visitas_restantes_mes} visitas restantes` : 'Sem limite'}
                   </span>
                 )}
               </div>
               <h3 className="text-base font-bold tracking-tight">
-                {paciente.visitas_realizadas_mes || 0} de {paciente.limite_visitas_mes || 0} visitas técnicas realizadas este mês
+                {paciente.visitas_realizadas_mes || 0} de {paciente.limite_visitas_mes || 0} visitas realizadas este mês
               </h3>
-              <p className="text-xs text-indigo-200/80 mt-0.5">
+              <p className="text-xs text-slate-600 mt-0.5">
                 {paciente.limite_atingido
-                  ? 'O técnico não consegue realizar novas visitas até o início do próximo mês ou liberação de cota adicional.'
+                  ? 'Novas visitas ficam bloqueadas até o início do próximo mês ou ajuste da cota.'
                   : `Restam ${paciente.visitas_restantes_mes ?? (paciente.limite_visitas_mes || 0)} visitas para o teto contratado do paciente.`}
               </p>
             </div>
 
             <div className="flex items-center gap-3">
               {editandoCota ? (
-                <div className="flex items-center gap-2 bg-white/10 p-1.5 rounded-xl border border-white/20">
+                <div className="flex items-center gap-2 bg-white p-1.5 rounded-xl border border-slate-200">
                   <input
                     type="number"
                     min="0"
@@ -668,7 +730,7 @@ export default function Prontuario360Detalhe() {
                   </button>
                   <button
                     onClick={() => setEditandoCota(false)}
-                    className="text-slate-300 hover:text-white text-xs px-1.5 py-1"
+                    className="text-slate-600 hover:text-slate-900 text-xs px-1.5 py-1"
                   >
                     ✕
                   </button>
@@ -679,7 +741,7 @@ export default function Prontuario360Detalhe() {
                     setNovaCotaValor(String(paciente.limite_visitas_mes || 13));
                     setEditandoCota(true);
                   }}
-                  className="bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0"
+                  className="bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 px-3.5 py-2 rounded-xl text-xs font-bold transition-all shrink-0"
                 >
                   Alterar Cota Mensal
                 </button>
@@ -689,7 +751,7 @@ export default function Prontuario360Detalhe() {
 
           {/* Barra de Progresso */}
           {paciente.limite_visitas_mes !== undefined && paciente.limite_visitas_mes > 0 && (
-            <div className="mt-3 w-full bg-white/10 rounded-full h-2 overflow-hidden">
+            <div className="mt-3 w-full bg-slate-200 rounded-full h-2 overflow-hidden">
               <div
                 className={`h-full transition-all duration-500 ${
                   paciente.limite_atingido
@@ -704,7 +766,7 @@ export default function Prontuario360Detalhe() {
               />
             </div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* Tabs */}
@@ -834,7 +896,21 @@ export default function Prontuario360Detalhe() {
             pacienteId={paciente.id}
             pacienteNome={paciente.nome}
             planos={planos}
-            onPlanoAtualizado={() => carregarProntuarioCompleto(true)}
+            onPlanoAtualizado={(novoPlano) => {
+              if (novoPlano && novoPlano.status === 'Ativo') {
+                setPlanoVigente(novoPlano);
+                setPlanos((prev) => {
+                  const idx = prev.findIndex((p) => p.id === novoPlano.id);
+                  if (idx >= 0) {
+                    const c = [...prev];
+                    c[idx] = novoPlano;
+                    return c;
+                  }
+                  return [novoPlano, ...prev];
+                });
+              }
+              carregarProntuarioCompleto(true);
+            }}
           />
         )}
 

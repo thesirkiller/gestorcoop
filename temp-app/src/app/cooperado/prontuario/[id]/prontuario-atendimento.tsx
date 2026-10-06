@@ -290,7 +290,10 @@ export default function ProntuarioAtendimento() {
       setErrorText(null);
       
       // Salva ação na fila de sincronização
-      await localDB.enqueueAction('CHECK_IN', { pacienteId, checkIn: checkInTime, evolucaoId: newEv.id });
+      await localDB.enqueueAction('CHECK_IN', {
+        pacienteId, checkIn: checkInTime, evolucaoId: newEv.id,
+        tipoProfissional: newEv.tipo_profissional, turno: newEv.turno,
+      });
       
     } catch (e) {
       console.error(e);
@@ -339,9 +342,9 @@ export default function ProntuarioAtendimento() {
       if (isOnline) {
         await transcreverAudio(evolucao.id, blob);
       } else {
-        // Enfileira ação de transcrição pendente para quando voltar online
+        // Mantém a pendência no aparelho até a transcrição ser confirmada.
         await localDB.enqueueAction('EVOLUCAO_TEXTO', { evolucaoId: evolucao.id });
-        setTranscriptionText('[Áudio salvo offline. Transcrição ocorrerá assim que a conexão for restabelecida.]');
+        setTranscriptionText('[Áudio salvo offline. Reconecte e toque em Transcrever áudio.]');
       }
     }
   };
@@ -371,6 +374,12 @@ export default function ProntuarioAtendimento() {
           };
           await localDB.saveEvolucao(updated);
           setEvolucao(updated);
+        }
+        const pendentes = await localDB.getSyncQueue();
+        for (const acao of pendentes) {
+          if (acao.type === 'EVOLUCAO_TEXTO' && acao.payload?.evolucaoId === evolucaoId && acao.id !== undefined) {
+            await localDB.dequeueAction(acao.id);
+          }
         }
       } else {
         throw new Error(response.data.error || 'Erro ao processar áudio no servidor.');
@@ -474,8 +483,8 @@ export default function ProntuarioAtendimento() {
       }
     }
 
-    if (!transcriptionText && !audioRecorded) {
-      setErrorText('A evolução clínica não pode estar em branco. Grave o áudio ou digite o relato.');
+    if (!transcriptionText.trim() || transcriptionText.startsWith('[Áudio salvo offline')) {
+      setErrorText('Transcreva o áudio pendente ou digite o relato antes de assinar.');
       return;
     }
 
@@ -881,9 +890,21 @@ export default function ProntuarioAtendimento() {
               {isRecording ? (
                 <OndaSonora recorder={recorder} pausado={isRecordingPaused} />
               ) : audioRecorded ? (
-                <div className="flex items-center gap-2 text-accent-soft-ink font-heavy text-xs bg-accent-soft border border-accent-line py-2 px-4 rounded-xl">
-                  <Check className="w-4 h-4" aria-hidden="true" />
-                  <span>Áudio Relato Gravado com Sucesso ({durationSecs}s)</span>
+                <div className="flex flex-col items-center gap-2">
+                  <div className="flex items-center gap-2 text-accent-soft-ink font-heavy text-xs bg-accent-soft border border-accent-line py-2 px-4 rounded-xl">
+                    <Check className="w-4 h-4" aria-hidden="true" />
+                    <span>Áudio salvo no aparelho ({durationSecs}s)</span>
+                  </div>
+                  {transcriptionText.startsWith('[Áudio salvo offline') && (
+                    <button type="button" disabled={!isOnline || transcribing} onClick={async () => {
+                      if (!evolucao) return;
+                      const audio = await localDB.getAudio(evolucao.id);
+                      if (audio) await transcreverAudio(evolucao.id, audio);
+                      else setErrorText('Áudio local não encontrado. Digite o relato antes de assinar.');
+                    }} className="rounded-lg bg-accent px-3 py-2 text-xs font-bold text-on-accent disabled:opacity-50">
+                      {transcribing ? 'Transcrevendo...' : 'Transcrever áudio'}
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="text-muted text-xs flex items-center gap-1">

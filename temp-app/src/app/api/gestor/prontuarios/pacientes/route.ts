@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { obterSessao } from '@/lib/sessao';
 import {
   listarPacientesClinicos,
   salvarPacienteClinico,
@@ -13,6 +14,7 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const { searchParams } = new URL(request.url);
     const busca = searchParams.get('busca') || undefined;
     const status = searchParams.get('status') || undefined;
@@ -48,11 +50,11 @@ export async function GET(request: NextRequest) {
           data_nascimento: '',
           endereco: b.txt_endereco || '',
           telefone: b.txt_whatsapp || '',
-          diagnostico_principal: 'Cadastrado na base GestorCoop (Bubble)',
+          diagnostico_principal: '',
           cid10: '',
-          complexidade: 'Média',
+          complexidade: undefined,
           plano_saude: '',
-          warnings: b.fks_equipamentos?.length > 0 ? ['Possui equipamentos vinculados'] : [],
+          warnings: [],
           status: 'Ativo',
           limite_visitas_mes: 0,
           origem: 'Bubble',
@@ -113,6 +115,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const body = await request.json();
     if (!body.nome) {
       return NextResponse.json(
@@ -122,7 +125,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Se vier do Bubble ou sem CPF, define máscara padrão
-    const cpfFinal = body.cpf || `000.${Math.floor(100 + Math.random() * 900)}.${Math.floor(100 + Math.random() * 900)}-00`;
+    const cpfFinal = body.cpf || '';
 
     // 1. Salva ou atualiza paciente clínico no D1/memória
     const pacienteSalvo = await salvarPacienteClinico({

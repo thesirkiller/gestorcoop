@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { obterSessao } from '@/lib/sessao';
 import {
   obterPacienteClinico,
   salvarPacienteClinico,
@@ -8,7 +9,6 @@ import {
   listarSinaisVitaisClinicos,
   listarPareceresClinicos,
 } from '@/lib/db/prontuarios';
-import { bubbleApi } from '@/lib/bubble';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -18,31 +18,9 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
-    let paciente = await obterPacienteClinico(pacienteId);
-
-    // Se não encontrou no D1/memória, tenta buscar da base do Bubble
-    if (!paciente) {
-      try {
-        const bubblePac = await bubbleApi.getPaciente(pacienteId);
-        if (bubblePac && bubblePac._id) {
-          paciente = await salvarPacienteClinico({
-            id: bubblePac._id,
-            nome: bubblePac.txt_nome || 'Paciente sem Nome',
-            cpf: bubblePac.txt_cpf || '000.000.000-00',
-            endereco: bubblePac.txt_endereco || '',
-            telefone: bubblePac.txt_whatsapp || '',
-            diagnostico_principal: 'Paciente cadastrado no GestorCoop (Bubble)',
-            complexidade: 'Média',
-            status: 'Ativo',
-            limite_visitas_mes: 0,
-            warnings: bubblePac.fks_equipamentos?.length ? ['Possui equipamentos em casa'] : [],
-          });
-        }
-      } catch (eBubble) {
-        console.warn('Paciente não localizado no Bubble:', eBubble);
-      }
-    }
+    const paciente = await obterPacienteClinico(pacienteId);
 
     if (!paciente) {
       return NextResponse.json(
@@ -82,6 +60,7 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
     const body = await request.json();
 

@@ -4,6 +4,13 @@ compatibility_date = "2026-09-10"
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = ".vercel/output/static"
 
+# Domínios e Subdomínios do GestorCoop (Configurados no Cloudflare Pages Custom Domains):
+# CNAME DNS Apontamentos:
+# - gestorcoop.app          -> gestorcoop.pages.dev (Portal institucional / seletor unificado)
+# - gestao.gestorcoop.app     -> gestorcoop.pages.dev (Painel do Gestor: Prontuários 360°, Equipamentos, Financeiro)
+# - cooperado.gestorcoop.app  -> gestorcoop.pages.dev (Portal do Cooperado: Plantões, Agenda, Prontuário Clínico)
+# - cooperacao.gestorcoop.app -> gestorcoop.pages.dev (Cooperação Online: Funil de adesão e ZapSign de novos cooperados)
+
 # Workers AI. Habilitado mas ainda não é o provedor primário: a ordem da cascata
 # vive em `IA_ORDEM_TRANSCRICAO` e começa pela OpenAI, que é o caminho validado.
 # Depois de comparar a qualidade com áudio clínico real, inverta a env para

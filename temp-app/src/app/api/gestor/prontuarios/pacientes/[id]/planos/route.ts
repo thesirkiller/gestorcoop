@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { obterSessao } from '@/lib/sessao';
 import {
   listarPlanosTerapeuticosPorPaciente,
   salvarPlanoTerapeutico,
@@ -10,6 +11,7 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
     if (!pacienteId) {
       return NextResponse.json({ success: false, error: 'ID do paciente ausente.' }, { status: 400 });
@@ -28,6 +30,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
 
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
     if (!pacienteId) {
       return NextResponse.json({ success: false, error: 'ID do paciente ausente.' }, { status: 400 });

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getDb, novoId, agoraIso } from './client';
+import { getDb, D1IndisponivelError, novoId, agoraIso } from './client';
+import { bubbleApi } from '@/lib/bubble';
 
 export type EspecialidadeProfissional =
   | 'Tecnico_Enfermagem'
@@ -180,20 +181,37 @@ export interface PlanoTerapeutico {
 
 // -------------------------------------------------------------
 // Banco de dados em memória para Fallback / Dev local sem D1
+// Compartilhado via globalThis entre todos os módulos de rotas do Next.js
 // -------------------------------------------------------------
-const inMemoryPacientes: Map<string, PacienteClinico> = new Map();
-const inMemoryPrescricoes: Map<string, PrescricaoClinica> = new Map();
-const inMemoryAprazamentos: Map<string, AprazamentoClinico> = new Map();
-const inMemorySinaisVitais: Map<string, SinalVitalClinico> = new Map();
-const inMemoryEvolucoes: Map<string, EvolucaoClinica> = new Map();
-const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = new Map();
-const inMemoryPlanosTerapeuticos: Map<string, PlanoTerapeutico> = new Map();
-const inMemoryPlanoMetas: Map<string, MetaPlanoTerapeutico> = new Map();
+const g = globalThis as any;
+if (!g.__gestorcoop_inMemoryPacientes) g.__gestorcoop_inMemoryPacientes = new Map();
+if (!g.__gestorcoop_inMemoryPrescricoes) g.__gestorcoop_inMemoryPrescricoes = new Map();
+if (!g.__gestorcoop_inMemoryAprazamentos) g.__gestorcoop_inMemoryAprazamentos = new Map();
+if (!g.__gestorcoop_inMemorySinaisVitais) g.__gestorcoop_inMemorySinaisVitais = new Map();
+if (!g.__gestorcoop_inMemoryEvolucoes) g.__gestorcoop_inMemoryEvolucoes = new Map();
+if (!g.__gestorcoop_inMemoryPareceres) g.__gestorcoop_inMemoryPareceres = new Map();
+if (!g.__gestorcoop_inMemoryPlanosTerapeuticos) g.__gestorcoop_inMemoryPlanosTerapeuticos = new Map();
+if (!g.__gestorcoop_inMemoryPlanoMetas) g.__gestorcoop_inMemoryPlanoMetas = new Map();
 
-let seeded = false;
+const inMemoryPacientes: Map<string, PacienteClinico> = g.__gestorcoop_inMemoryPacientes;
+const inMemoryPrescricoes: Map<string, PrescricaoClinica> = g.__gestorcoop_inMemoryPrescricoes;
+const inMemoryAprazamentos: Map<string, AprazamentoClinico> = g.__gestorcoop_inMemoryAprazamentos;
+const inMemorySinaisVitais: Map<string, SinalVitalClinico> = g.__gestorcoop_inMemorySinaisVitais;
+const inMemoryEvolucoes: Map<string, EvolucaoClinica> = g.__gestorcoop_inMemoryEvolucoes;
+const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = g.__gestorcoop_inMemoryPareceres;
+const inMemoryPlanosTerapeuticos: Map<string, PlanoTerapeutico> = g.__gestorcoop_inMemoryPlanosTerapeuticos;
+const inMemoryPlanoMetas: Map<string, MetaPlanoTerapeutico> = g.__gestorcoop_inMemoryPlanoMetas;
+
+function getClinicalDb() {
+  const db = getDb();
+  if (!db && process.env.NODE_ENV === 'production') throw new D1IndisponivelError();
+  return db;
+}
+
 function seedClinicalMemory() {
-  if (seeded) return;
-  seeded = true;
+  if (getDb() || process.env.NODE_ENV === 'production') return;
+  if (g.__gestorcoop_clinical_seeded) return;
+  g.__gestorcoop_clinical_seeded = true;
 
   const hoje = new Date().toISOString().split('T')[0];
 
@@ -404,13 +422,157 @@ function seedClinicalMemory() {
 // Funções Públicas de Acesso a Dados
 // -------------------------------------------------------------
 
+let schemaGarantido = false;
+let schemaEmAndamento: Promise<void> | null = null;
+export async function garantirSchemaD1(db: any): Promise<void> {
+  if (!db || schemaGarantido) return;
+  if (schemaEmAndamento) return schemaEmAndamento;
+  schemaEmAndamento = (async () => {
+  try {
+    await db.exec(`
+      CREATE TABLE IF NOT EXISTS pacientes (
+        id TEXT PRIMARY KEY,
+        nome TEXT NOT NULL,
+        cpf TEXT,
+        data_nascimento TEXT,
+        endereco TEXT,
+        warnings TEXT
+      );
+    `);
+    const comandos = [
+      'ALTER TABLE pacientes ADD COLUMN telefone TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN responsavel_nome TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN responsavel_telefone TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN diagnostico_principal TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN cid10 TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN complexidade TEXT NOT NULL DEFAULT "Baixa"',
+      'ALTER TABLE pacientes ADD COLUMN plano_saude TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN numero_carteirinha TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN status TEXT NOT NULL DEFAULT "Ativo"',
+      'ALTER TABLE pacientes ADD COLUMN created_at TEXT',
+      'ALTER TABLE pacientes ADD COLUMN limite_visitas_mes INTEGER NOT NULL DEFAULT 0',
+      `CREATE TABLE IF NOT EXISTS planos_terapeuticos (
+        id TEXT PRIMARY KEY,
+        paciente_id TEXT NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+        data_inicio TEXT NOT NULL,
+        data_fim TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Ativo',
+        observacoes TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS plano_terapeutico_metas (
+        id TEXT PRIMARY KEY,
+        plano_id TEXT NOT NULL REFERENCES planos_terapeuticos(id) ON DELETE CASCADE,
+        especialidade TEXT NOT NULL,
+        quantidade_prevista INTEGER NOT NULL DEFAULT 1,
+        profissionais_designados TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS prescricoes (
+        id TEXT PRIMARY KEY,
+        paciente_id TEXT NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+        medicamento TEXT NOT NULL,
+        dosagem TEXT NOT NULL,
+        via_administracao TEXT NOT NULL,
+        frequencia_horas INTEGER NOT NULL,
+        data_inicio TEXT NOT NULL,
+        data_fim TEXT NOT NULL,
+        medico_nome TEXT DEFAULT '',
+        medico_crm TEXT DEFAULT '',
+        horarios_padrao TEXT DEFAULT '[]',
+        instrucoes TEXT DEFAULT '',
+        status TEXT DEFAULT 'Ativa',
+        created_at TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS aprazamentos (
+        id TEXT PRIMARY KEY,
+        prescricao_id TEXT NOT NULL REFERENCES prescricoes(id) ON DELETE CASCADE,
+        horario_previsto TEXT NOT NULL,
+        horario_executado TEXT,
+        status TEXT NOT NULL DEFAULT 'Pendente',
+        justificativa TEXT,
+        profissional_id TEXT,
+        assinatura_digital TEXT
+      )`,
+      `CREATE TABLE IF NOT EXISTS sinais_vitais (
+        id TEXT PRIMARY KEY,
+        paciente_id TEXT NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+        evolucao_id TEXT,
+        data_hora TEXT NOT NULL,
+        pa_sistolica INTEGER,
+        pa_diastolica INTEGER,
+        fc_bpm INTEGER,
+        fr_rpm INTEGER,
+        temp_celsius REAL,
+        spo2_percent INTEGER,
+        glicemia_mg_dl INTEGER,
+        dor_escala INTEGER,
+        nivel_consciencia TEXT,
+        observacoes TEXT,
+        profissional_id TEXT,
+        profissional_nome TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )`,
+      `CREATE TABLE IF NOT EXISTS pareceres_auditoria (
+        id TEXT PRIMARY KEY,
+        paciente_id TEXT NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+        evolucao_id TEXT,
+        auditor_id TEXT NOT NULL,
+        auditor_nome TEXT NOT NULL,
+        tipo_parecer TEXT NOT NULL,
+        descricao TEXT NOT NULL,
+        data_registro TEXT NOT NULL
+      )`,
+      `CREATE TABLE IF NOT EXISTS evolucoes (
+        id TEXT PRIMARY KEY,
+        paciente_id TEXT NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+        profissional_id TEXT NOT NULL,
+        tipo_profissional TEXT NOT NULL,
+        turno TEXT,
+        check_in TEXT NOT NULL,
+        check_out TEXT NOT NULL,
+        audio_url TEXT,
+        transcricao_crua TEXT,
+        transcricao_revisada TEXT,
+        status TEXT NOT NULL DEFAULT 'Em_Andamento',
+        data_assinatura TEXT,
+        assinatura_digital TEXT,
+        profissional_nome TEXT DEFAULT '',
+        soap_subjetivo TEXT,
+        soap_objetivo TEXT,
+        soap_avaliacao TEXT,
+        soap_plano TEXT
+      )`
+    ];
+    for (const cmd of comandos) {
+      try {
+        await db.exec(cmd);
+      } catch (error) {
+        if (!cmd.startsWith('ALTER TABLE') || !/duplicate column name/i.test(String(error))) throw error;
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao inicializar schema do D1:', err);
+    throw err;
+  }
+  })();
+  try {
+    await schemaEmAndamento;
+    schemaGarantido = true;
+  } finally {
+    schemaEmAndamento = null;
+  }
+}
+
 export async function listarPacientesClinicos(filtro?: {
   busca?: string;
   status?: string;
   complexidade?: string;
 }): Promise<PacienteClinico[]> {
   seedClinicalMemory();
-  const db = getDb();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
 
   let lista: PacienteClinico[] = [];
 
@@ -449,8 +611,7 @@ export async function listarPacientesClinicos(filtro?: {
         created_at: r.created_at,
       }));
     } catch (e) {
-      console.warn('Erro ao consultar pacientes no D1, usando memória:', e);
-      lista = Array.from(inMemoryPacientes.values());
+      throw e;
     }
   } else {
     lista = Array.from(inMemoryPacientes.values());
@@ -507,7 +668,8 @@ export async function listarPacientesClinicos(filtro?: {
 
 export async function obterPacienteClinico(id: string): Promise<PacienteClinico | null> {
   seedClinicalMemory();
-  const db = getDb();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
   let paciente: PacienteClinico | null = null;
 
   if (db) {
@@ -535,7 +697,7 @@ export async function obterPacienteClinico(id: string): Promise<PacienteClinico 
         };
       }
     } catch (e) {
-      console.warn('Erro ao obter paciente no D1:', e);
+      throw e;
     }
   }
 
@@ -543,9 +705,31 @@ export async function obterPacienteClinico(id: string): Promise<PacienteClinico 
     paciente = inMemoryPacientes.get(id) || null;
   }
 
+  // Se não foi encontrado no D1 nem na memória, auto-provisiona a partir do Bubble
+  if (!paciente) {
+    try {
+      const bubblePac = await bubbleApi.getPaciente(id);
+      if (bubblePac && (bubblePac._id || bubblePac.txt_nome)) {
+        paciente = await salvarPacienteClinico({
+          id: bubblePac._id || id,
+          nome: bubblePac.txt_nome || 'Paciente sem Nome',
+          cpf: bubblePac.txt_cpf || '',
+          endereco: bubblePac.txt_endereco || '',
+          telefone: bubblePac.txt_whatsapp || '',
+          diagnostico_principal: '',
+          status: 'Ativo',
+          limite_visitas_mes: 0,
+          warnings: [],
+        });
+      }
+    } catch {
+      // Paciente não localizado no Bubble
+    }
+  }
+
   if (paciente) {
     const mesAtualIso = new Date().toISOString().slice(0, 7);
-    const evolucoes = Array.from(inMemoryEvolucoes.values()).filter((ev) => ev.paciente_id === id);
+    const evolucoes = await listarEvolucoesClinicas({ paciente_id: id });
     const evolucoesMes = evolucoes.filter((ev) => ev.check_in && ev.check_in.startsWith(mesAtualIso));
     paciente.visitas_realizadas_mes = evolucoesMes.length;
     const limite = paciente.limite_visitas_mes || 0;
@@ -564,7 +748,7 @@ export async function obterCotaVisitasPaciente(pacienteId: string, mesReferencia
 }> {
   seedClinicalMemory();
   const mes = mesReferencia || new Date().toISOString().slice(0, 7);
-  const db = getDb();
+  const db = getClinicalDb();
   let limite = 0;
   let realizadas = 0;
 
@@ -627,10 +811,9 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
     created_at: paciente.created_at || now,
   };
 
-  inMemoryPacientes.set(id, registro);
-
-  const db = getDb();
+  const db = getClinicalDb();
   if (db) {
+    await garantirSchemaD1(db);
     try {
       await db.prepare(`
         INSERT INTO pacientes (
@@ -674,10 +857,12 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
         registro.created_at
       ).run();
     } catch (e) {
-      console.warn('Erro ao salvar paciente no D1:', e);
+      console.error('Erro ao salvar paciente no D1:', e);
+      throw e;
     }
   }
 
+  inMemoryPacientes.set(id, registro);
   return registro;
 }
 
@@ -691,6 +876,69 @@ export async function listarEvolucoesClinicas(filtros?: {
   limit?: number;
 }): Promise<EvolucaoClinica[]> {
   seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) {
+    try {
+      await garantirSchemaD1(db);
+      let query = 'SELECT * FROM evolucoes WHERE 1=1';
+      const params: any[] = [];
+      if (filtros?.paciente_id) {
+        query += ' AND paciente_id = ?';
+        params.push(filtros.paciente_id);
+      }
+      if (filtros?.profissional_id) {
+        query += ' AND profissional_id = ?';
+        params.push(filtros.profissional_id);
+      }
+      if (filtros?.especialidade) {
+        query += ' AND tipo_profissional = ?';
+        params.push(filtros.especialidade);
+      }
+      if (filtros?.status) {
+        query += ' AND status = ?';
+        params.push(filtros.status);
+      }
+      if (filtros?.data_inicio) {
+        query += ' AND check_in >= ?';
+        params.push(filtros.data_inicio);
+      }
+      if (filtros?.data_fim) {
+        query += ' AND check_in <= ?';
+        params.push(filtros.data_fim + 'T23:59:59');
+      }
+      query += ' ORDER BY check_in DESC';
+      if (filtros?.limit) {
+        query += ` LIMIT ${Number(filtros.limit)}`;
+      }
+      const stmt = db.prepare(query);
+      const rows = (await (params.length ? stmt.bind(...params) : stmt).all<any>()).results;
+      if (rows) {
+        return rows.map((r: any) => ({
+          id: r.id,
+          paciente_id: r.paciente_id,
+          profissional_id: r.profissional_id,
+          tipo_profissional: r.tipo_profissional,
+          profissional_nome: r.profissional_nome || '',
+          turno: r.turno || undefined,
+          check_in: r.check_in,
+          check_out: r.check_out,
+          audio_url: r.audio_url || undefined,
+          transcricao_crua: r.transcricao_crua || undefined,
+          transcricao_revisada: r.transcricao_revisada || '',
+          soap_subjetivo: r.soap_subjetivo || undefined,
+          soap_objetivo: r.soap_objetivo || undefined,
+          soap_avaliacao: r.soap_avaliacao || undefined,
+          soap_plano: r.soap_plano || undefined,
+          status: r.status || 'Finalizado',
+          data_assinatura: r.data_assinatura || undefined,
+          assinatura_digital: r.assinatura_digital || undefined,
+        }));
+      }
+    } catch (e) {
+      throw e;
+    }
+  }
+
   let lista = Array.from(inMemoryEvolucoes.values());
 
   if (filtros?.paciente_id) {
@@ -741,23 +989,38 @@ export async function listarEvolucoesClinicas(filtros?: {
 
 export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & { id?: string }): Promise<EvolucaoClinica> {
   seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
+
+  // Garantir que o paciente existe no D1 antes de inserir a evolução
+  await obterPacienteClinico(dados.paciente_id);
+
   const id = dados.id || novoId('evo');
   const evolucao: EvolucaoClinica = {
     ...dados,
     id,
   };
 
-  inMemoryEvolucoes.set(id, evolucao);
-
-  const db = getDb();
   if (db) {
     try {
       await db.prepare(`
         INSERT INTO evolucoes (
           id, paciente_id, profissional_id, tipo_profissional, turno,
           check_in, check_out, audio_url, transcricao_crua, transcricao_revisada,
-          status, data_assinatura, assinatura_digital
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          status, data_assinatura, assinatura_digital, profissional_nome,
+          soap_subjetivo, soap_objetivo, soap_avaliacao, soap_plano
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          check_out = excluded.check_out,
+          transcricao_crua = excluded.transcricao_crua,
+          transcricao_revisada = excluded.transcricao_revisada,
+          status = excluded.status,
+          data_assinatura = excluded.data_assinatura,
+          assinatura_digital = excluded.assinatura_digital,
+          soap_subjetivo = excluded.soap_subjetivo,
+          soap_objetivo = excluded.soap_objetivo,
+          soap_avaliacao = excluded.soap_avaliacao,
+          soap_plano = excluded.soap_plano
       `).bind(
         evolucao.id,
         evolucao.paciente_id,
@@ -771,13 +1034,19 @@ export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & 
         evolucao.transcricao_revisada,
         evolucao.status || 'Finalizado',
         evolucao.data_assinatura || null,
-        evolucao.assinatura_digital || null
+        evolucao.assinatura_digital || null,
+        evolucao.profissional_nome || '',
+        evolucao.soap_subjetivo || null,
+        evolucao.soap_objetivo || null,
+        evolucao.soap_avaliacao || null,
+        evolucao.soap_plano || null
       ).run();
     } catch (e) {
-      console.warn('Erro ao salvar evolução no D1:', e);
+      throw e;
     }
   }
 
+  inMemoryEvolucoes.set(id, evolucao);
   return evolucao;
 }
 
@@ -786,7 +1055,7 @@ export async function listarPrescricoesClinicas(pacienteId: string, apenasAtivas
 
   // D1 primeiro: o Map em memória morre com o isolate do Worker, então ler só
   // dele fazia o painel perder prescrição recém-cadastrada entre dois cliques.
-  const db = getDb();
+  const db = getClinicalDb();
   if (db) {
     try {
       const sql = apenasAtivas
@@ -794,14 +1063,14 @@ export async function listarPrescricoesClinicas(pacienteId: string, apenasAtivas
         : 'SELECT * FROM prescricoes WHERE paciente_id = ? ORDER BY created_at DESC';
       const binds = apenasAtivas ? [pacienteId, 'Ativa'] : [pacienteId];
       const { results } = await db.prepare(sql).bind(...binds).all<any>();
-      if (results.length > 0) {
+      if (results) {
         return results.map((p) => ({
           ...p,
           horarios_padrao: p.horarios_padrao ? JSON.parse(p.horarios_padrao) : [],
         })) as PrescricaoClinica[];
       }
     } catch (e) {
-      console.warn('Erro ao ler prescrições do D1, caindo para memória:', e);
+      throw e;
     }
   }
 
@@ -873,55 +1142,66 @@ export async function criarPrescricaoClinica(dados: Omit<PrescricaoClinica, 'id'
     created_at: agoraIso(),
   };
 
-  inMemoryPrescricoes.set(id, prescricao);
-
   const slots = gerarSlotsAprazamento(prescricao);
-  for (const ap of slots) inMemoryAprazamentos.set(ap.id, ap);
 
   // Persistência no D1. Sem isto a prescrição existia só no Map deste isolate:
   // o gestor via a confirmação de sucesso e o cooperado nunca recebia a
   // medicação, porque a agenda dele lê da tabela `aprazamentos`.
-  const db = getDb();
+  const db = getClinicalDb();
   if (db) {
-    const statements = [
-      db.prepare(`
-        INSERT INTO prescricoes (
-          id, paciente_id, medicamento, dosagem, via_administracao, frequencia_horas,
-          data_inicio, data_fim, medico_nome, medico_crm, horarios_padrao, instrucoes, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).bind(
-        prescricao.id,
-        prescricao.paciente_id,
-        prescricao.medicamento,
-        prescricao.dosagem,
-        prescricao.via_administracao,
-        prescricao.frequencia_horas,
-        prescricao.data_inicio,
-        prescricao.data_fim,
-        prescricao.medico_nome || '',
-        prescricao.medico_crm || '',
-        JSON.stringify(prescricao.horarios_padrao || []),
-        prescricao.instrucoes || '',
-        prescricao.status || 'Ativa',
-        prescricao.created_at || agoraIso(),
-      ),
-      ...slots.map((ap) =>
-        db
-          .prepare('INSERT INTO aprazamentos (id, prescricao_id, horario_previsto, status) VALUES (?, ?, ?, ?)')
-          .bind(ap.id, ap.prescricao_id, ap.horario_previsto, ap.status),
-      ),
-    ];
+    await garantirSchemaD1(db);
+    // Assegurar paciente no D1 para foreign key
+    await obterPacienteClinico(prescricao.paciente_id);
 
-    // `batch` é atômico: ou entra a prescrição com todos os seus horários, ou
-    // nada. Aprazamento órfão significaria medicação sem prescrição na tela.
-    await db.batch(statements);
+    try {
+      const statements = [
+        db.prepare(`
+          INSERT INTO prescricoes (
+            id, paciente_id, medicamento, dosagem, via_administracao, frequencia_horas,
+            data_inicio, data_fim, medico_nome, medico_crm, horarios_padrao, instrucoes, status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          prescricao.id,
+          prescricao.paciente_id,
+          prescricao.medicamento,
+          prescricao.dosagem,
+          prescricao.via_administracao,
+          prescricao.frequencia_horas,
+          prescricao.data_inicio,
+          prescricao.data_fim,
+          prescricao.medico_nome || '',
+          prescricao.medico_crm || '',
+          JSON.stringify(prescricao.horarios_padrao || []),
+          prescricao.instrucoes || '',
+          prescricao.status || 'Ativa',
+          prescricao.created_at || agoraIso(),
+        ),
+        ...slots.map((ap) =>
+          db
+            .prepare('INSERT INTO aprazamentos (id, prescricao_id, horario_previsto, status) VALUES (?, ?, ?, ?)')
+            .bind(ap.id, ap.prescricao_id, ap.horario_previsto, ap.status),
+        ),
+      ];
+
+      // `batch` é atômico: ou entra a prescrição com todos os seus horários, ou nada.
+      await db.batch(statements);
+    } catch (e) {
+      throw e;
+    }
   }
 
+  inMemoryPrescricoes.set(id, prescricao);
+  for (const ap of slots) inMemoryAprazamentos.set(ap.id, ap);
   return prescricao;
 }
 
 export async function registrarSinalVitalClinico(dados: Omit<SinalVitalClinico, 'id'> & { id?: string }): Promise<SinalVitalClinico> {
   seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
+
+  await obterPacienteClinico(dados.paciente_id);
+
   const id = dados.id || novoId('sv');
   const sinal: SinalVitalClinico = {
     ...dados,
@@ -929,12 +1209,60 @@ export async function registrarSinalVitalClinico(dados: Omit<SinalVitalClinico, 
     created_at: agoraIso(),
   };
 
+  if (db) {
+    try {
+      await db.prepare(`
+        INSERT INTO sinais_vitais (
+          id, paciente_id, evolucao_id, data_hora, pa_sistolica, pa_diastolica,
+          fc_bpm, fr_rpm, temp_celsius, spo2_percent, glicemia_mg_dl,
+          dor_escala, nivel_consciencia, observacoes, profissional_id, profissional_nome, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        sinal.id,
+        sinal.paciente_id,
+        sinal.evolucao_id || null,
+        sinal.data_hora,
+        sinal.pa_sistolica ?? null,
+        sinal.pa_diastolica ?? null,
+        sinal.fc_bpm ?? null,
+        sinal.fr_rpm ?? null,
+        sinal.temp_celsius ?? null,
+        sinal.spo2_percent ?? null,
+        sinal.glicemia_mg_dl ?? null,
+        sinal.dor_escala ?? null,
+        sinal.nivel_consciencia || 'Alerta',
+        sinal.observacoes || '',
+        sinal.profissional_id || null,
+        sinal.profissional_nome || null,
+        sinal.created_at
+      ).run();
+    } catch (e) {
+      throw e;
+    }
+  }
+
   inMemorySinaisVitais.set(id, sinal);
   return sinal;
 }
 
 export async function listarSinaisVitaisClinicos(pacienteId: string, limit = 50): Promise<SinalVitalClinico[]> {
   seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
+
+  if (db) {
+    try {
+      const res = await db.prepare(
+        'SELECT * FROM sinais_vitais WHERE paciente_id = ? ORDER BY data_hora DESC LIMIT ?'
+      ).bind(pacienteId, limit).all<any>();
+      if (res.results) {
+        return res.results as SinalVitalClinico[];
+      }
+    } catch (e) {
+      throw e;
+    }
+  }
+
   return Array.from(inMemorySinaisVitais.values())
     .filter((s) => s.paciente_id === pacienteId)
     .sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime())
@@ -943,11 +1271,36 @@ export async function listarSinaisVitaisClinicos(pacienteId: string, limit = 50)
 
 export async function registrarParecerClinico(dados: Omit<ParecerAuditoriaClinica, 'id'> & { id?: string }): Promise<ParecerAuditoriaClinica> {
   seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
+
+  await obterPacienteClinico(dados.paciente_id);
+
   const id = dados.id || novoId('par');
   const parecer: ParecerAuditoriaClinica = {
     ...dados,
     id,
   };
+
+  if (db) {
+    try {
+      await db.prepare(`
+        INSERT INTO pareceres_auditoria (id, paciente_id, evolucao_id, auditor_id, auditor_nome, tipo_parecer, descricao, data_registro)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).bind(
+        parecer.id,
+        parecer.paciente_id,
+        parecer.evolucao_id || null,
+        parecer.auditor_id,
+        parecer.auditor_nome,
+        parecer.tipo_parecer,
+        parecer.descricao,
+        parecer.data_registro
+      ).run();
+    } catch (e) {
+      throw e;
+    }
+  }
 
   inMemoryPareceres.set(id, parecer);
   return parecer;
@@ -955,6 +1308,22 @@ export async function registrarParecerClinico(dados: Omit<ParecerAuditoriaClinic
 
 export async function listarPareceresClinicos(pacienteId: string): Promise<ParecerAuditoriaClinica[]> {
   seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
+
+  if (db) {
+    try {
+      const res = await db.prepare(
+        'SELECT * FROM pareceres_auditoria WHERE paciente_id = ? ORDER BY data_registro DESC'
+      ).bind(pacienteId).all<any>();
+      if (res.results) {
+        return res.results as ParecerAuditoriaClinica[];
+      }
+    } catch (e) {
+      throw e;
+    }
+  }
+
   return Array.from(inMemoryPareceres.values())
     .filter((p) => p.paciente_id === pacienteId)
     .sort((a, b) => new Date(b.data_registro).getTime() - new Date(a.data_registro).getTime());
@@ -969,11 +1338,14 @@ export function normalizarEspecialidade(esp: string): string {
     tecnico: 'Tecnico_Enfermagem',
     tecnico_enfermagem: 'Tecnico_Enfermagem',
     'técnico de enfermagem': 'Tecnico_Enfermagem',
+    'técnico em enfermagem': 'Tecnico_Enfermagem',
     enfermeiro: 'Enfermeiro',
     enfermagem: 'Enfermeiro',
     medico: 'Medico',
     médico: 'Medico',
     dentista: 'Dentista',
+    odontologo: 'Dentista',
+    odontólogo: 'Dentista',
     odontologia: 'Dentista',
     odonto: 'Dentista',
     fisioterapeuta: 'Fisioterapeuta',
@@ -1081,7 +1453,12 @@ export async function salvarPlanoTerapeutico(dados: {
   }>;
 }): Promise<PlanoTerapeutico> {
   seedClinicalMemory();
-  const db = getDb();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
+
+  // Assegura que o paciente existe no D1 para a foreign key
+  await obterPacienteClinico(dados.paciente_id);
+
   const planoId = dados.id || novoId('pln');
   const now = agoraIso();
 
@@ -1106,7 +1483,7 @@ export async function salvarPlanoTerapeutico(dados: {
 
   if (db) {
     try {
-      await db.prepare(`
+      const statements = [db.prepare(`
         INSERT INTO planos_terapeuticos (id, paciente_id, data_inicio, data_fim, status, observacoes, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
@@ -1124,13 +1501,10 @@ export async function salvarPlanoTerapeutico(dados: {
         novoPlano.observacoes,
         novoPlano.created_at,
         novoPlano.updated_at
-      ).run();
-
-      // Deleta metas anteriores se for update
-      await db.prepare('DELETE FROM plano_terapeutico_metas WHERE plano_id = ?').bind(planoId).run();
+      ), db.prepare('DELETE FROM plano_terapeutico_metas WHERE plano_id = ?').bind(planoId)];
 
       for (const meta of novoPlano.metas || []) {
-        await db.prepare(`
+        statements.push(db.prepare(`
           INSERT INTO plano_terapeutico_metas (id, plano_id, especialidade, quantidade_prevista, profissionais_designados, created_at)
           VALUES (?, ?, ?, ?, ?, ?)
         `).bind(
@@ -1140,10 +1514,12 @@ export async function salvarPlanoTerapeutico(dados: {
           meta.quantidade_prevista,
           JSON.stringify(meta.profissionais_designados || []),
           meta.created_at
-        ).run();
+        ));
       }
+      await db.batch(statements);
     } catch (e) {
-      console.warn('Erro ao salvar plano no D1, caindo para memória:', e);
+      console.error('Erro ao salvar plano no D1:', e);
+      throw e;
     }
   }
 
@@ -1152,13 +1528,14 @@ export async function salvarPlanoTerapeutico(dados: {
     inMemoryPlanoMetas.set(m.id, m);
   }
 
-  const evolucoes = Array.from(inMemoryEvolucoes.values()).filter((e) => e.paciente_id === dados.paciente_id);
+  const evolucoes = await listarEvolucoesClinicas({ paciente_id: dados.paciente_id });
   return enriquecerPlanoComCalculos(novoPlano, evolucoes);
 }
 
 export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): Promise<PlanoTerapeutico[]> {
   seedClinicalMemory();
-  const db = getDb();
+  const db = getClinicalDb();
+  if (db) await garantirSchemaD1(db);
   let planos: PlanoTerapeutico[] = [];
 
   if (db) {
@@ -1190,16 +1567,16 @@ export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): P
         }
       }
     } catch (e) {
-      console.warn('Erro ao listar planos do D1, buscando da memória:', e);
+      throw e;
     }
   }
 
-  if (planos.length === 0) {
+  if (!db && planos.length === 0) {
     planos = Array.from(inMemoryPlanosTerapeuticos.values()).filter((p) => p.paciente_id === pacienteId);
   }
 
   // Buscar evoluções para cálculo de progresso
-  const evolucoes = Array.from(inMemoryEvolucoes.values()).filter((e) => e.paciente_id === pacienteId);
+  const evolucoes = await listarEvolucoesClinicas({ paciente_id: pacienteId });
   return planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes));
 }
 
@@ -1213,8 +1590,7 @@ export async function obterPlanoTerapeuticoVigente(pacienteId: string, dataIso?:
   const planoVigente = planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim);
   if (planoVigente) return planoVigente;
 
-  // Se não houver estritamente na data, retorna o plano ativo mais recente
-  return planos.find((p) => p.status === 'Ativo') || planos[0] || null;
+  return null;
 }
 
 export async function validarCheckInPlanoTerapeutico(params: {
@@ -1236,6 +1612,9 @@ export async function validarCheckInPlanoTerapeutico(params: {
 
   // Se o paciente não tiver plano terapêutico cadastrado, verifica cota mensal legada
   if (!plano || !plano.metas || plano.metas.length === 0) {
+    if (!plano && (await listarPlanosTerapeuticosPorPaciente(pacienteId)).length > 0) {
+      return { permitido: false, motivo: 'Não existe plano terapêutico ativo para a data deste atendimento.' };
+    }
     const cotaLegada = await obterCotaVisitasPaciente(pacienteId);
     if (cotaLegada.limite_visitas_mes > 0 && cotaLegada.visitas_realizadas_mes >= cotaLegada.limite_visitas_mes) {
       return {

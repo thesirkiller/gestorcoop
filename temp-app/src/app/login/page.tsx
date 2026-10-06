@@ -14,6 +14,7 @@ function LoginContent() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+
   // Formatação com máscara de CPF
   const handleCpfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -166,7 +167,7 @@ function LoginContent() {
       {/* Rodapé e Acesso Gestor */}
       <div className="mt-7 pt-5 border-t border-slate-100 flex flex-col items-center gap-3">
         <a
-          href="https://gestorcoop.app/"
+          href="https://gestao.gestorcoop.app/"
           target="_blank"
           rel="noopener noreferrer"
           className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1.5 transition-colors"

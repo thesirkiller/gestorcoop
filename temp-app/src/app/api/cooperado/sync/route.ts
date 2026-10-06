@@ -3,15 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 
 import { gerarSeloAssinatura, obterSessaoCooperado } from '@/lib/sessao-cooperado';
-import { validarCheckInPlanoTerapeutico } from '@/lib/db/prontuarios';
+import { normalizarEspecialidade, validarCheckInPlanoTerapeutico } from '@/lib/db/prontuarios';
+import { getDb } from '@/lib/db/client';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
-
-interface D1Database {
-  prepare(query: string): any;
-  batch(statements: any[]): Promise<any>;
-}
 
 export async function POST(request: NextRequest) {
   try {
@@ -32,7 +28,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Formato de ações inválido.' }, { status: 400 });
     }
 
-    const db = (process.env.DB as unknown) as D1Database | undefined;
+    const db = getDb();
 
     if (!db) {
       // NÃO devolva sucesso aqui. O cliente apaga a fila local ao receber
@@ -48,22 +44,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const servicos = await bubbleApi.getServicosByCooperado(sessao.cooperadoId);
+    const pacientesPermitidos = new Set(servicos.map((servico: any) => servico.fk_paciente).filter(Boolean));
+
     const statements: any[] = [];
+    const tipos: string[] = [];
 
     for (const action of actions) {
       const { type, payload } = action;
 
       if (type === 'CHECK_IN') {
         const { evolucaoId, pacienteId, checkIn, tipoProfissional, turno } = payload;
+        if (!pacientesPermitidos.has(pacienteId)) {
+          return NextResponse.json({ success: false, error: 'Paciente não vinculado aos serviços deste cooperado.' }, { status: 403 });
+        }
+        const especialidadeSessao = normalizarEspecialidade(sessao.cargo || '');
+        if (!especialidadeSessao || normalizarEspecialidade(tipoProfissional || '') !== especialidadeSessao) {
+          return NextResponse.json({ success: false, error: 'Especialidade do atendimento difere da sessão do cooperado.' }, { status: 403 });
+        }
 
         // Verificar se é uma nova evolução ou re-envio de uma existente
-        const evolucaoExistente = await db.prepare('SELECT id FROM evolucoes WHERE id = ?').bind(evolucaoId).first();
+        const evolucaoExistente = await db.prepare('SELECT id, paciente_id, profissional_id FROM evolucoes WHERE id = ?').bind(evolucaoId).first<any>();
+        if (evolucaoExistente && (evolucaoExistente.paciente_id !== pacienteId || evolucaoExistente.profissional_id !== sessao.cooperadoId)) {
+          return NextResponse.json({ success: false, error: 'Atendimento pertence a outro paciente ou profissional.' }, { status: 403 });
+        }
 
         if (!evolucaoExistente) {
           // Validação estrita por especialidade e período no Plano Terapêutico (ou cota legada)
           const validacao = await validarCheckInPlanoTerapeutico({
             pacienteId,
-            tipoProfissional: tipoProfissional || 'Tecnico_Enfermagem',
+            tipoProfissional: especialidadeSessao,
             checkIn: checkIn || new Date().toISOString(),
             cooperadoId: sessao.cooperadoId,
           });
@@ -85,15 +95,16 @@ export async function POST(request: NextRequest) {
         }
 
         // INSERT OR IGNORE: garante idempotência
+        tipos.push(type);
         statements.push(
           db.prepare(
-            `INSERT OR IGNORE INTO evolucoes (id, paciente_id, profissional_id, tipo_profissional, turno, check_in, status)
-             VALUES (?, ?, ?, ?, ?, ?, 'Em_Andamento')`
+            `INSERT OR IGNORE INTO evolucoes (id, paciente_id, profissional_id, tipo_profissional, turno, check_in, check_out, status)
+             VALUES (?, ?, ?, ?, ?, ?, '', 'Em_Andamento')`
           ).bind(
             evolucaoId,
             pacienteId,
             sessao.cooperadoId,
-            tipoProfissional || 'Tecnico_Enfermagem',
+            especialidadeSessao,
             turno || null,
             checkIn
           )
@@ -102,6 +113,10 @@ export async function POST(request: NextRequest) {
 
       else if (type === 'CHECK_MEDICAMENTO') {
         const { aprazamentoId, status, horario_executado, justificativa } = payload;
+        const aprazamento = await db.prepare('SELECT p.paciente_id FROM aprazamentos a JOIN prescricoes p ON p.id = a.prescricao_id WHERE a.id = ?').bind(aprazamentoId).first<any>();
+        if (!aprazamento || !pacientesPermitidos.has(aprazamento.paciente_id)) {
+          return NextResponse.json({ success: false, error: 'Medicação fora dos pacientes autorizados.' }, { status: 403 });
+        }
 
         const selo =
           status === 'Administrado'
@@ -113,6 +128,7 @@ export async function POST(request: NextRequest) {
               })
             : null;
 
+        tipos.push(type);
         statements.push(
           db.prepare(
             `UPDATE aprazamentos
@@ -131,6 +147,12 @@ export async function POST(request: NextRequest) {
 
       else if (type === 'SIGN_EVOLUCAO') {
         const { evolucaoId, checkOut, transcricao_revisada } = payload;
+        const evolucao = await db.prepare('SELECT paciente_id, profissional_id FROM evolucoes WHERE id = ?').bind(evolucaoId).first<any>();
+        const checkInNoLote = actions.some((acao: any) => acao.type === 'CHECK_IN' && acao.payload?.evolucaoId === evolucaoId && pacientesPermitidos.has(acao.payload?.pacienteId));
+        if ((!evolucao && !checkInNoLote) ||
+            (evolucao && (evolucao.profissional_id !== sessao.cooperadoId || !pacientesPermitidos.has(evolucao.paciente_id)))) {
+          return NextResponse.json({ success: false, error: 'Atendimento fora dos pacientes autorizados.' }, { status: 403 });
+        }
 
         const selo = await gerarSeloAssinatura({
           evolucaoId,
@@ -141,6 +163,7 @@ export async function POST(request: NextRequest) {
 
         // O `AND profissional_id = ?` impede assinar evolução de outro
         // profissional: sem ele, bastava mandar um id qualquer no payload.
+        tipos.push(type);
         statements.push(
           db.prepare(
             `UPDATE evolucoes
@@ -164,11 +187,20 @@ export async function POST(request: NextRequest) {
         } catch (e) {
           console.warn('Erro ao notificar Bubble (mas gravado no D1):', e);
         }
+      } else {
+        return NextResponse.json({ success: false, error: `Ação de sincronização não suportada: ${type}` }, { status: 400 });
       }
     }
 
     if (statements.length > 0) {
-      await db.batch(statements);
+      const resultados = await db.batch(statements);
+      if (resultados.some((resultado, index) => !resultado.success ||
+        (tipos[index] !== 'CHECK_IN' && (resultado.meta?.changes || 0) === 0))) {
+        return NextResponse.json({
+          success: false,
+          error: 'Uma ou mais ações não foram gravadas. Os registros permanecem pendentes no aparelho.',
+        }, { status: 409 });
+      }
     }
 
     return NextResponse.json({

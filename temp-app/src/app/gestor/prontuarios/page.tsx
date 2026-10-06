@@ -35,6 +35,7 @@ import { useRouter } from 'next/navigation';
 import { fetchFullDataset } from '@/lib/client-fetch';
 import { formatarNomeEspecialidade, EspecialidadeProfissional } from '@/lib/tipos-clinicos';
 import SeletorCooperadosMeta, { CooperadoItem } from './_components/SeletorCooperadosMeta';
+import { obterUrlCooperado } from '@/lib/subdominios';
 
 interface PacienteSummary {
   id: string;
@@ -193,8 +194,7 @@ export default function ProntuariosAuditDashboard() {
 
   const copiarLinkPacienteCooperado = async (p: PacienteSummary) => {
     try {
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-      const url = `${baseUrl}/cooperado/prontuario/${p.id}`;
+      const url = obterUrlCooperado(`/prontuario/${p.id}`);
       await copiarTextoParaClipboard(url);
       setCopiadoId(p.id);
       exibirToast(`Link copiado para o paciente ${p.nome}! Pronto para enviar no WhatsApp ou chat.`);
@@ -206,8 +206,7 @@ export default function ProntuariosAuditDashboard() {
 
   const copiarLinkGeralCooperado = async () => {
     try {
-      const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
-      const url = `${baseUrl}/cooperado`;
+      const url = obterUrlCooperado();
       await copiarTextoParaClipboard(url);
       setCopiadoGeral(true);
       exibirToast('Link do Portal de Atendimento do Cooperado copiado com sucesso!');
@@ -897,7 +896,7 @@ export default function ProntuariosAuditDashboard() {
 
                       <a
                         href={`https://api.whatsapp.com/send?text=${encodeURIComponent(
-                          `Olá! Segue o link de acesso ao prontuário do paciente *${p.nome}* no GestorCoop:\n\n${typeof window !== 'undefined' ? window.location.origin : ''}/cooperado/prontuario/${p.id}`
+                          `Olá! Segue o link de acesso ao prontuário do paciente *${p.nome}* no GestorCoop:\n\n${obterUrlCooperado(`/prontuario/${p.id}`)}`
                         )}`}
                         target="_blank"
                         rel="noopener noreferrer"

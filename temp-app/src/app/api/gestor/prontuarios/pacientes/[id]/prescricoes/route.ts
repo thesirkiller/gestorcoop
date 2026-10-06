@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { obterSessao } from '@/lib/sessao';
 import { listarPrescricoesClinicas, criarPrescricaoClinica } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,7 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
     const prescricoes = await listarPrescricoesClinicas(pacienteId, false);
     return NextResponse.json({ success: true, data: prescricoes });
@@ -23,6 +25,7 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
     const body = await request.json();
 

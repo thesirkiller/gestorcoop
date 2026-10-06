@@ -3,7 +3,7 @@ export const VALIDADE_PADRAO_SEGUNDOS = 12 * 60 * 60;
 export type AreaSessao = 'cooperado' | 'gestor';
 export interface IdentidadeSessao {
   userId: string; area: AreaSessao; cooperadoId?: string; nome: string;
-  cargo?: 'Tecnico_Enfermagem' | 'Medico' | 'Terapeuta';
+  cargo?: string;
 }
 export interface ClaimsSessao extends IdentidadeSessao { sessionId: string; exp: number }
 function chave() {

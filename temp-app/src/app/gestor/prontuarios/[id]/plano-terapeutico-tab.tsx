@@ -22,7 +22,7 @@ interface PlanoTerapeuticoTabProps {
   pacienteId: string;
   pacienteNome: string;
   planos: PlanoTerapeutico[];
-  onPlanoAtualizado: () => void;
+  onPlanoAtualizado: (planoAtualizado?: PlanoTerapeutico) => void;
 }
 
 const ESPECIALIDADES_DISPONIVEIS = [
@@ -47,6 +47,29 @@ export default function PlanoTerapeuticoTab({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [sucesso, setSucesso] = useState<string | null>(null);
+
+  // Lista local de planos com sincronização robusta
+  const [planosLocais, setPlanosLocais] = useState<PlanoTerapeutico[]>(planos || []);
+
+  useEffect(() => {
+    if (Array.isArray(planos)) {
+      setPlanosLocais(planos);
+    }
+  }, [planos]);
+
+  // Se inicializou sem planos, busca diretamente do endpoint dedicado
+  useEffect(() => {
+    if (!planos || planos.length === 0) {
+      axios
+        .get(`/api/gestor/prontuarios/pacientes/${pacienteId}/planos`)
+        .then((res) => {
+          if (res.data?.success && Array.isArray(res.data?.data) && res.data.data.length > 0) {
+            setPlanosLocais(res.data.data);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [pacienteId, planos]);
 
   // Lista de cooperados do sistema
   const [todosCooperados, setTodosCooperados] = useState<CooperadoItem[]>([]);
@@ -120,13 +143,8 @@ export default function PlanoTerapeuticoTab({
         console.warn('Erro ao carregar cooperados para o seletor:', err);
       }
 
-      // Fallback cooperados para testes e dev local
-      setTodosCooperados([
-        { id: 'coop_123', nome: 'Carlos Enfermagem (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
-        { id: 'coop_tec_2', nome: 'Roberto Soares (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
-        { id: 'coop_med_1', nome: 'Dr. Marcos Mendes', cargo: 'Médico', profissoes: ['Médico'] },
-        { id: 'coop_dent_1', nome: 'Dra. Camila Odonto', cargo: 'Dentista', profissoes: ['Dentista'] },
-      ]);
+      setTodosCooperados([]);
+      setErro('Não foi possível carregar os cooperados. Atualize a página e tente novamente.');
     }
   };
 
@@ -224,7 +242,19 @@ export default function PlanoTerapeuticoTab({
       if (res.data.success) {
         setSucesso('Plano Terapêutico salvo com sucesso!');
         setModoEdicao(false);
-        onPlanoAtualizado();
+        const salvo = res.data.data;
+        if (salvo && salvo.id) {
+          setPlanosLocais((prev) => {
+            const index = prev.findIndex((p) => p.id === salvo.id);
+            if (index >= 0) {
+              const updated = [...prev];
+              updated[index] = salvo;
+              return updated;
+            }
+            return [salvo, ...prev];
+          });
+        }
+        onPlanoAtualizado(salvo);
       } else {
         setErro(res.data.error || 'Erro ao salvar plano terapêutico.');
       }
@@ -462,8 +492,8 @@ export default function PlanoTerapeuticoTab({
 
       {/* Listagem de Planos Cadastrados */}
       <div className="space-y-4">
-        {planos.length > 0 ? (
-          planos.map((plano) => {
+        {planosLocais.length > 0 ? (
+          planosLocais.map((plano) => {
             const isVigente = plano.status === 'Ativo';
             return (
               <div

@@ -78,18 +78,25 @@ export async function synchronizeQueue(): Promise<boolean> {
 
     console.log(`Iniciando sincronização de ${queue.length} ações locais...`);
 
-    // Enviar lote ao servidor
-    const response = await axios.post('/api/cooperado/sync', { actions: queue });
+    // Áudio exige envio do Blob por multipart. A pendência bloqueia ações
+    // posteriores, inclusive a assinatura, até a transcrição ser confirmada.
+    const pendenciaAudio = queue.findIndex((action) => action.type === 'EVOLUCAO_TEXTO');
+    const actions = pendenciaAudio < 0 ? queue : queue.slice(0, pendenciaAudio);
+    if (actions.length === 0) {
+      throw new Error('Há um áudio pendente. Abra o atendimento e toque em Transcrever áudio.');
+    }
+
+    const response = await axios.post('/api/cooperado/sync', { actions });
 
     if (response.data.success) {
       // Remover com sucesso da fila local
-      for (const action of queue) {
+      for (const action of actions) {
         if (action.id !== undefined) {
           await localDB.dequeueAction(action.id);
         }
       }
       lastSyncedAt = new Date().toISOString();
-      syncError = null;
+      syncError = pendenciaAudio < 0 ? null : 'Há um áudio pendente. Abra o atendimento e toque em Transcrever áudio.';
       console.log('Sincronização concluída com sucesso!');
     } else {
       throw new Error(response.data.error || 'Erro desconhecido no servidor durante a sincronização.');

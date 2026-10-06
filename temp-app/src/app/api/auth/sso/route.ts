@@ -2,19 +2,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 import { emitirTokenSessao, VALIDADE_PADRAO_SEGUNDOS, AreaSessao } from '@/lib/sessao-token';
-import { getDb } from '@/lib/db/client';
+import { requireDb } from '@/lib/db/client';
+import { normalizarEspecialidade } from '@/lib/db/prontuarios';
 
 export const runtime = 'edge';
 export const dynamic = 'force-dynamic';
 
-async function processarSSO(userId: string, targetArea?: string, redirectPath?: string) {
-  const user = await bubbleApi.getUser(userId);
+async function processarSSO(ssoToken: string, targetArea?: string, redirectPath?: string) {
+  const user = await bubbleApi.findUserBySSOToken(ssoToken);
   if (!user || !user._id) {
-    throw new Error('Usuário não encontrado no Bubble.');
+    throw new Error('Token SSO inválido ou expirado.');
   }
+  const userId = user._id;
 
   const liberadosPorAmbiente = (process.env.GESTOR_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
   const ehGestor = user.bool_colaborador_interno === true || liberadosPorAmbiente.includes(userId);
+  if (targetArea === 'gestor' && !ehGestor) throw new Error('Usuário sem acesso de gestor.');
 
   let area: AreaSessao = 'cooperado';
   if (targetArea === 'gestor' && ehGestor) {
@@ -25,9 +28,13 @@ async function processarSSO(userId: string, targetArea?: string, redirectPath?: 
     area = ehGestor && !user.fk_cooperado ? 'gestor' : 'cooperado';
   }
 
-  const cooperadoId = user.fk_cooperado || (area === 'cooperado' ? user._id : undefined);
+  if (area === 'cooperado' && !user.fk_cooperado) throw new Error('Usuário sem vínculo de cooperado.');
+  const cooperadoId = user.fk_cooperado || undefined;
   const nome = user.txt_nome || 'Profissional';
-  const cargo = 'Tecnico_Enfermagem';
+  const cooperado = cooperadoId ? await bubbleApi.getCooperado(cooperadoId) : null;
+  const cargoBruto = cooperado?.txt_profissao || user.txt_profissao || undefined;
+  const cargo = cargoBruto ? normalizarEspecialidade(cargoBruto) : undefined;
+  if (area === 'cooperado' && !cargo) throw new Error('Profissão do cooperado não cadastrada.');
 
   const sessionId = crypto.randomUUID();
   const token = await emitirTokenSessao(
@@ -41,21 +48,17 @@ async function processarSSO(userId: string, targetArea?: string, redirectPath?: 
     sessionId
   );
 
-  const db = getDb();
-  if (db) {
-    try {
-      const now = Math.floor(Date.now() / 1000);
-      await db
-        .prepare('INSERT INTO auth_sessions (id, user_id, area, expires_at) VALUES (?, ?, ?, ?)')
-        .bind(sessionId, user._id, area, now + VALIDADE_PADRAO_SEGUNDOS)
-        .run();
-    } catch (e) {
-      console.warn('Aviso ao registrar auth_session no D1:', e);
-    }
-  }
+  const now = Math.floor(Date.now() / 1000);
+  await requireDb()
+    .prepare('INSERT INTO auth_sessions (id, user_id, area, expires_at) VALUES (?, ?, ?, ?)')
+    .bind(sessionId, user._id, area, now + VALIDADE_PADRAO_SEGUNDOS)
+    .run();
+  await bubbleApi.clearSSOToken(userId);
 
   let destino = redirectPath;
-  if (!destino) {
+  if (!destino || !destino.startsWith('/') || destino.startsWith('//') || destino.includes('\\') ||
+      (area === 'gestor' && !destino.startsWith('/gestor')) ||
+      (area === 'cooperado' && !destino.startsWith('/cooperado'))) {
     destino = area === 'cooperado' ? '/cooperado' : '/gestor/prontuarios';
   }
 
@@ -64,19 +67,19 @@ async function processarSSO(userId: string, targetArea?: string, redirectPath?: 
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const userId = searchParams.get('user_id') || searchParams.get('token') || searchParams.get('u');
+  const ssoToken = searchParams.get('token');
   const targetArea = searchParams.get('area') || undefined;
   const redirectParam = searchParams.get('redirect') || undefined;
 
-  if (!userId) {
+  if (!ssoToken) {
     return NextResponse.json(
-      { success: false, error: 'Parâmetro user_id ou token ausente para autenticação SSO.' },
+      { success: false, error: 'Token SSO ausente.' },
       { status: 400, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 
   try {
-    const { token, area, destino } = await processarSSO(userId, targetArea, redirectParam);
+    const { token, area, destino, user } = await processarSSO(ssoToken, targetArea, redirectParam);
 
     const redirectUrl = new URL(destino, request.url);
     if (area === 'cooperado') {
@@ -101,7 +104,7 @@ export async function GET(request: NextRequest) {
       sameSite: 'none',
       maxAge: VALIDADE_PADRAO_SEGUNDOS,
     });
-    response.cookies.set('gc_user_id', userId, {
+    response.cookies.set('gc_user_id', user._id, {
       path: '/',
       secure: true,
       sameSite: 'none',
@@ -121,18 +124,18 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const userId = body.user_id || body.token || body.userId;
+    const ssoToken = body.token;
     const targetArea = body.area;
     const redirectParam = body.redirect;
 
-    if (!userId) {
+    if (!ssoToken) {
       return NextResponse.json(
-        { success: false, error: 'Identificador de usuário não informado.' },
+        { success: false, error: 'Token SSO não informado.' },
         { status: 400, headers: { 'Cache-Control': 'no-store' } }
       );
     }
 
-    const { token, area, destino, user } = await processarSSO(userId, targetArea, redirectParam);
+    const { token, area, destino, user } = await processarSSO(ssoToken, targetArea, redirectParam);
 
     const response = NextResponse.json({
       success: true,

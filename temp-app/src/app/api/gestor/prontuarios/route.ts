@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
+import { obterSessao } from '@/lib/sessao';
 import { listarEvolucoesClinicas } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
@@ -7,6 +8,7 @@ export const runtime = 'edge';
 
 export async function GET(request: NextRequest) {
   try {
+    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const { searchParams } = new URL(request.url);
     const pacienteId = searchParams.get('pacienteId') || undefined;
     const profissionalId = searchParams.get('profissionalId') || undefined;
