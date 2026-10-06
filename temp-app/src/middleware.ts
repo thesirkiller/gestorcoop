@@ -16,6 +16,7 @@ const COOKIE_SESSAO_GESTOR = 'gestor_session';
  * está em produção.
  */
 const ROTAS_COOPERADO_PUBLICAS = [
+  '/adesao',
   '/cooperado/adesao',
   '/api/cooperado/adesao',
   '/api/cooperado/verificar-cpf',
@@ -116,15 +117,16 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(urlDestino);
     }
 
-    // Raiz ou /adesao rewrites diretamente para /cooperado/adesao
+    // Raiz ou /adesao rewrites diretamente para /adesao (página completa de adesão sem casca mobile)
     if (pathname === '/' || pathname === '/adesao') {
       const url = request.nextUrl.clone();
-      url.pathname = '/cooperado/adesao';
+      url.pathname = '/adesao';
       return aplicarHeadersSeguranca(NextResponse.rewrite(url), true);
     }
 
     // Rotas de adesão e suas APIs
     if (
+      pathname.startsWith('/adesao') ||
       pathname.startsWith('/cooperado/adesao') ||
       ROTAS_COOPERADO_PUBLICAS.some((rota) => pathname.startsWith(rota)) ||
       pathname.startsWith('/api/webhooks') ||
@@ -134,9 +136,9 @@ export function middleware(request: NextRequest) {
       return aplicarHeadersSeguranca(NextResponse.next(), true);
     }
 
-    // Qualquer outra rota é redirecionada para a página de adesão
+    // Qualquer outra rota no subdomínio é reescrita para a página de adesão de tela inteira
     const url = request.nextUrl.clone();
-    url.pathname = '/cooperado/adesao';
+    url.pathname = '/adesao';
     return aplicarHeadersSeguranca(NextResponse.rewrite(url), true);
   }
 

@@ -23,8 +23,17 @@ interface ProfessionalSession {
 export default function CooperadoLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
-  // O funil de adesão é público (usuário ainda não é cooperado) e possui layout próprio responsivo
-  if (pathname?.startsWith('/cooperado/adesao')) {
+  // O funil de adesão / cooperação online possui layout próprio de tela inteira
+  // e NUNCA deve ser envolvido pela casca de simulação mobile do cooperado
+  if (
+    pathname?.startsWith('/cooperado/adesao') ||
+    pathname?.startsWith('/adesao') ||
+    pathname?.includes('adesao') ||
+    (typeof window !== 'undefined' && (
+      window.location.hostname.includes('cooperacao') ||
+      window.location.pathname.includes('adesao')
+    ))
+  ) {
     return <>{children}</>;
   }
   const [syncStatus, setSyncStatus] = useState<SyncStatus>({

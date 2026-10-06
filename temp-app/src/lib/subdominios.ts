@@ -107,6 +107,8 @@ export function obterUrlCooperacao(caminho: string = ''): string {
     if (ehProducao) {
       const pathLimpo = pathNormalizado.startsWith('/cooperado/adesao')
         ? pathNormalizado.replace('/cooperado/adesao', '')
+        : pathNormalizado.startsWith('/adesao')
+        ? pathNormalizado.replace('/adesao', '')
         : pathNormalizado;
       return `https://cooperacao.${DOMINIO_PRINCIPAL}${pathLimpo || ''}`;
     }

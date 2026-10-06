@@ -26,18 +26,19 @@ test.describe('Helper de Subdomínios (src/lib/subdominios.ts)', () => {
 });
 
 test.describe('Middleware de Subdomínios e Isolamento de Segurança', () => {
-  test('1. cooperacao.gestorcoop.app: raiz entrega o funil de adesão online', async ({ baseURL }) => {
-    const req = await playwrightRequest.newContext({
-      baseURL,
-      extraHTTPHeaders: { 'x-subdomain': 'cooperacao' },
-    });
+  test('1. cooperacao.gestorcoop.app: raiz entrega o funil de adesão online de página inteira sem casca mobile', async ({ page }) => {
+    await page.setExtraHTTPHeaders({ 'x-subdomain': 'cooperacao' });
+    await page.goto('/');
 
-    const res = await req.get('/');
-    expect(res.status()).toBe(200);
-    const html = await res.text();
     // Deve conter elementos da Ficha de Inscrição e Adesão
-    expect(html).toContain('Ades');
-    await req.dispose();
+    await expect(page.getByText('Portal de Ingresso')).toBeVisible();
+    await expect(page.getByText('Ficha de Inscrição & Adesão')).toBeVisible();
+    await expect(page.getByText('Adesão de Cooperado')).toBeVisible();
+
+    // NÃO deve conter o cabeçalho nem os elementos da casca de simulação mobile do cooperado
+    await expect(page.locator('text=Profissional Online')).not.toBeVisible();
+    await expect(page.locator('text=Todos os dados salvos na nuvem')).not.toBeVisible();
+    await expect(page.locator('text=Sincronizando alterações locais...')).not.toBeVisible();
   });
 
   test('2. cooperacao.gestorcoop.app: bloqueia rigidamente qualquer acesso à gestão (/gestor e /api/gestor)', async ({
