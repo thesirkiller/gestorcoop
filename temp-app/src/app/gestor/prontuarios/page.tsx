@@ -506,7 +506,10 @@ export default function ProntuariosAuditDashboard() {
     if (jaExiste) {
       novosDesignados = designados.filter((d: any) => d.id !== coop.id);
     } else {
-      novosDesignados = [...designados, { id: coop.id, nome: coop.nome, cargo: coop.cargo }];
+      novosDesignados = [
+        ...designados,
+        { id: coop.id, nome: coop.nome, cargo: coop.cargo, cpf: (coop as any).cpf },
+      ];
     }
 
     atualizarMetaDoPlano(metaIndex, 'profissionais_designados', novosDesignados);

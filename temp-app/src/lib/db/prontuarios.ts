@@ -1,6 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { getDb, D1IndisponivelError, novoId, agoraIso, type D1Database } from './client';
 import { bubbleApi } from '@/lib/bubble';
+import {
+  normalizarNome,
+  cooperadoCorresponde,
+  parseProfissionaisDesignados,
+  normalizarEspecialidade as normalizarEspecialidadeTipos,
+} from '@/lib/tipos-clinicos';
+
+export { normalizarNome, cooperadoCorresponde, parseProfissionaisDesignados };
 
 export type EspecialidadeProfissional =
   | 'Tecnico_Enfermagem'
@@ -155,6 +163,7 @@ export interface ProfissionalDesignado {
   id: string;
   nome: string;
   cargo?: string;
+  cpf?: string;
   crm_coren?: string;
 }
 
@@ -686,7 +695,7 @@ export async function garantirSchemaD1(db: any): Promise<void> {
 // consultas agregadas abaixo, para que os dois caminhos devolvam o mesmo formato)
 // -------------------------------------------------------------
 
-function parseJsonSeguro<T>(valor: unknown, padrao: T): T {
+export function parseJsonSeguro<T>(valor: unknown, padrao: T): T {
   if (valor == null || valor === '') return padrao;
   if (typeof valor !== 'string') return valor as T;
   try {
@@ -759,7 +768,7 @@ function mapearMetaRow(m: any): MetaPlanoTerapeutico {
     plano_id: m.plano_id,
     especialidade: m.especialidade,
     quantidade_prevista: Number(m.quantidade_prevista || 1),
-    profissionais_designados: parseJsonSeguro<ProfissionalDesignado[]>(m.profissionais_designados, []),
+    profissionais_designados: parseProfissionaisDesignados(m.profissionais_designados),
     created_at: m.created_at,
   };
 }
@@ -1636,33 +1645,7 @@ export async function listarPareceresClinicos(pacienteId: string): Promise<Parec
 // -------------------------------------------------------------
 
 export function normalizarEspecialidade(esp: string): string {
-  const map: Record<string, string> = {
-    tecnico: 'Tecnico_Enfermagem',
-    tecnico_enfermagem: 'Tecnico_Enfermagem',
-    'técnico de enfermagem': 'Tecnico_Enfermagem',
-    'técnico em enfermagem': 'Tecnico_Enfermagem',
-    enfermeiro: 'Enfermeiro',
-    enfermagem: 'Enfermeiro',
-    medico: 'Medico',
-    médico: 'Medico',
-    dentista: 'Dentista',
-    odontologo: 'Dentista',
-    odontólogo: 'Dentista',
-    odontologia: 'Dentista',
-    odonto: 'Dentista',
-    fisioterapeuta: 'Fisioterapeuta',
-    fisioterapia: 'Fisioterapeuta',
-    fonoaudiologo: 'Fonoaudiologo',
-    fonoaudiólogo: 'Fonoaudiologo',
-    fono: 'Fonoaudiologo',
-    nutricionista: 'Nutricionista',
-    psicologo: 'Psicologo',
-    psicólogo: 'Psicologo',
-    terapeuta_ocupacional: 'Terapeuta_Ocupacional',
-    'terapeuta ocupacional': 'Terapeuta_Ocupacional',
-  };
-  const key = esp.toLowerCase().trim();
-  return map[key] || esp;
+  return normalizarEspecialidadeTipos(esp);
 }
 
 export function formatarNomeEspecialidade(esp: string): string {
@@ -1902,11 +1885,98 @@ export function selecionarPlanoVigente(planos: PlanoTerapeutico[], dataIso?: str
   return planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim) || null;
 }
 
+function dataFimNaoExpirou(dataFim: string | undefined | null, hojeIso: string): boolean {
+  if (!dataFim || !dataFim.trim()) return true;
+  const d = dataFim.trim();
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(d)) {
+    const [dia, mes, ano] = d.split('/');
+    const dIso = `${ano}-${mes}-${dia}`;
+    return dIso >= hojeIso;
+  }
+  return d.split('T')[0] >= hojeIso;
+}
+
+/**
+ * Retorna os IDs dos pacientes que possuem Plano Terapêutico ativo vinculado ao cooperado
+ * (por escalação nominal com normalização flexível, ID, CPF ou cota aberta da especialidade).
+ */
+export async function listarIdsPacientesVinculadosAoCooperado(
+  cooperado: { id: string; userId?: string; nome?: string; cpf?: string; cargo?: string },
+  dataRef?: string
+): Promise<string[]> {
+  const hoje = (dataRef || new Date().toISOString()).split('T')[0];
+  seedClinicalMemory();
+  const db = getClinicalDb();
+  const pacienteIds = new Set<string>();
+
+  const cargoNormalizado = cooperado.cargo ? normalizarEspecialidade(cooperado.cargo) : undefined;
+
+  if (db) {
+    try {
+      await garantirSchemaD1(db);
+      // Busca planos com status Ativo cuja vigência cubra hoje ou seja futura (para Próximos)
+      const rows = await db
+        .prepare(
+          `SELECT p.paciente_id, p.data_fim, m.especialidade, m.profissionais_designados
+             FROM planos_terapeuticos p
+             JOIN plano_terapeutico_metas m ON m.plano_id = p.id
+            WHERE (p.status COLLATE NOCASE = 'ativo' OR p.status IS NULL OR p.status = '')`
+        )
+        .all<any>();
+
+      for (const row of rows.results || []) {
+        if (!dataFimNaoExpirou(row.data_fim, hoje)) continue;
+        const metasDesignadas = parseProfissionaisDesignados(row.profissionais_designados);
+        let associado = false;
+
+        if (metasDesignadas && metasDesignadas.length > 0) {
+          associado = metasDesignadas.some((p) => cooperadoCorresponde(p, cooperado));
+        } else if (cargoNormalizado) {
+          // Cota aberta sem restrição de cooperado específico: confere especialidade do cooperado
+          associado = normalizarEspecialidade(row.especialidade) === cargoNormalizado;
+        }
+
+        if (associado && row.paciente_id) {
+          pacienteIds.add(row.paciente_id);
+        }
+      }
+    } catch (e) {
+      console.warn('Aviso ao consultar planos de cooperado no D1:', e);
+    }
+  }
+
+  // Fallback em memória (para testes / dev sem D1)
+  for (const plano of Array.from(inMemoryPlanosTerapeuticos.values())) {
+    const statusAtivo = !plano.status || plano.status.toLowerCase() === 'ativo';
+    if (statusAtivo && dataFimNaoExpirou(plano.data_fim, hoje)) {
+      const metas = plano.metas || Array.from(inMemoryPlanoMetas.values()).filter((m) => m.plano_id === plano.id);
+      for (const meta of metas) {
+        let associado = false;
+        const designados = parseProfissionaisDesignados(meta.profissionais_designados);
+        if (designados && designados.length > 0) {
+          associado = designados.some((p: ProfissionalDesignado) => cooperadoCorresponde(p, cooperado));
+        } else if (cargoNormalizado) {
+          associado = normalizarEspecialidade(meta.especialidade) === cargoNormalizado;
+        }
+
+        if (associado && plano.paciente_id) {
+          pacienteIds.add(plano.paciente_id);
+        }
+      }
+    }
+  }
+
+  return Array.from(pacienteIds);
+}
+
 export async function validarCheckInPlanoTerapeutico(params: {
   pacienteId: string;
   tipoProfissional: string;
   checkIn?: string;
   cooperadoId?: string;
+  cooperadoNome?: string;
+  cooperadoCpf?: string;
+  userId?: string;
 }): Promise<{
   permitido: boolean;
   motivo?: string;
@@ -1916,7 +1986,7 @@ export async function validarCheckInPlanoTerapeutico(params: {
   realizadas?: number;
   previstas?: number;
 }> {
-  const { pacienteId, tipoProfissional, checkIn, cooperadoId } = params;
+  const { pacienteId, tipoProfissional, checkIn, cooperadoId, cooperadoNome, cooperadoCpf, userId } = params;
   const plano = await obterPlanoTerapeuticoVigente(pacienteId, checkIn);
 
   // Se o paciente não tiver plano terapêutico cadastrado, verifica cota mensal legada
@@ -1951,14 +2021,23 @@ export async function validarCheckInPlanoTerapeutico(params: {
   }
 
   // 2. Validação de Cooperado Designado (se houver restrição específica de cooperados escalados)
-  if (cooperadoId && meta.profissionais_designados && meta.profissionais_designados.length > 0) {
-    const cooperadoAutorizado = meta.profissionais_designados.some((p) => p.id === cooperadoId);
+  const designados = parseProfissionaisDesignados(meta.profissionais_designados);
+  if ((cooperadoId || cooperadoNome || userId) && designados && designados.length > 0) {
+    const cooperadoAutorizado = designados.some((p) =>
+      cooperadoCorresponde(p, {
+        id: cooperadoId,
+        userId,
+        nome: cooperadoNome,
+        cpf: cooperadoCpf,
+        cargo: tipoProfissional,
+      })
+    );
     if (!cooperadoAutorizado) {
-      const nomes = meta.profissionais_designados.map((p) => p.nome).join(', ');
+      const nomes = designados.map((p) => p.nome).join(', ');
       return {
         permitido: false,
         cotaAtingida: false,
-        motivo: `Você não está escalado no Plano Terapêutico deste paciente para ${formatarNomeEspecialidade(tipoProfissional)}. Profissionais designados: ${nomes}.`,
+        motivo: `Você não está escalado no Plano Terapêutico deste paciente para ${formatarNomeEspecialidade(tipoProfissional)}. Profissionais designados: ${nomes || 'outros designados'}.`,
         plano,
         meta,
       };

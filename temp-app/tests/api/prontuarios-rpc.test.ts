@@ -40,10 +40,20 @@ import { listarEquipamentosDoPaciente } from '../../src/lib/prontuario-equipamen
 import { sincronizarPacientesBubbleParaD1 } from '../../src/lib/sync-pacientes';
 import { POST as cronSyncPost } from '../../src/app/api/cron/sync-pacientes-bubble/route';
 import { GET as gestorPacientesGet } from '../../src/app/api/gestor/prontuarios/pacientes/route';
+import { GET as cooperadoAgendaGet } from '../../src/app/api/cooperado/agenda/route';
+import {
+  normalizarNome,
+  cooperadoCorresponde,
+  parseProfissionaisDesignados,
+  listarIdsPacientesVinculadosAoCooperado,
+  validarCheckInPlanoTerapeutico,
+} from '../../src/lib/db/prontuarios';
+import { emitirTokenSessao } from '../../src/lib/sessao-token';
 import { NextRequest } from 'next/server';
 
 process.env.BUBBLE_API_URL = 'https://bubble.invalid/version-test/api/1.1';
 process.env.BUBBLE_API_TOKEN = 'token-de-teste';
+process.env.AUTH_JWT_SECRET = 'segredo-de-teste-com-mais-de-32-caracteres-necessarios';
 // Nenhuma chamada destes testes pode sair para o Bubble real.
 axios.defaults.adapter = async () => {
   throw new Error('Requisição externa não mockada');
@@ -1202,5 +1212,324 @@ test('listagem agregada: ordenação determinística com tiebreaker id mesmo com
   assert.equal(p1.pacientes[0].id, 'p_gemeo_a', 'primeiro paciente por tiebreaker id');
   assert.equal(p2.pacientes[0].id, 'p_gemeo_b', 'segundo paciente por tiebreaker id');
 });
+
+test('cooperadoCorresponde e normalizarNome: valida variações de maiúsculas, primeiro nome e CPF', () => {
+  const designadoMarcos = { id: 'c_1', nome: 'Marcos gabryel' };
+  const designadoMarcosAlt = { id: 'c_2', nome: 'Marcos Gabryel' };
+  const designadoPrimeiroNome = { id: 'c_3', nome: 'marcos' };
+  const designadoEvelyn = { id: 'c_4', nome: 'EVELYN MARQUES DE AMORIM' };
+  const designadoComCpf = { id: 'c_5', nome: 'Marcos G.', cpf: '123.456.781-08' };
+
+  const cooperadoSessao = {
+    id: 'coop_marcos_session_id',
+    userId: 'user_marcos_bubble',
+    nome: 'Marcos gabryel',
+    cpf: '12345678108',
+    cargo: 'Tecnico_Enfermagem',
+  };
+
+  // 1. Igualdade exata
+  assert.equal(cooperadoCorresponde(designadoMarcos, cooperadoSessao), true, 'Marcos gabryel deve bater com Marcos gabryel');
+
+  // 2. Insensibilidade a maiúsculas/minúsculas
+  assert.equal(cooperadoCorresponde(designadoMarcosAlt, cooperadoSessao), true, 'Marcos Gabryel deve bater com Marcos gabryel');
+
+  // 3. Correspondência de primeiro nome
+  assert.equal(cooperadoCorresponde(designadoPrimeiroNome, cooperadoSessao), true, 'marcos deve bater com Marcos gabryel');
+
+  // 4. Correspondência por CPF
+  assert.equal(cooperadoCorresponde(designadoComCpf, cooperadoSessao), true, 'CPF igual deve corresponder mesmo com nome abreviado');
+
+  // 5. Profissional diferente não deve corresponder
+  assert.equal(cooperadoCorresponde(designadoEvelyn, cooperadoSessao), false, 'Evelyn não deve corresponder a Marcos');
+
+  // 6. Correspondência por ID direto
+  assert.equal(cooperadoCorresponde({ id: 'coop_marcos_session_id', nome: 'Outro Nome' }, cooperadoSessao), true);
+  assert.equal(cooperadoCorresponde({ id: 'user_marcos_bubble', nome: 'Outro Nome' }, cooperadoSessao), true);
+
+  // 7. Normalização fonética e de acentos
+  assert.equal(normalizarNome('  MÁRCOS   Gábryel! '), 'marcos gabryel');
+});
+
+test('listarIdsPacientesVinculadosAoCooperado: encontra paciente com plano ativo e cooperado escalado', async () => {
+  // Configura paciente New Thing no D1
+  paciente('1657134607817x110649329563205630', {
+    nome: 'New Thing.',
+    status: 'Ativo',
+  });
+
+  const planoId = 'pln_new_thing_marcos';
+  // Plano ativo cobrindo hoje
+  inserir('planos_terapeuticos', {
+    id: planoId,
+    paciente_id: '1657134607817x110649329563205630',
+    data_inicio: '2026-10-06',
+    data_fim: '2026-11-05',
+    status: 'Ativo',
+    observacoes: 'Acompanhamento domiciliar',
+    created_at: '2026-10-06 10:00:00',
+    updated_at: '2026-10-06 10:00:00',
+  });
+
+  // Meta com lista exatamente como na tela do gestor:
+  // "EVELYN MARQUES DE AMORIM, Marcos gabryel, Marcos Gabryel, marcos"
+  inserir('plano_terapeutico_metas', {
+    id: 'meta_tecnico_marcos',
+    plano_id: planoId,
+    especialidade: 'Tecnico_Enfermagem',
+    quantidade_prevista: 5,
+    profissionais_designados: JSON.stringify([
+      { id: 'prof_evelyn', nome: 'EVELYN MARQUES DE AMORIM', cargo: 'Tecnico_Enfermagem' },
+      { id: 'prof_marcos_1', nome: 'Marcos gabryel', cargo: 'Tecnico_Enfermagem' },
+      { id: 'prof_marcos_2', nome: 'Marcos Gabryel', cargo: 'Tecnico_Enfermagem' },
+      { id: 'prof_marcos_3', nome: 'marcos', cargo: 'Tecnico_Enfermagem' },
+    ]),
+    created_at: '2026-10-06 10:00:00',
+  });
+
+  // Busca para o cooperado Marcos gabryel
+  const ids = await listarIdsPacientesVinculadosAoCooperado(
+    {
+      id: 'coop_marcos_id_bubble_diferente',
+      userId: 'usr_marcos_qualquer',
+      nome: 'Marcos gabryel',
+      cargo: 'Técnico(a) de Enfermagem',
+    },
+    '2026-10-07'
+  );
+
+  assert.ok(ids.includes('1657134607817x110649329563205630'), 'Paciente New Thing deve estar na lista de vinculados');
+
+  // Busca para cooperado não escalado nem da especialidade
+  const idsOutro = await listarIdsPacientesVinculadosAoCooperado(
+    {
+      id: 'coop_outro',
+      nome: 'Rodrigo Medeiros',
+      cargo: 'Fisioterapeuta',
+    },
+    '2026-10-07'
+  );
+  assert.equal(idsOutro.includes('1657134607817x110649329563205630'), false, 'Profissional não escalado não deve ver o paciente');
+});
+
+test('validarCheckInPlanoTerapeutico: permite check-in quando cooperado foi escalado com variação de nome/casing', async () => {
+  const validacao = await validarCheckInPlanoTerapeutico({
+    pacienteId: '1657134607817x110649329563205630',
+    tipoProfissional: 'Tecnico_Enfermagem',
+    checkIn: '2026-10-07T14:00:00.000Z',
+    cooperadoId: 'coop_marcos_sessao',
+    cooperadoNome: 'Marcos gabryel',
+  });
+
+  assert.equal(validacao.permitido, true, 'Check-in deve ser autorizado para Marcos gabryel escalado no plano');
+
+  const validacaoNegativa = await validarCheckInPlanoTerapeutico({
+    pacienteId: '1657134607817x110649329563205630',
+    tipoProfissional: 'Tecnico_Enfermagem',
+    checkIn: '2026-10-07T14:00:00.000Z',
+    cooperadoId: 'coop_outro_tecnico',
+    cooperadoNome: 'Carlos Eduardo Santos',
+  });
+
+  assert.equal(validacaoNegativa.permitido, false, 'Check-in de técnico não escalado deve ser bloqueado');
+  assert.ok(validacaoNegativa.motivo?.includes('Você não está escalado no Plano Terapêutico'));
+});
+
+test('rota /api/cooperado/agenda: paciente atribuído no Plano Terapêutico aparece na agenda do cooperado', async () => {
+  // Prescrição e aprazamento para New Thing
+  inserir('prescricoes', {
+    id: 'prc_new_thing_1',
+    paciente_id: '1657134607817x110649329563205630',
+    medicamento: 'Dipirona 500mg',
+    dosagem: '1 comprimido',
+    via_administracao: 'Oral',
+    frequencia_horas: 8,
+    data_inicio: '2026-10-06',
+    data_fim: '2026-11-05',
+    status: 'Ativa',
+  });
+
+  inserir('aprazamentos', {
+    id: 'apz_new_thing_1',
+    prescricao_id: 'prc_new_thing_1',
+    horario_previsto: '2026-10-07 14:00:00',
+    status: 'Pendente',
+  });
+
+  // Emite token para Marcos gabryel
+  const sessionId = 'session_test_marcos_agenda';
+  const token = await emitirTokenSessao(
+    {
+      userId: 'usr_marcos_test',
+      area: 'cooperado',
+      cooperadoId: 'coop_marcos_test',
+      nome: 'Marcos gabryel',
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '12345678108',
+    },
+    sessionId
+  );
+
+  // Registra sessão ativa no D1
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_marcos_test',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const req = new NextRequest('http://localhost/api/cooperado/agenda', {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const res = await cooperadoAgendaGet(req);
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as any;
+  assert.equal(json.success, true);
+  assert.ok(Array.isArray(json.pacientes), 'pacientes deve ser array');
+
+  const pacienteEncontrado = json.pacientes.find((p: any) => p.id === '1657134607817x110649329563205630');
+  assert.ok(pacienteEncontrado, 'Paciente New Thing atribuído no plano DEVE constar na agenda do cooperado');
+  assert.equal(pacienteEncontrado.nome, 'New Thing.');
+
+  // Confere que prescrições e aprazamentos do paciente também vieram
+  assert.ok(json.prescricoes.some((p: any) => p.paciente_id === '1657134607817x110649329563205630'));
+  assert.ok(json.aprazamentos.some((a: any) => a.paciente_id === '1657134607817x110649329563205630'));
+});
+
+test('parseProfissionaisDesignados e cooperadoCorresponde: valida array de strings, CSV, fonética Y/I e tokens', () => {
+  // 1. CSV puro (caso de banco legado ou input textual do gestor)
+  const listaCsv = parseProfissionaisDesignados('EVELYN MARQUES DE AMORIM, Marcos gabryel, Marcos Gabryel, marcos');
+  assert.equal(listaCsv.length, 4);
+  assert.equal(listaCsv[0].nome, 'EVELYN MARQUES DE AMORIM');
+  assert.equal(listaCsv[1].nome, 'Marcos gabryel');
+
+  // 2. Array de strings
+  const listaStrings = parseProfissionaisDesignados(['Marcos gabryel', 'marcos']);
+  assert.equal(listaStrings.length, 2);
+  assert.equal(listaStrings[0].nome, 'Marcos gabryel');
+
+  // 3. Fonética com Y e I ("Marcos Gabriel" cadastrado vs "Marcos gabryel" logado)
+  const cooperadoSessao = {
+    nome: 'Marcos gabryel',
+    cpf: '12345678108',
+  };
+  assert.equal(
+    cooperadoCorresponde({ id: '', nome: 'Marcos Gabriel' }, cooperadoSessao),
+    true,
+    'Gabriel e Gabryel devem corresponder pela equivalência fonética brasileira Y/I'
+  );
+
+  // 4. Designado passado como string direta
+  assert.equal(
+    cooperadoCorresponde('marcos', cooperadoSessao),
+    true,
+    'Designado como string simples deve corresponder'
+  );
+
+  // 5. Nome com tokens/sobrenome composto ("Marcos Gabryel Ferreira" vs "Marcos Ferreira")
+  assert.equal(
+    cooperadoCorresponde({ id: '', nome: 'Marcos Gabryel Ferreira' }, { nome: 'Marcos Ferreira' }),
+    true,
+    'Primeiro nome e sobrenome coincidentes devem corresponder'
+  );
+});
+
+test('listarIdsPacientesVinculadosAoCooperado: suporta status case-insensitive e data DD/MM/YYYY', async () => {
+  const pacId = 'pac_data_br_test';
+  paciente(pacId, { nome: 'Paciente Data BR', status: 'Ativo' });
+
+  inserir('planos_terapeuticos', {
+    id: 'pln_data_br',
+    paciente_id: pacId,
+    data_inicio: '2026-10-01',
+    data_fim: '05/11/2026', // Formato brasileiro DD/MM/YYYY
+    status: 'ativo', // Caixa baixa
+    observacoes: 'Teste formato data BR',
+    created_at: '2026-10-06 10:00:00',
+    updated_at: '2026-10-06 10:00:00',
+  });
+
+  inserir('plano_terapeutico_metas', {
+    id: 'meta_data_br',
+    plano_id: 'pln_data_br',
+    especialidade: 'Tecnico_Enfermagem',
+    quantidade_prevista: 3,
+    profissionais_designados: 'EVELYN MARQUES DE AMORIM, Marcos Gabriel', // CSV com variação fonética Gabriel
+    created_at: '2026-10-06 10:00:00',
+  });
+
+  const ids = await listarIdsPacientesVinculadosAoCooperado(
+    {
+      id: 'coop_qualquer',
+      nome: 'Marcos gabryel',
+      cargo: 'Técnico(a) de Enfermagem',
+    },
+    '2026-10-07'
+  );
+
+  assert.ok(ids.includes(pacId), 'Paciente com data_fim DD/MM/YYYY e status "ativo" deve ser retornado');
+});
+
+test('rota /api/cooperado/agenda: paciente atribuído mas ausente no D1 e Bubble possui fallback resiliente', async () => {
+  const pacId = 'pac_sem_d1_nem_bubble';
+
+  // Cadastra plano no D1 vinculando o paciente
+  inserir('planos_terapeuticos', {
+    id: 'pln_sem_d1',
+    paciente_id: pacId,
+    data_inicio: '2026-10-01',
+    data_fim: '2026-11-30',
+    status: 'Ativo',
+    created_at: '2026-10-06 10:00:00',
+    updated_at: '2026-10-06 10:00:00',
+  });
+
+  inserir('plano_terapeutico_metas', {
+    id: 'meta_sem_d1',
+    plano_id: 'pln_sem_d1',
+    especialidade: 'Tecnico_Enfermagem',
+    quantidade_prevista: 5,
+    profissionais_designados: JSON.stringify([{ id: 'c_test', nome: 'Marcos gabryel' }]),
+    created_at: '2026-10-06 10:00:00',
+  });
+
+  // Emite token para Marcos gabryel
+  const sessionId = 'session_test_marcos_resiliente';
+  const token = await emitirTokenSessao(
+    {
+      userId: 'usr_marcos_resiliente',
+      area: 'cooperado',
+      cooperadoId: 'c_test',
+      nome: 'Marcos gabryel',
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '12345678108',
+    },
+    sessionId
+  );
+
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_marcos_resiliente',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const req = new NextRequest('http://localhost/api/cooperado/agenda', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const res = await cooperadoAgendaGet(req);
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as any;
+  assert.equal(json.success, true);
+
+  const pac = json.pacientes.find((p: any) => p.id === pacId);
+  assert.ok(pac, 'Paciente vinculado nunca deve ser descartado da agenda');
+});
+
+
 
 

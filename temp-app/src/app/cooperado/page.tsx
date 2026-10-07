@@ -154,9 +154,12 @@ export default function CooperadoDashboard() {
             })
           );
         }
-      } else if (isAutenticado && isOnline) {
-        // Banco vazio e autenticado: busca da nuvem automaticamente se online
-        handlePrefetch();
+      } else {
+        setItems([]);
+        if (isAutenticado && isOnline) {
+          // Banco vazio e autenticado: busca da nuvem automaticamente se online
+          handlePrefetch();
+        }
       }
     } catch (e) {
       console.error('Erro ao ler banco local:', e);
@@ -410,15 +413,16 @@ export default function CooperadoDashboard() {
             <button
               onClick={handlePrefetch}
               disabled={!isOnline || loading || !isAutenticado}
+              aria-label="Carregar Agenda"
               className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-strong rounded-lg border transition-all active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                 isOnline && isAutenticado && !loading
                   ? 'bg-chip hover:bg-chip-hover border-line text-ink'
                   : 'bg-disabled border-line text-disabled-ink cursor-not-allowed'
               }`}
-              title="Atualizar agenda de atendimentos"
+              title="Carregar ou atualizar agenda de atendimentos"
             >
               <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
-              <span>{loading ? 'Baixando...' : 'Atualizar'}</span>
+              <span>{loading ? 'Baixando...' : (items.length > 0 ? 'Atualizar' : 'Carregar Agenda')}</span>
             </button>
           </div>
         </div>
@@ -537,6 +541,16 @@ export default function CooperadoDashboard() {
                 <p className="text-xs text-muted mt-1 max-w-xs mx-auto">
                   Você concluiu os atendimentos agendados ou ainda não baixou sua escala de campo.
                 </p>
+                <button
+                  type="button"
+                  onClick={handlePrefetch}
+                  disabled={!isOnline || loading || !isAutenticado}
+                  aria-label="Carregar Agenda"
+                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-accent text-on-accent text-xs font-heavy rounded-lg shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>{loading ? 'Carregando agenda...' : 'Carregar Agenda'}</span>
+                </button>
               </div>
             ) : (
               itensProximos.map((item) => (
@@ -629,6 +643,16 @@ export default function CooperadoDashboard() {
                 <p className="text-xs text-muted mt-1 max-w-xs mx-auto">
                   Conecte-se à internet e clique em "Carregar Agenda" para baixar os pacientes do seu plantão.
                 </p>
+                <button
+                  type="button"
+                  onClick={handlePrefetch}
+                  disabled={!isOnline || loading || !isAutenticado}
+                  aria-label="Carregar Agenda"
+                  className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-accent text-on-accent text-xs font-heavy rounded-lg shadow-sm hover:opacity-90 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                  <span>{loading ? 'Carregando agenda...' : 'Carregar Agenda'}</span>
+                </button>
               </div>
             ) : (
               itensDeHoje.map((item) => (

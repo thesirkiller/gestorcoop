@@ -37,6 +37,9 @@ async function processarSSO(ssoToken: string, targetArea?: string, redirectPath?
   const cargo = cargoBruto ? normalizarEspecialidade(cargoBruto) : undefined;
   if (area === 'cooperado' && !cargo) throw new Error('Profissão do cooperado não cadastrada.');
 
+  const rawCpf = cooperado?.txt_CPF || cooperado?.txt_cpf || user?.txt_CPF || '';
+  const cpf = rawCpf ? String(rawCpf).replace(/\D/g, '') : undefined;
+
   const sessionId = crypto.randomUUID();
   const token = await emitirTokenSessao(
     {
@@ -45,6 +48,7 @@ async function processarSSO(ssoToken: string, targetArea?: string, redirectPath?
       cooperadoId,
       nome,
       cargo,
+      cpf,
     },
     sessionId
   );

@@ -35,6 +35,9 @@ function guardar(token: string) {
   tokenEmMemoria = token;
   try {
     window.sessionStorage.setItem(CHAVE, token);
+  } catch {}
+  try {
+    window.localStorage.setItem(CHAVE, token);
   } catch {
     /* armazenamento bloqueado: segue só com a cópia em memória */
   }
@@ -42,8 +45,12 @@ function guardar(token: string) {
 
 export function lerToken(): string | null {
   if (tokenEmMemoria) return tokenEmMemoria;
+  if (typeof window === 'undefined') return null;
   try {
     tokenEmMemoria = window.sessionStorage.getItem(CHAVE);
+    if (!tokenEmMemoria) {
+      tokenEmMemoria = window.localStorage.getItem(CHAVE);
+    }
   } catch {
     tokenEmMemoria = null;
   }
@@ -54,6 +61,9 @@ export function descartarToken() {
   tokenEmMemoria = null;
   try {
     window.sessionStorage.removeItem(CHAVE);
+  } catch {}
+  try {
+    window.localStorage.removeItem(CHAVE);
   } catch {
     /* nada a fazer */
   }

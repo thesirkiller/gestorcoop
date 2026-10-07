@@ -84,6 +84,7 @@ export async function POST(request: NextRequest) {
         cooperadoId: cooperado._id,
         nome,
         cargo,
+        cpf: digits,
       },
       sessionId,
       VALIDADE_COOPERADO_SEGUNDOS

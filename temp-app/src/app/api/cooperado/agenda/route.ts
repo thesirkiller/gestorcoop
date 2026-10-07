@@ -1,10 +1,14 @@
-/* eslint-disable */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 import { memoizarComTtl, CHAVE_CACHE_PACIENTES_BUBBLE, TTL_PACIENTES_BUBBLE_MS } from '@/lib/cache-memoria';
-
 import { obterSessaoCooperado } from '@/lib/sessao-cooperado';
 import { getDb } from '@/lib/db/client';
+import {
+  listarIdsPacientesVinculadosAoCooperado,
+  inMemoryPacientes,
+  obterPacienteClinico,
+} from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -13,9 +17,7 @@ export async function GET(request: NextRequest) {
   try {
     const db = getDb();
 
-    // O cooperado vem da SESSÃO, nunca da query string. Antes esta rota lia
-    // `?cooperadoId=`, então bastava trocar o id na URL para ver os pacientes
-    // de outro profissional — dado clínico de terceiro exposto.
+    // 1. O cooperado vem da SESSÃO, nunca da query string
     const sessao = await obterSessaoCooperado(request);
     if (!sessao) {
       return NextResponse.json(
@@ -24,124 +26,246 @@ export async function GET(request: NextRequest) {
       );
     }
     const cooperadoId = sessao.cooperadoId;
+    let cooperadoNome = sessao.nome;
+    let cooperadoCargo = sessao.cargo;
+    let cooperadoCpf = (sessao as any).cpf || '';
+
+    // Se CPF ou dados complementares não vieram no token, tenta enriquecer via Bubble
+    if (!cooperadoCpf && cooperadoId) {
+      try {
+        const bCoop: any = await bubbleApi.getCooperado(cooperadoId);
+        if (bCoop) {
+          cooperadoCpf = (bCoop.txt_CPF || bCoop.txt_cpf || '').replace(/\D/g, '');
+          if (bCoop.txt_nomeCompleto || bCoop.txt_nome) {
+            cooperadoNome = (bCoop.txt_nomeCompleto || bCoop.txt_nome).trim();
+          }
+          if (bCoop.txt_profissao && !cooperadoCargo) {
+            cooperadoCargo = bCoop.txt_profissao;
+          }
+        }
+      } catch (e) {
+        console.warn('Aviso: enriquecimento de perfil do cooperado via Bubble ignorado:', e);
+      }
+    }
+
+    const perfilCooperado = {
+      id: cooperadoId,
+      userId: sessao.userId,
+      nome: cooperadoNome,
+      cpf: cooperadoCpf,
+      cargo: cooperadoCargo,
+    };
+
+    // 2. Busca pacientes vinculados via Planos Terapêuticos no D1 ou em memória
+    // (compara ID, CPF, normalização fonética/insensível do nome e cota aberta)
+    const idsPlanos = await listarIdsPacientesVinculadosAoCooperado(perfilCooperado);
+
+    // 3. Busca serviços legados integrados do Bubble (com tratamento gracioso para não derrubar a rota)
+    let idsServicos: string[] = [];
+    try {
+      if (cooperadoId) {
+        const servicos = (await bubbleApi.getServicosByCooperado(cooperadoId)) as any[];
+        idsServicos = (servicos || []).map((s: any) => s.fk_paciente).filter(Boolean);
+      }
+    } catch (errBubble) {
+      console.warn('Aviso: busca de serviços no Bubble falhou ou indisponível:', errBubble);
+    }
+
+    // 4. União de todos os IDs de pacientes autorizados
+    const idsPermitidos = Array.from(new Set([...idsPlanos, ...idsServicos]));
+
+    if (idsPermitidos.length === 0) {
+      return NextResponse.json({ success: true, pacientes: [], prescricoes: [], aprazamentos: [] });
+    }
 
     let dbPacientes: any[] = [];
     let dbPrescricoes: any[] = [];
     let dbAprazamentos: any[] = [];
 
-    // Se houver cooperadoId vindo do login/session do Bubble
-    if (cooperadoId) {
-      console.log(`Buscando atendimentos/serviços integrados do Bubble para o cooperado: ${cooperadoId}`);
-      try {
-        const servicos = (await bubbleApi.getServicosByCooperado(cooperadoId)) as any[];
-        const bubblePacientes = ((await memoizarComTtl(
-          CHAVE_CACHE_PACIENTES_BUBBLE,
-          TTL_PACIENTES_BUBBLE_MS,
-          () => bubbleApi.getPacientes()
-        )) || []) as any[];
+    // Busca cache de pacientes do Bubble
+    let bubblePacientes: any[] = [];
+    try {
+      bubblePacientes = ((await memoizarComTtl(
+        CHAVE_CACHE_PACIENTES_BUBBLE,
+        TTL_PACIENTES_BUBBLE_MS,
+        () => bubbleApi.getPacientes()
+      )) || []) as any[];
+    } catch (err) {
+      console.warn('Aviso: cache de pacientes do Bubble indisponível:', err);
+    }
 
-        // Encontrar pacientes vinculados aos serviços ativos do profissional
-        const activePatientIds = new Set(servicos.map((s) => s.fk_paciente).filter(Boolean));
-        const filteredPacientes = bubblePacientes.filter((p) => activePatientIds.has(p._id));
-
-        dbPacientes = filteredPacientes.map((p) => ({
-          id: p._id,
-          nome: p.txt_nome || 'Paciente Sem Nome',
-          cpf: p.txt_cpf || '',
-          data_nascimento: '',
-          endereco: p.txt_endereco || 'Sem endereço cadastrado',
-          warnings: p.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : []
-        }));
-
-        if (db) {
-          // Atualiza registros de pacientes no D1 local vindos do Bubble preservando limite_visitas_mes
-          for (const p of dbPacientes) {
+    if (db) {
+      // Sincroniza/atualiza pacientes do Bubble autorizados no D1 preservando limite_visitas_mes
+      for (const bp of bubblePacientes) {
+        if (idsPermitidos.includes(bp._id)) {
+          const warnings = bp.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : [];
+          try {
             await db.prepare(`
               INSERT INTO pacientes (id, nome, cpf, data_nascimento, endereco, warnings)
               VALUES (?, ?, ?, ?, ?, ?)
               ON CONFLICT(id) DO UPDATE SET
-                nome = excluded.nome,
-                cpf = excluded.cpf,
-                data_nascimento = excluded.data_nascimento,
-                endereco = excluded.endereco,
+                nome = CASE WHEN excluded.nome != '' AND excluded.nome != 'Paciente Sem Nome' THEN excluded.nome ELSE pacientes.nome END,
+                cpf = CASE WHEN excluded.cpf != '' THEN excluded.cpf ELSE pacientes.cpf END,
+                endereco = CASE WHEN excluded.endereco != '' THEN excluded.endereco ELSE pacientes.endereco END,
                 warnings = excluded.warnings
-            `).bind(p.id, p.nome, p.cpf, p.data_nascimento, p.endereco, JSON.stringify(p.warnings)).run();
+            `).bind(bp._id, bp.txt_nome || 'Paciente Sem Nome', bp.txt_cpf || '', '', bp.txt_endereco || 'Sem endereço cadastrado', JSON.stringify(warnings)).run();
+          } catch (e) {
+            console.warn('Aviso ao sincronizar paciente do Bubble no D1:', e);
           }
-
-          // Só os pacientes deste cooperado.
-          const idsPermitidos = dbPacientes.map((p) => p.id);
-          if (idsPermitidos.length === 0) {
-            return NextResponse.json({ success: true, pacientes: [], prescricoes: [], aprazamentos: [] });
-          }
-          const marcadores = idsPermitidos.map(() => '?').join(', ');
-
-          const pacientesRes = (
-            await db.prepare(`SELECT * FROM pacientes WHERE id IN (${marcadores})`).bind(...idsPermitidos).all()
-          ).results;
-
-          const mesAtualIso = new Date().toISOString().slice(0, 7);
-
-          dbPacientes = await Promise.all(pacientesRes.map(async (p: any) => {
-            const limite = Number(p.limite_visitas_mes || 0);
-            let realizadas = 0;
-            try {
-              const countRes: any = await db.prepare(
-                "SELECT COUNT(*) as total FROM evolucoes WHERE paciente_id = ? AND strftime('%Y-%m', check_in) = ?"
-              ).bind(p.id, mesAtualIso).first();
-              realizadas = Number(countRes?.total || 0);
-            } catch {}
-
-            const restantes = limite > 0 ? Math.max(0, limite - realizadas) : undefined;
-            const atingido = limite > 0 ? realizadas >= limite : false;
-
-            return {
-              ...p,
-              warnings: p.warnings ? JSON.parse(p.warnings) : [],
-              limite_visitas_mes: limite,
-              visitas_realizadas_mes: realizadas,
-              visitas_restantes_mes: restantes,
-              limite_atingido: atingido,
-            };
-          }));
-
-          dbPrescricoes = (
-            await db
-              .prepare(`SELECT * FROM prescricoes WHERE paciente_id IN (${marcadores})`)
-              .bind(...idsPermitidos)
-              .all()
-          ).results;
-
-          dbAprazamentos = (
-            await db
-              .prepare(
-                // `a.*` sozinho não bastava: nome do medicamento, dosagem e via
-                // moram em `prescricoes`, e são exatamente o que a tela de
-                // checagem do técnico exibe em cada card. Sem estas colunas o
-                // cooperado recebia o horário com o medicamento em branco.
-                `SELECT a.*, p.paciente_id, p.medicamento, p.dosagem, p.via_administracao
-                   FROM aprazamentos a
-                   JOIN prescricoes p ON p.id = a.prescricao_id
-                  WHERE p.paciente_id IN (${marcadores})
-                  ORDER BY a.horario_previsto ASC`
-              )
-              .bind(...idsPermitidos)
-              .all()
-          ).results;
         }
+      }
 
-        return NextResponse.json({
-          success: true,
-          pacientes: dbPacientes,
-          prescricoes: dbPrescricoes,
-          aprazamentos: dbAprazamentos,
-        });
-      } catch (err: any) {
-        console.error('Falha ao carregar agenda autorizada do Bubble:', err);
-        return NextResponse.json({ success: false, error: 'Não foi possível confirmar os pacientes vinculados ao cooperado.' }, { status: 503 });
+      // Auto-provisiona qualquer paciente do plano que ainda não esteja no D1
+      for (const id of idsPermitidos) {
+        try {
+          const existente = await db.prepare('SELECT id FROM pacientes WHERE id = ?').bind(id).first();
+          if (!existente) {
+            const bPac = await bubbleApi.getPaciente(id).catch(() => null);
+            if (bPac && (bPac._id || bPac.txt_nome)) {
+              await db.prepare(`
+                INSERT INTO pacientes (id, nome, cpf, data_nascimento, endereco, warnings)
+                VALUES (?, ?, ?, ?, ?, ?)
+              `).bind(
+                id,
+                bPac.txt_nome || 'Paciente Sem Nome',
+                bPac.txt_cpf || '',
+                '',
+                bPac.txt_endereco || 'Sem endereço cadastrado',
+                JSON.stringify([])
+              ).run();
+            }
+          }
+        } catch {}
+      }
+
+      const marcadores = idsPermitidos.map(() => '?').join(', ');
+
+      const pacientesRes = (
+        await db.prepare(`SELECT * FROM pacientes WHERE id IN (${marcadores})`).bind(...idsPermitidos).all<any>()
+      ).results || [];
+
+      const mesAtualIso = new Date().toISOString().slice(0, 7);
+
+      dbPacientes = await Promise.all(pacientesRes.map(async (p: any) => {
+        const limite = Number(p.limite_visitas_mes || 0);
+        let realizadas = 0;
+        try {
+          const countRes: any = await db.prepare(
+            "SELECT COUNT(*) as total FROM evolucoes WHERE paciente_id = ? AND strftime('%Y-%m', check_in) = ?"
+          ).bind(p.id, mesAtualIso).first();
+          realizadas = Number(countRes?.total || 0);
+        } catch {}
+
+        const restantes = limite > 0 ? Math.max(0, limite - realizadas) : undefined;
+        const atingido = limite > 0 ? realizadas >= limite : false;
+
+        let parsedWarnings: string[] = [];
+        try {
+          parsedWarnings = p.warnings ? (typeof p.warnings === 'string' ? JSON.parse(p.warnings) : p.warnings) : [];
+        } catch {}
+
+        return {
+          ...p,
+          warnings: parsedWarnings,
+          limite_visitas_mes: limite,
+          visitas_realizadas_mes: realizadas,
+          visitas_restantes_mes: restantes,
+          limite_atingido: atingido,
+        };
+      }));
+
+      // Caso algum paciente não tenha sido encontrado no D1 (ex: falha de DDL ou isolamento), busca fallback
+      const idsRetornados = new Set(dbPacientes.map((p) => p.id));
+      for (const id of idsPermitidos) {
+        if (!idsRetornados.has(id)) {
+          const bp = bubblePacientes.find((p) => p._id === id);
+          if (bp) {
+            dbPacientes.push({
+              id: bp._id,
+              nome: bp.txt_nome || 'Paciente Sem Nome',
+              cpf: bp.txt_cpf || '',
+              data_nascimento: '',
+              endereco: bp.txt_endereco || 'Sem endereço cadastrado',
+              warnings: bp.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : [],
+              limite_visitas_mes: 0,
+              visitas_realizadas_mes: 0,
+              visitas_restantes_mes: undefined,
+              limite_atingido: false,
+            });
+          } else {
+            const pClinico = await obterPacienteClinico(id).catch(() => null);
+            dbPacientes.push({
+              id,
+              nome: pClinico?.nome || 'Paciente Vinculado',
+              cpf: pClinico?.cpf || '',
+              data_nascimento: pClinico?.data_nascimento || '',
+              endereco: pClinico?.endereco || 'Domicílio cadastrado',
+              warnings: pClinico?.warnings || [],
+              limite_visitas_mes: pClinico?.limite_visitas_mes || 0,
+              visitas_realizadas_mes: pClinico?.visitas_realizadas_mes || 0,
+              visitas_restantes_mes: pClinico?.visitas_restantes_mes,
+              limite_atingido: pClinico?.limite_atingido || false,
+            });
+          }
+        }
+      }
+
+      dbPrescricoes = (
+        await db
+          .prepare(`SELECT * FROM prescricoes WHERE paciente_id IN (${marcadores})`)
+          .bind(...idsPermitidos)
+          .all<any>()
+      ).results || [];
+
+      dbAprazamentos = (
+        await db
+          .prepare(
+            `SELECT a.*, p.paciente_id, p.medicamento, p.dosagem, p.via_administracao
+               FROM aprazamentos a
+               JOIN prescricoes p ON p.id = a.prescricao_id
+              WHERE p.paciente_id IN (${marcadores})
+              ORDER BY a.horario_previsto ASC`
+          )
+          .bind(...idsPermitidos)
+          .all<any>()
+      ).results || [];
+    } else {
+      // Fallback em memória (para testes / dev sem D1)
+      for (const id of idsPermitidos) {
+        const pac = inMemoryPacientes.get(id);
+        if (pac) {
+          dbPacientes.push({
+            ...pac,
+            warnings: pac.warnings || [],
+            limite_visitas_mes: pac.limite_visitas_mes || 0,
+            visitas_realizadas_mes: 0,
+            visitas_restantes_mes: pac.limite_visitas_mes,
+            limite_atingido: false,
+          });
+        } else {
+          const bp = bubblePacientes.find((p) => p._id === id);
+          dbPacientes.push({
+            id,
+            nome: bp?.txt_nome || 'Paciente Vinculado',
+            cpf: bp?.txt_cpf || '',
+            data_nascimento: '',
+            endereco: bp?.txt_endereco || 'Sem endereço cadastrado',
+            warnings: bp?.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : [],
+            limite_visitas_mes: 0,
+            visitas_realizadas_mes: 0,
+            visitas_restantes_mes: undefined,
+            limite_atingido: false,
+          });
+        }
       }
     }
 
-    return NextResponse.json({ success: true, pacientes: [], prescricoes: [], aprazamentos: [] });
+    return NextResponse.json({
+      success: true,
+      pacientes: dbPacientes,
+      prescricoes: dbPrescricoes,
+      aprazamentos: dbAprazamentos,
+    });
   } catch (error: any) {
     console.error('Erro na rota de API de Agenda:', error);
     return NextResponse.json({

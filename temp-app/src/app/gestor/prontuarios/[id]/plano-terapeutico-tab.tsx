@@ -217,7 +217,10 @@ export default function PlanoTerapeuticoTab({
     if (jaExiste) {
       novosDesignados = designados.filter((d) => d.id !== coop.id);
     } else {
-      novosDesignados = [...designados, { id: coop.id, nome: coop.nome, cargo: coop.cargo }];
+      novosDesignados = [
+        ...designados,
+        { id: coop.id, nome: coop.nome, cargo: coop.cargo, cpf: (coop as any).cpf },
+      ];
     }
 
     atualizarMeta(metaIndex, 'profissionais_designados', novosDesignados);

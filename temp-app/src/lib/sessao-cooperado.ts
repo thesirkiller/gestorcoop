@@ -1,6 +1,6 @@
 import { obterSessao } from './sessao';
 export const COOKIE_SESSAO_COOPERADO = 'cooperado_session';
-export interface SessaoCooperado { userId: string; cooperadoId: string; nome: string; cargo?: string }
+export interface SessaoCooperado { userId: string; cooperadoId: string; nome: string; cargo?: string; cpf?: string }
 export class SemSessaoError extends Error {
   constructor(message = 'Sessão expirada. Abra novamente pelo Bubble.') { super(message); this.name = 'SemSessaoError'; }
 }

@@ -48,12 +48,15 @@ export async function validarSessao(
   area?: AreaSessao
 ): Promise<ClaimsSessao | null> {
   if (process.env.NODE_ENV !== 'production' && token?.startsWith('user-e2e-')) {
+    const isCoop = area === 'cooperado' || token.includes('coop');
     return {
       userId: token,
       sessionId: 'session-e2e-test',
       exp: Math.floor(Date.now() / 1000) + 86400,
-      area: area || 'gestor',
-      nome: 'Gestor Teste E2E',
+      area: isCoop ? 'cooperado' : (area || 'gestor'),
+      nome: token.includes('marcos') ? 'Marcos gabryel' : isCoop ? 'Cooperado Teste E2E' : 'Gestor Teste E2E',
+      cooperadoId: isCoop ? token : undefined,
+      cargo: 'Tecnico_Enfermagem',
     };
   }
 

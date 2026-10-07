@@ -113,10 +113,14 @@ function getStore(storeName: string, mode: IDBTransactionMode = 'readonly'): Pro
 export const localDB = {
   // Pacientes
   async savePacientes(pacientes: PacienteLocal[]): Promise<void> {
-    const { store } = await getStore('pacientes', 'readwrite');
+    const { store, transaction } = await getStore('pacientes', 'readwrite');
     for (const p of pacientes) {
       store.put(p);
     }
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   },
 
   async getPaciente(id: string): Promise<PacienteLocal | null> {
@@ -139,10 +143,14 @@ export const localDB = {
 
   // Prescrições
   async savePrescricoes(prescricoes: PrescricaoLocal[]): Promise<void> {
-    const { store } = await getStore('prescricoes', 'readwrite');
+    const { store, transaction } = await getStore('prescricoes', 'readwrite');
     for (const p of prescricoes) {
       store.put(p);
     }
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   },
 
   async getPrescricoes(pacienteId?: string): Promise<PrescricaoLocal[]> {
@@ -163,10 +171,14 @@ export const localDB = {
 
   // Aprazamentos
   async saveAprazamentos(aprazamentos: AprazamentoLocal[]): Promise<void> {
-    const { store } = await getStore('aprazamentos', 'readwrite');
+    const { store, transaction } = await getStore('aprazamentos', 'readwrite');
     for (const a of aprazamentos) {
       store.put(a);
     }
+    return new Promise((resolve, reject) => {
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
   },
 
   async getAprazamento(id: string): Promise<AprazamentoLocal | null> {

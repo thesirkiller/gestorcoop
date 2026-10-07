@@ -76,6 +76,9 @@ export async function POST(request: NextRequest) {
             tipoProfissional: especialidadeSessao,
             checkIn: checkIn || new Date().toISOString(),
             cooperadoId: sessao.cooperadoId,
+            cooperadoNome: sessao.nome,
+            cooperadoCpf: sessao.cpf,
+            userId: sessao.userId,
           });
 
           if (!validacao.permitido) {
