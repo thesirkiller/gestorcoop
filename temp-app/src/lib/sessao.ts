@@ -73,8 +73,9 @@ export async function obterSessao(
 
   if (req) {
     header = req.headers.get('authorization');
-    if ('cookies' in req && typeof (req as any).cookies?.get === 'function') {
-      cookieVal = (req as any).cookies.get(`${area}_session`)?.value;
+    if ('cookies' in req) {
+      const comCookies = req as { cookies?: { get?(name: string): { value?: string } | undefined } };
+      cookieVal = comCookies.cookies?.get?.(`${area}_session`)?.value;
     }
   }
 
