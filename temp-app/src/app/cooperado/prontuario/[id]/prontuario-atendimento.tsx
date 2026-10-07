@@ -180,6 +180,11 @@ export default function ProntuarioAtendimento() {
                 id: coopId,
                 nome: dados.nome,
                 cargo: dados.cargo || 'Tecnico_Enfermagem',
+                profissao: dados.profissao,
+                email: dados.email,
+                cpf: dados.cpf,
+                foto: dados.foto,
+                autenticado: true,
               })
             );
           }

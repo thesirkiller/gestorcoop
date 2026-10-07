@@ -4,12 +4,16 @@ export interface SessaoCooperado { userId: string; cooperadoId: string; nome: st
 export class SemSessaoError extends Error {
   constructor(message = 'Sessão expirada. Abra novamente pelo Bubble.') { super(message); this.name = 'SemSessaoError'; }
 }
-export async function obterSessaoCooperado(): Promise<SessaoCooperado | null> {
-  const sessao = await obterSessao('cooperado');
+export async function obterSessaoCooperado(
+  req?: Request | { headers: Headers | { get(name: string): string | null } }
+): Promise<SessaoCooperado | null> {
+  const sessao = await obterSessao('cooperado', req);
   return sessao?.cooperadoId ? { ...sessao, cooperadoId: sessao.cooperadoId } : null;
 }
-export async function exigirSessaoCooperado(): Promise<SessaoCooperado> {
-  const sessao = await obterSessaoCooperado();
+export async function exigirSessaoCooperado(
+  req?: Request | { headers: Headers | { get(name: string): string | null } }
+): Promise<SessaoCooperado> {
+  const sessao = await obterSessaoCooperado(req);
   if (!sessao) throw new SemSessaoError();
   return sessao;
 }

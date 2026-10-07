@@ -104,7 +104,7 @@ function LoginContent() {
         return;
       }
 
-      // Persiste cache de sessão para modo offline no prontuário
+      // Persiste cache de sessão enriquecida para modo offline no prontuário
       if (typeof window !== 'undefined' && data.cooperado) {
         window.localStorage.setItem(
           'cooperado_session',
@@ -112,8 +112,18 @@ function LoginContent() {
             id: data.cooperado.id,
             nome: data.cooperado.nome,
             cargo: data.cooperado.cargo || 'Tecnico_Enfermagem',
+            profissao: data.cooperado.profissao,
+            email: data.cooperado.email,
+            cpf: data.cooperado.cpf,
+            foto: data.cooperado.foto,
+            autenticado: true,
           })
         );
+        if (data.token) {
+          try {
+            window.sessionStorage.setItem('gc_sessao', data.token);
+          } catch {}
+        }
       }
 
       // Redireciona para o prontuário compartilhado ou painel do cooperado

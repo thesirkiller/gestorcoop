@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     // O cooperado vem da SESSÃO, nunca da query string. Antes esta rota lia
     // `?cooperadoId=`, então bastava trocar o id na URL para ver os pacientes
     // de outro profissional — dado clínico de terceiro exposto.
-    const sessao = await obterSessaoCooperado();
+    const sessao = await obterSessaoCooperado(request);
     if (!sessao) {
       return NextResponse.json(
         { success: false, error: 'Sessão de cooperado ausente ou inválida.' },

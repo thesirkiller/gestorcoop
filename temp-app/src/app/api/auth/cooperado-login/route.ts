@@ -111,6 +111,9 @@ export async function POST(request: NextRequest) {
 
     const isProduction = process.env.NODE_ENV === 'production';
 
+    let foto: string | null = cooperado.img_foto || cooperado.foto || cooperado.file_foto || null;
+    if (foto && foto.startsWith('//')) foto = `https:${foto}`;
+
     const response = NextResponse.json(
       {
         success: true,
@@ -120,6 +123,10 @@ export async function POST(request: NextRequest) {
           id: cooperado._id,
           nome,
           cargo,
+          profissao: cooperado.txt_profissao || 'Técnico(a) de Enfermagem',
+          email: cooperado.txt_email || cooperado.email || '',
+          cpf: digits,
+          foto,
         },
       },
       { headers: { 'Cache-Control': 'no-store' } }
