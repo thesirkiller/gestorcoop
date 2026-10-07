@@ -7,7 +7,10 @@ import { getDb } from '@/lib/db/client';
 import {
   listarIdsPacientesVinculadosAoCooperado,
   inMemoryPacientes,
+  inMemoryAprazamentos,
   obterPacienteClinico,
+  listarPrescricoesClinicas,
+  gerarSlotsAprazamento,
 } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
@@ -74,7 +77,19 @@ export async function GET(request: NextRequest) {
     // 4. União de todos os IDs de pacientes autorizados
     const idsPermitidos = Array.from(new Set([...idsPlanos, ...idsServicos]));
 
-    if (idsPermitidos.length === 0) {
+    // Se o cliente pediu um paciente específico (ex: ao abrir diretamente /cooperado/prontuario/[id])
+    const { searchParams } = new URL(request.url);
+    const rawQueryId = (searchParams.get('paciente_id') || searchParams.get('pacienteId') || '').trim();
+    const queryPacienteId = rawQueryId ? decodeURIComponent(rawQueryId).trim() : '';
+
+    let idsAlvo: string[];
+    if (queryPacienteId) {
+      idsAlvo = [queryPacienteId];
+    } else {
+      idsAlvo = idsPermitidos;
+    }
+
+    if (idsAlvo.length === 0) {
       return NextResponse.json({ success: true, pacientes: [], prescricoes: [], aprazamentos: [] });
     }
 
@@ -97,7 +112,7 @@ export async function GET(request: NextRequest) {
     if (db) {
       // Sincroniza/atualiza pacientes do Bubble autorizados no D1 preservando limite_visitas_mes
       for (const bp of bubblePacientes) {
-        if (idsPermitidos.includes(bp._id)) {
+        if (idsAlvo.includes(bp._id)) {
           const warnings = bp.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : [];
           try {
             await db.prepare(`
@@ -115,8 +130,8 @@ export async function GET(request: NextRequest) {
         }
       }
 
-      // Auto-provisiona qualquer paciente do plano que ainda não esteja no D1
-      for (const id of idsPermitidos) {
+      // Auto-provisiona qualquer paciente alvo que ainda não esteja no D1
+      for (const id of idsAlvo) {
         try {
           const existente = await db.prepare('SELECT id FROM pacientes WHERE id = ?').bind(id).first();
           if (!existente) {
@@ -138,10 +153,10 @@ export async function GET(request: NextRequest) {
         } catch {}
       }
 
-      const marcadores = idsPermitidos.map(() => '?').join(', ');
+      const marcadores = idsAlvo.map(() => '?').join(', ');
 
       const pacientesRes = (
-        await db.prepare(`SELECT * FROM pacientes WHERE id IN (${marcadores})`).bind(...idsPermitidos).all<any>()
+        await db.prepare(`SELECT * FROM pacientes WHERE id IN (${marcadores})`).bind(...idsAlvo).all<any>()
       ).results || [];
 
       const mesAtualIso = new Date().toISOString().slice(0, 7);
@@ -176,7 +191,7 @@ export async function GET(request: NextRequest) {
 
       // Caso algum paciente não tenha sido encontrado no D1 (ex: falha de DDL ou isolamento), busca fallback
       const idsRetornados = new Set(dbPacientes.map((p) => p.id));
-      for (const id of idsPermitidos) {
+      for (const id of idsAlvo) {
         if (!idsRetornados.has(id)) {
           const bp = bubblePacientes.find((p) => p._id === id);
           if (bp) {
@@ -212,10 +227,37 @@ export async function GET(request: NextRequest) {
 
       dbPrescricoes = (
         await db
-          .prepare(`SELECT * FROM prescricoes WHERE paciente_id IN (${marcadores})`)
-          .bind(...idsPermitidos)
+          .prepare(`SELECT * FROM prescricoes WHERE paciente_id IN (${marcadores}) ORDER BY created_at DESC`)
+          .bind(...idsAlvo)
           .all<any>()
       ).results || [];
+
+      dbPrescricoes = dbPrescricoes.map((p) => {
+        let hp = p.horarios_padrao;
+        if (typeof hp === 'string') {
+          try {
+            const parsed = JSON.parse(hp);
+            if (Array.isArray(parsed)) hp = parsed;
+            else if (typeof parsed === 'string') hp = parsed.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
+            else hp = [];
+          } catch {
+            hp = hp.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
+          }
+        }
+        if (!Array.isArray(hp) || hp.length === 0) {
+          const freq = Number(p.frequencia_horas) || 12;
+          if (freq === 24) hp = ['08:00'];
+          else if (freq === 12) hp = ['08:00', '20:00'];
+          else if (freq === 8) hp = ['08:00', '16:00', '00:00'];
+          else if (freq === 6) hp = ['06:00', '12:00', '18:00', '00:00'];
+          else if (freq === 4) hp = ['04:00', '08:00', '12:00', '16:00', '20:00', '00:00'];
+          else hp = ['08:00', '20:00'];
+        }
+        return {
+          ...p,
+          horarios_padrao: Array.isArray(hp) ? hp : [],
+        };
+      });
 
       dbAprazamentos = (
         await db
@@ -226,12 +268,62 @@ export async function GET(request: NextRequest) {
               WHERE p.paciente_id IN (${marcadores})
               ORDER BY a.horario_previsto ASC`
           )
-          .bind(...idsPermitidos)
+          .bind(...idsAlvo)
           .all<any>()
       ).results || [];
+
+      // Garante que prescrições ativas sem slots de aprazamento persistidos tenham slots gerados
+      const prescricoesSemApraz = dbPrescricoes.filter((p: any) =>
+        (!p.status || p.status === 'Ativa') &&
+        !dbAprazamentos.some((a: any) => a.prescricao_id === p.id)
+      );
+
+      if (prescricoesSemApraz.length > 0) {
+        const novosSlots: any[] = [];
+        const insertStmts: any[] = [];
+        for (const p of prescricoesSemApraz) {
+          const slots = gerarSlotsAprazamento({
+            id: p.id,
+            paciente_id: p.paciente_id,
+            medicamento: p.medicamento,
+            dosagem: p.dosagem,
+            via_administracao: p.via_administracao,
+            frequencia_horas: Number(p.frequencia_horas) || 12,
+            data_inicio: p.data_inicio,
+            data_fim: p.data_fim,
+            horarios_padrao: p.horarios_padrao,
+            status: p.status || 'Ativa',
+            created_at: p.created_at,
+          } as any);
+
+          for (const slot of slots) {
+            novosSlots.push({
+              ...slot,
+              paciente_id: p.paciente_id,
+              medicamento: p.medicamento,
+              dosagem: p.dosagem,
+              via_administracao: p.via_administracao,
+            });
+            insertStmts.push(
+              db.prepare('INSERT OR IGNORE INTO aprazamentos (id, prescricao_id, horario_previsto, status) VALUES (?, ?, ?, ?)')
+                .bind(slot.id, slot.prescricao_id, slot.horario_previsto, slot.status)
+            );
+          }
+        }
+
+        if (insertStmts.length > 0) {
+          try {
+            await db.batch(insertStmts);
+          } catch (errBatch) {
+            console.warn('Aviso ao persistir slots gerados no D1:', errBatch);
+          }
+        }
+
+        dbAprazamentos.push(...novosSlots);
+      }
     } else {
       // Fallback em memória (para testes / dev sem D1)
-      for (const id of idsPermitidos) {
+      for (const id of idsAlvo) {
         const pac = inMemoryPacientes.get(id);
         if (pac) {
           dbPacientes.push({
@@ -256,6 +348,32 @@ export async function GET(request: NextRequest) {
             visitas_restantes_mes: undefined,
             limite_atingido: false,
           });
+        }
+
+        const prescs = await listarPrescricoesClinicas(id, false);
+        dbPrescricoes.push(...prescs);
+      }
+
+      for (const presc of dbPrescricoes) {
+        const aprazs = Array.from(inMemoryAprazamentos.values()).filter((a) => a.prescricao_id === presc.id);
+        if (aprazs.length === 0) {
+          const slots = gerarSlotsAprazamento(presc);
+          for (const s of slots) inMemoryAprazamentos.set(s.id, s);
+          dbAprazamentos.push(...slots.map((s) => ({
+            ...s,
+            paciente_id: presc.paciente_id,
+            medicamento: presc.medicamento,
+            dosagem: presc.dosagem,
+            via_administracao: presc.via_administracao,
+          })));
+        } else {
+          dbAprazamentos.push(...aprazs.map((a) => ({
+            ...a,
+            paciente_id: presc.paciente_id,
+            medicamento: presc.medicamento,
+            dosagem: presc.dosagem,
+            via_administracao: presc.via_administracao,
+          })));
         }
       }
     }

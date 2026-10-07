@@ -41,13 +41,16 @@ import { sincronizarPacientesBubbleParaD1 } from '../../src/lib/sync-pacientes';
 import { POST as cronSyncPost } from '../../src/app/api/cron/sync-pacientes-bubble/route';
 import { GET as gestorPacientesGet } from '../../src/app/api/gestor/prontuarios/pacientes/route';
 import { GET as cooperadoAgendaGet } from '../../src/app/api/cooperado/agenda/route';
+import { GET as cooperadoSyncGet } from '../../src/app/api/cooperado/sync/route';
 import {
   normalizarNome,
   cooperadoCorresponde,
   parseProfissionaisDesignados,
   listarIdsPacientesVinculadosAoCooperado,
   validarCheckInPlanoTerapeutico,
+  gerarSlotsAprazamento,
 } from '../../src/lib/db/prontuarios';
+import { gerarSlotsAprazamentoLocal } from '../../src/lib/indexeddb';
 import { emitirTokenSessao } from '../../src/lib/sessao-token';
 import { NextRequest } from 'next/server';
 
@@ -1529,6 +1532,206 @@ test('rota /api/cooperado/agenda: paciente atribuído mas ausente no D1 e Bubble
   const pac = json.pacientes.find((p: any) => p.id === pacId);
   assert.ok(pac, 'Paciente vinculado nunca deve ser descartado da agenda');
 });
+
+test('rota /api/cooperado/agenda: busca por paciente_id retorna prescricoes ativas e aprazamentos mesmo sem plano prévio', async () => {
+  const pacId = '1657134607817x110649329563205630'; // Paciente "New Thing"
+  const prescId = 'presc_dipirona_new_thing';
+
+
+
+  // Prescrição de dipirona inserida no D1 pelo painel gestor (sem aprazamentos pré-inseridos)
+  inserir('prescricoes', {
+    id: prescId,
+    paciente_id: pacId,
+    medicamento: 'dipirona',
+    dosagem: '1 comprimido',
+    via_administracao: 'Oral',
+    frequencia_horas: 12,
+    data_inicio: '2026-10-07T00:00:00.000Z',
+    data_fim: '2026-11-07T00:00:00.000Z',
+    medico_nome: 'Dr. Roberto Cardozo',
+    medico_crm: 'CRM-SP 114520',
+    horarios_padrao: JSON.stringify(['08:00', '20:00']),
+    instrucoes: 'Tomar com água',
+    status: 'Ativa',
+    created_at: '2026-10-07 10:00:00',
+  });
+
+  const sessionId = 'session_test_coop_new_thing';
+  const token = await emitirTokenSessao(
+    {
+      userId: 'usr_coop_new_thing',
+      area: 'cooperado',
+      cooperadoId: 'c_tecnico_1',
+      nome: 'Tecnico Enfermagem Teste',
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '99887766554',
+    },
+    sessionId
+  );
+
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_coop_new_thing',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const req = new NextRequest(`http://localhost/api/cooperado/agenda?paciente_id=${pacId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const res = await cooperadoAgendaGet(req);
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as any;
+  assert.equal(json.success, true);
+
+  // Confere que paciente foi retornado
+  const pac = json.pacientes.find((p: any) => p.id === pacId);
+  assert.ok(pac, 'Paciente New Thing deve ser retornado ao consultar paciente_id');
+  assert.ok(pac.nome.includes('New Thing'));
+
+  // Confere que a prescrição de dipirona foi retornada
+  const presc = json.prescricoes.find((p: any) => p.id === prescId);
+  assert.ok(presc, 'Prescrição de dipirona deve ser retornada');
+  assert.equal(presc.medicamento, 'dipirona');
+  assert.deepEqual(presc.horarios_padrao, ['08:00', '20:00']);
+
+  // Confere que os aprazamentos foram gerados automaticamente no D1 para a prescrição
+  assert.ok(json.aprazamentos.length > 0, 'Slots de aprazamento devem ser gerados');
+  const aprazDipirona = json.aprazamentos.filter((a: any) => a.prescricao_id === prescId);
+  assert.ok(aprazDipirona.length >= 2, 'Deve ter ao menos 2 slots para 12h');
+  assert.equal(aprazDipirona[0].medicamento, 'dipirona');
+  assert.equal(aprazDipirona[0].status, 'Pendente');
+});
+
+test('rota /api/cooperado/sync: GET suporta sincronização direta por paciente_id', async () => {
+  const pacId = '1657134607817x110649329563205630';
+
+  const sessionId = 'session_test_sync_get';
+  const token = await emitirTokenSessao(
+    {
+      userId: 'usr_sync_get',
+      area: 'cooperado',
+      cooperadoId: 'c_tecnico_1',
+      nome: 'Tecnico Enfermagem Teste',
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '99887766554',
+    },
+    sessionId
+  );
+
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_sync_get',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const req = new NextRequest(`http://localhost/api/cooperado/sync?paciente_id=${pacId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const res = await cooperadoSyncGet(req);
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as any;
+  assert.equal(json.success, true);
+  assert.ok(json.prescricoes.some((p: any) => p.medicamento === 'dipirona'));
+  assert.ok(json.aprazamentos.some((a: any) => a.medicamento === 'dipirona'));
+});
+
+test('gerarSlotsAprazamento e gerarSlotsAprazamentoLocal: calculam horários flexíveis para formatos variados', () => {
+  const slotsD1 = gerarSlotsAprazamento({
+    id: 'pr_teste_flex',
+    paciente_id: 'pac_flex',
+    medicamento: 'amoxicilina',
+    dosagem: '500mg',
+    via_administracao: 'Oral',
+    frequencia_horas: 8,
+    data_inicio: '10/10/2026',
+    data_fim: '12/10/2026',
+    horarios_padrao: ['08:00', '16:00', '00:00'],
+    status: 'Ativa',
+  });
+
+  assert.ok(slotsD1.length > 0, 'Deve gerar slots a partir de data DD/MM/YYYY');
+  assert.equal(slotsD1[0].medicamento, 'amoxicilina');
+
+  const slotsLocal = gerarSlotsAprazamentoLocal({
+    id: 'pr_teste_local',
+    paciente_id: 'pac_flex',
+    medicamento: 'dipirona',
+    dosagem: '1 comprimido',
+    via_administracao: 'Oral',
+    frequencia_horas: 12,
+    data_inicio: '2026-10-07T08:00:00.000Z',
+    data_fim: '2026-10-09T08:00:00.000Z',
+    horarios_padrao: '08:00, 20:00',
+  });
+
+  assert.ok(slotsLocal.length > 0, 'Deve gerar slots locais a partir de string de horários');
+  assert.equal(slotsLocal[0].medicamento, 'dipirona');
+  assert.equal(slotsLocal[0].status, 'Pendente');
+  assert.equal(slotsLocal[0].paciente_id, 'pac_flex');
+});
+
+test('gerarSlotsAprazamento e gerarSlotsAprazamentoLocal: paridade de IDs determinísticos entre servidor e cliente', () => {
+  const prescData = {
+    id: 'pr_paridade_123',
+    paciente_id: 'pac_123',
+    medicamento: 'dipirona',
+    dosagem: '1 comprimido',
+    via_administracao: 'Oral',
+    frequencia_horas: 12,
+    data_inicio: '2026-10-07T08:00:00.000Z',
+    data_fim: '2026-10-08T08:00:00.000Z',
+    horarios_padrao: ['08:00', '20:00'],
+    status: 'Ativa' as const,
+  };
+
+  const slotsServer = gerarSlotsAprazamento(prescData);
+  const slotsLocal = gerarSlotsAprazamentoLocal(prescData);
+
+  assert.equal(slotsServer.length, slotsLocal.length, 'Mesma quantidade de slots gerada');
+  assert.equal(slotsServer[0].id, slotsLocal[0].id, 'IDs de slots devem ser determinísticos e idênticos');
+  assert.ok(slotsServer[0].id.startsWith('apraz_pr_paridade_123_'), 'Prefixo do slot ID deve seguir padrão estável');
+  assert.equal(slotsLocal[0].paciente_id, 'pac_123', 'Slot local deve herdar paciente_id');
+});
+
+test('rota /api/cooperado/agenda: suporta paciente_id com codificação de URL e espaços', async () => {
+  const pacId = '1657134607817x110649329563205630';
+
+  const sessionId = 'session_test_encoded_pac';
+  const token = await emitirTokenSessao(
+    {
+      userId: 'usr_encoded_pac',
+      area: 'cooperado',
+      cooperadoId: 'c_tecnico_1',
+      nome: 'Tecnico Enfermagem Teste',
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '99887766554',
+    },
+    sessionId
+  );
+
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_encoded_pac',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const req = new NextRequest(`http://localhost/api/cooperado/agenda?paciente_id=${encodeURIComponent(pacId)}%20`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+
+  const res = await cooperadoAgendaGet(req);
+  assert.equal(res.status, 200);
+  const json = (await res.json()) as any;
+  assert.equal(json.success, true);
+  assert.ok(json.prescricoes.some((p: any) => p.paciente_id === pacId));
+});
+
 
 
 

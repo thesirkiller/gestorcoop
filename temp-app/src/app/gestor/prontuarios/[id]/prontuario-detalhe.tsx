@@ -1209,11 +1209,6 @@ export default function Prontuario360Detalhe() {
                         )}
                       </div>
                     </div>
-
-                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-450">
-                      <span>Prescrito por: {pr.medico_nome || 'Dr. Médico Assistente'}</span>
-                      {pr.medico_crm && <span>{pr.medico_crm}</span>}
-                    </div>
                   </div>
                 ))}
               </div>

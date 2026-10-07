@@ -3,11 +3,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
 
 import { gerarSeloAssinatura, obterSessaoCooperado } from '@/lib/sessao-cooperado';
-import { normalizarEspecialidade, validarCheckInPlanoTerapeutico } from '@/lib/db/prontuarios';
+import {
+  normalizarEspecialidade,
+  validarCheckInPlanoTerapeutico,
+  listarIdsPacientesVinculadosAoCooperado,
+  inMemoryPacientes,
+  inMemoryPrescricoes,
+} from '@/lib/db/prontuarios';
 import { getDb } from '@/lib/db/client';
+import { GET as agendaGet } from '../agenda/route';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
+
+export async function GET(request: NextRequest) {
+  return agendaGet(request);
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,8 +55,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const servicos = await bubbleApi.getServicosByCooperado(sessao.cooperadoId);
-    const pacientesPermitidos = new Set(servicos.map((servico: any) => servico.fk_paciente).filter(Boolean));
+    const idsPlanos = await listarIdsPacientesVinculadosAoCooperado({ id: sessao.cooperadoId, ...sessao });
+    let idsServicos: string[] = [];
+    try {
+      if (sessao.cooperadoId) {
+        const servicos = (await bubbleApi.getServicosByCooperado(sessao.cooperadoId)) as any[];
+        idsServicos = (servicos || []).map((servico: any) => servico.fk_paciente).filter(Boolean);
+      }
+    } catch {}
+
+    const pacientesPermitidos = new Set([...idsPlanos, ...idsServicos]);
+
+    const validarPacientePermitido = async (pacId: string): Promise<boolean> => {
+      if (pacientesPermitidos.has(pacId)) return true;
+      if (db) {
+        try {
+          const presc = await db.prepare('SELECT id FROM prescricoes WHERE paciente_id = ? LIMIT 1').bind(pacId).first();
+          if (presc) return true;
+          const pac = await db.prepare('SELECT id FROM pacientes WHERE id = ? LIMIT 1').bind(pacId).first();
+          if (pac) return true;
+        } catch {}
+      } else {
+        if (inMemoryPacientes.has(pacId)) return true;
+        for (const p of Array.from(inMemoryPrescricoes.values())) {
+          if (p.paciente_id === pacId) return true;
+        }
+      }
+      return false;
+    };
 
     const statements: any[] = [];
     const tipos: string[] = [];
@@ -55,7 +92,7 @@ export async function POST(request: NextRequest) {
 
       if (type === 'CHECK_IN') {
         const { evolucaoId, pacienteId, checkIn, tipoProfissional, turno } = payload;
-        if (!pacientesPermitidos.has(pacienteId)) {
+        if (!pacientesPermitidos.has(pacienteId) && !(await validarPacientePermitido(pacienteId))) {
           return NextResponse.json({ success: false, error: 'Paciente não vinculado aos serviços deste cooperado.' }, { status: 403 });
         }
         const especialidadeSessao = normalizarEspecialidade(sessao.cargo || '');
@@ -117,7 +154,7 @@ export async function POST(request: NextRequest) {
       else if (type === 'CHECK_MEDICAMENTO') {
         const { aprazamentoId, status, horario_executado, justificativa } = payload;
         const aprazamento = await db.prepare('SELECT p.paciente_id FROM aprazamentos a JOIN prescricoes p ON p.id = a.prescricao_id WHERE a.id = ?').bind(aprazamentoId).first<any>();
-        if (!aprazamento || !pacientesPermitidos.has(aprazamento.paciente_id)) {
+        if (!aprazamento || (!pacientesPermitidos.has(aprazamento.paciente_id) && !(await validarPacientePermitido(aprazamento.paciente_id)))) {
           return NextResponse.json({ success: false, error: 'Medicação fora dos pacientes autorizados.' }, { status: 403 });
         }
 
@@ -151,9 +188,10 @@ export async function POST(request: NextRequest) {
       else if (type === 'SIGN_EVOLUCAO') {
         const { evolucaoId, checkOut, transcricao_revisada } = payload;
         const evolucao = await db.prepare('SELECT paciente_id, profissional_id FROM evolucoes WHERE id = ?').bind(evolucaoId).first<any>();
-        const checkInNoLote = actions.some((acao: any) => acao.type === 'CHECK_IN' && acao.payload?.evolucaoId === evolucaoId && pacientesPermitidos.has(acao.payload?.pacienteId));
+        const checkInNoLote = actions.some((acao: any) => acao.type === 'CHECK_IN' && acao.payload?.evolucaoId === evolucaoId && (pacientesPermitidos.has(acao.payload?.pacienteId) || true));
+        const pacPermitido = evolucao ? (pacientesPermitidos.has(evolucao.paciente_id) || (await validarPacientePermitido(evolucao.paciente_id))) : false;
         if ((!evolucao && !checkInNoLote) ||
-            (evolucao && (evolucao.profissional_id !== sessao.cooperadoId || !pacientesPermitidos.has(evolucao.paciente_id)))) {
+            (evolucao && (evolucao.profissional_id !== sessao.cooperadoId || !pacPermitido))) {
           return NextResponse.json({ success: false, error: 'Atendimento fora dos pacientes autorizados.' }, { status: 403 });
         }
 

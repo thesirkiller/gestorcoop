@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { localDB, PacienteLocal, PrescricaoLocal, AprazamentoLocal, EvolucaoLocal } from '@/lib/indexeddb';
+import { localDB, PacienteLocal, PrescricaoLocal, AprazamentoLocal, EvolucaoLocal, gerarSlotsAprazamentoLocal } from '@/lib/indexeddb';
 import { AudioRecorder } from '@/lib/audio-recorder';
 import { subscribeToSync } from '@/lib/sync-service';
 import {
@@ -138,6 +138,7 @@ export default function ProntuarioAtendimento() {
   const [pinCode, setPinCode] = useState('');
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [syncingPrescricoes, setSyncingPrescricoes] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
 
@@ -196,14 +197,27 @@ export default function ProntuarioAtendimento() {
 
     // 2. Monitorar conectividade
     setIsOnline(navigator.onLine);
+    let cancelado = false;
+
     const unsubscribeSync = subscribeToSync((status) => {
       setIsOnline(status.isOnline);
+      if (status.isOnline && !cancelado) {
+        syncOnlinePaciente();
+      }
     });
 
-    // 3. Carregar dados do IndexedDB local
-    loadLocalDetails();
+    // 3. Carregar dados do IndexedDB local primeiro e depois sincronizar da nuvem
+    async function inicializarProntuario() {
+      await loadLocalDetails();
+      if (!cancelado && typeof navigator !== "undefined" && navigator.onLine) {
+        await syncOnlinePaciente();
+      }
+    }
+
+    inicializarProntuario();
 
     return () => {
+      cancelado = true;
       unsubscribeSync();
     };
   }, [pacienteId]);
@@ -217,11 +231,11 @@ export default function ProntuarioAtendimento() {
         // Fallback rápido com persistência no IndexedDB local
         const mockP: PacienteLocal = {
           id: pacienteId,
-          nome: pacienteId === '1' || pacienteId === 'p_1' ? 'João da Silva' : pacienteId === '2' ? 'Maria de Oliveira' : 'Paciente em Atendimento',
-          cpf: '123.456.789-00',
-          data_nascimento: '12/04/1958',
-          endereco: 'Rua das Palmeiras, 102 - Centro',
-          warnings: ['Alergia a Dipirona e Penicilina', 'Hipertensão Grave']
+          nome: pacienteId === "1" || pacienteId === "p_1" ? "João da Silva" : pacienteId === "2" ? "Maria de Oliveira" : "Paciente em Atendimento",
+          cpf: "123.456.789-00",
+          data_nascimento: "12/04/1958",
+          endereco: "Rua das Palmeiras, 102 - Centro",
+          warnings: ["Alergia a Dipirona e Penicilina", "Hipertensão Grave"]
         };
         await localDB.savePacientes([mockP]);
         setPaciente(mockP);
@@ -232,8 +246,20 @@ export default function ProntuarioAtendimento() {
       setPrescricoes(presList);
 
       const aprazList = await localDB.getAprazamentos();
+      for (const pr of presList) {
+        if (!aprazList.some((a) => String(a.prescricao_id) === String(pr.id))) {
+          const slots = gerarSlotsAprazamentoLocal(pr);
+          if (slots.length > 0) {
+            await localDB.saveAprazamentos(slots);
+            aprazList.push(...slots);
+          }
+        }
+      }
       // Filtra aprazamentos correspondentes às prescrições do paciente
-      const filteredApraz = aprazList.filter(a => presList.some(p => p.id === a.prescricao_id));
+      const filteredApraz = aprazList.filter(a =>
+        presList.some(p => String(p.id) === String(a.prescricao_id)) ||
+        (a.paciente_id && String(a.paciente_id).trim() === String(pacienteId).trim())
+      );
       setAprazamentos(filteredApraz);
 
       // Carrega evolução existente se houver
@@ -242,20 +268,84 @@ export default function ProntuarioAtendimento() {
       if (currentEv) {
         setEvolucao(currentEv);
         setCheckedIn(true);
-        setTurno(currentEv.turno || 'Diurno');
-        setTranscriptionText(currentEv.transcricao_revisada || '');
+        setTurno(currentEv.turno || "Diurno");
+        setTranscriptionText(currentEv.transcricao_revisada || "");
         if (currentEv.audio_url || currentEv.transcricao_crua) {
           setAudioRecorded(true);
         }
-        if (currentEv.status === 'Finalizado' || currentEv.status === 'Assinado_Pendente_Sync') {
+        if (currentEv.status === "Finalizado" || currentEv.status === "Assinado_Pendente_Sync") {
           setIsLocked(true);
           setCheckedOut(true);
         }
-
       }
     } catch (e) {
       console.error(e);
-      setErrorText('Erro ao recuperar dados locais do prontuário.');
+      setErrorText("Erro ao recuperar dados locais do prontuário.");
+    }
+  };
+
+  const syncOnlinePaciente = async () => {
+    if (!pacienteId) return;
+    setSyncingPrescricoes(true);
+    try {
+      const cleanId = String(pacienteId).trim();
+      let res;
+      try {
+        res = await axios.get(`/api/cooperado/agenda?paciente_id=${encodeURIComponent(cleanId)}`);
+      } catch (e1) {
+        res = await axios.get(`/api/cooperado/sync?paciente_id=${encodeURIComponent(cleanId)}`);
+      }
+
+      if (res?.data?.success) {
+        const { pacientes, prescricoes: serverPrescs, aprazamentos: serverApraz } = res.data;
+
+        // 1. Atualizar dados do paciente se retornados
+        const serverPac = (pacientes || []).find((p: any) => String(p.id).trim() === cleanId);
+        if (serverPac) {
+          setPaciente(serverPac);
+          await localDB.savePacientes([serverPac]);
+        }
+
+        // 2. Atualizar prescrições (apenas ativas)
+        const patientPrescs = (serverPrescs || []).filter((p: any) =>
+          String(p.paciente_id).trim() === cleanId &&
+          (!p.status || p.status === "Ativa" || String(p.status).toLowerCase() === "ativa")
+        );
+
+        await localDB.savePrescricoes(patientPrescs);
+        setPrescricoes(patientPrescs);
+
+        // 3. Atualizar aprazamentos
+        const aprazList: any[] = (serverApraz || []).filter((a: any) =>
+          patientPrescs.some((p: any) => String(p.id) === String(a.prescricao_id)) ||
+          String(a.paciente_id).trim() === cleanId
+        );
+
+        // Se o servidor não mandou slots de aprazamento para alguma prescrição ativa, gera localmente
+        for (const pr of patientPrescs) {
+          if (!aprazList.some((a: any) => String(a.prescricao_id) === String(pr.id))) {
+            const slots = gerarSlotsAprazamentoLocal(pr);
+            aprazList.push(...slots);
+          }
+        }
+
+        if (aprazList.length > 0) {
+          await localDB.saveAprazamentos(aprazList);
+        }
+
+        // Recarrega aprazamentos consolidados do IndexedDB (que preserva checagens locais)
+        const allApraz = await localDB.getAprazamentos();
+        const consolidatedPrescs = await localDB.getPrescricoes(cleanId);
+        const finalApraz = allApraz.filter((a) =>
+          consolidatedPrescs.some((p) => String(p.id) === String(a.prescricao_id)) ||
+          String(a.paciente_id).trim() === cleanId
+        );
+        setAprazamentos(finalApraz);
+      }
+    } catch (err) {
+      console.warn("Aviso ao sincronizar prontuário online:", err);
+    } finally {
+      setSyncingPrescricoes(false);
     }
   };
 
@@ -719,13 +809,40 @@ export default function ProntuarioAtendimento() {
 
               {/* Aprazamento de Medicamentos */}
               <div className="border-t border-line-soft pt-3">
-                <h4 className="text-xs font-strong text-muted uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                <div className="flex items-center justify-between mb-2.5">
+                  <h4 className="text-xs font-strong text-muted uppercase tracking-wider flex items-center gap-1.5">
                   <Pill className="w-4 h-4 text-accent-ink" aria-hidden="true" />
                   Aprazamento & Checagem Digital
-                </h4>
+                  </h4>
+                  {isOnline && (
+                    <button
+                      type="button"
+                      onClick={() => syncOnlinePaciente()}
+                      disabled={syncingPrescricoes}
+                      className="text-xs text-accent-ink hover:underline flex items-center gap-1 focus:outline-none disabled:opacity-50"
+                      title="Sincronizar prescrições da nuvem"
+                    >
+                      <RotateCw className={`w-3 h-3 ${syncingPrescricoes ? 'animate-spin' : ''}`} />
+                      {syncingPrescricoes ? 'Sincronizando...' : 'Atualizar'}
+                    </button>
+                  )}
+                </div>
 
                 {aprazamentos.length === 0 ? (
-                  <div className="text-center py-4 text-muted text-xs">Sem prescrições médicas ativas carregadas.</div>
+                  <div className="text-center py-4 text-muted text-xs flex flex-col items-center gap-2">
+                    <p>Sem prescrições médicas ativas carregadas.</p>
+                    {isOnline && (
+                      <button
+                        type="button"
+                        onClick={() => syncOnlinePaciente()}
+                        disabled={syncingPrescricoes}
+                        className="text-xs text-accent-ink hover:underline flex items-center gap-1 bg-surface border border-line px-2.5 py-1.5 rounded-lg disabled:opacity-50"
+                      >
+                        <RotateCw className={`w-3 h-3 ${syncingPrescricoes ? 'animate-spin' : ''}`} />
+                        {syncingPrescricoes ? 'Buscando da nuvem...' : 'Buscar prescrições da nuvem'}
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {aprazamentos.map((apraz) => (

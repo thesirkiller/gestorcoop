@@ -263,8 +263,8 @@ function criarMapaCompartilhado<K, V>(nome: string): Map<K, V> {
 }
 
 export const inMemoryPacientes: Map<string, PacienteClinico> = criarMapaCompartilhado('Pacientes');
-const inMemoryPrescricoes: Map<string, PrescricaoClinica> = criarMapaCompartilhado('Prescricoes');
-const inMemoryAprazamentos: Map<string, AprazamentoClinico> = criarMapaCompartilhado('Aprazamentos');
+export const inMemoryPrescricoes: Map<string, PrescricaoClinica> = criarMapaCompartilhado('Prescricoes');
+export const inMemoryAprazamentos: Map<string, AprazamentoClinico> = criarMapaCompartilhado('Aprazamentos');
 const inMemorySinaisVitais: Map<string, SinalVitalClinico> = criarMapaCompartilhado('SinaisVitais');
 const inMemoryEvolucoes: Map<string, EvolucaoClinica> = criarMapaCompartilhado('Evolucoes');
 const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = criarMapaCompartilhado('Pareceres');
@@ -1412,10 +1412,45 @@ const MAX_SLOTS_APRAZAMENTO = 400;
  * três horários hoje e nada amanhã.
  */
 export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): AprazamentoClinico[] {
-  const horarios = prescricao.horarios_padrao?.length ? prescricao.horarios_padrao : ['08:00', '16:00', '00:00'];
-  const inicio = new Date(prescricao.data_inicio);
-  const fim = new Date(prescricao.data_fim);
-  if (Number.isNaN(inicio.getTime()) || Number.isNaN(fim.getTime()) || fim < inicio) return [];
+  let horarios: string[] = [];
+  if (Array.isArray(prescricao.horarios_padrao) && prescricao.horarios_padrao.length > 0) {
+    horarios = prescricao.horarios_padrao;
+  } else if (typeof (prescricao as any).horarios_padrao === 'string' && (prescricao as any).horarios_padrao.trim()) {
+    try {
+      const parsed = JSON.parse((prescricao as any).horarios_padrao);
+      if (Array.isArray(parsed) && parsed.length > 0) horarios = parsed;
+      else horarios = (prescricao as any).horarios_padrao.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
+    } catch {
+      horarios = (prescricao as any).horarios_padrao.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
+    }
+  }
+
+  if (horarios.length === 0) {
+    const freq = prescricao.frequencia_horas || 12;
+    if (freq === 24) horarios = ['08:00'];
+    else if (freq === 12) horarios = ['08:00', '20:00'];
+    else if (freq === 8) horarios = ['08:00', '16:00', '00:00'];
+    else if (freq === 6) horarios = ['06:00', '12:00', '18:00', '00:00'];
+    else if (freq === 4) horarios = ['04:00', '08:00', '12:00', '16:00', '20:00', '00:00'];
+    else horarios = ['08:00', '20:00'];
+  }
+
+  const parseData = (dStr?: string) => {
+    if (!dStr || !dStr.trim()) return new Date();
+    const s = dStr.trim();
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+      const [dia, mes, ano] = s.split('/');
+      return new Date(`${ano}-${mes}-${dia}T00:00:00Z`);
+    }
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const inicio = parseData(prescricao.data_inicio);
+  let fim = parseData(prescricao.data_fim);
+  if (fim < inicio || Number.isNaN(fim.getTime())) {
+    fim = new Date(inicio.getTime() + 30 * 86400000);
+  }
 
   const slots: AprazamentoClinico[] = [];
   const dia = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth(), inicio.getUTCDate()));
@@ -1428,7 +1463,7 @@ export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): Aprazament
       const instante = new Date(`${dataIso}T${h}:00${FUSO_APRAZAMENTO}`);
       if (Number.isNaN(instante.getTime())) continue;
       slots.push({
-        id: novoId('apraz'),
+        id: `apraz_${prescricao.id}_${dataIso}_${(h || '0800').replace(':', '')}`,
         prescricao_id: prescricao.id,
         paciente_id: prescricao.paciente_id,
         medicamento: prescricao.medicamento,

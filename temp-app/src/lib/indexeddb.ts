@@ -22,11 +22,18 @@ export interface PrescricaoLocal {
   frequencia_horas: number;
   data_inicio: string;
   data_fim: string;
+  horarios_padrao?: string[] | string;
+  instrucoes?: string;
+  status?: string;
+  medico_nome?: string;
+  medico_crm?: string;
+  created_at?: string;
 }
 
 export interface AprazamentoLocal {
   id: string;
   prescricao_id: string;
+  paciente_id?: string;
   horario_previsto: string; // ISO Datetime
   horario_executado?: string; // ISO Datetime
   status: 'Pendente' | 'Administrado' | 'Nao_Administrado';
@@ -160,7 +167,8 @@ export const localDB = {
       request.onsuccess = () => {
         const results = request.result || [];
         if (pacienteId) {
-          resolve(results.filter((p) => p.paciente_id === pacienteId));
+          const target = String(pacienteId).trim();
+          resolve(results.filter((p) => String(p.paciente_id).trim() === target));
         } else {
           resolve(results);
         }
@@ -171,11 +179,33 @@ export const localDB = {
 
   // Aprazamentos
   async saveAprazamentos(aprazamentos: AprazamentoLocal[]): Promise<void> {
+    if (!aprazamentos || aprazamentos.length === 0) return;
     const { store, transaction } = await getStore('aprazamentos', 'readwrite');
-    for (const a of aprazamentos) {
-      store.put(a);
-    }
+    const existingReq = store.getAll();
     return new Promise((resolve, reject) => {
+      existingReq.onerror = () => reject(existingReq.error);
+      existingReq.onsuccess = () => {
+        const existingMap = new Map<string, AprazamentoLocal>();
+        for (const item of (existingReq.result || []) as AprazamentoLocal[]) {
+          if (item?.id) existingMap.set(item.id, item);
+        }
+        for (const a of aprazamentos) {
+          if (!a?.id) continue;
+          const existente = existingMap.get(a.id);
+          if (existente && existente.status !== 'Pendente' && a.status === 'Pendente') {
+            store.put({
+              ...a,
+              status: existente.status,
+              horario_executado: existente.horario_executado,
+              justificativa: existente.justificativa,
+              profissional_id: existente.profissional_id,
+              assinatura_digital: existente.assinatura_digital,
+            });
+          } else {
+            store.put(a);
+          }
+        }
+      };
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
     });
@@ -295,3 +325,77 @@ export const localDB = {
     });
   }
 };
+
+/**
+ * Gera slots de aprazamento locais para o cooperado checar medicações,
+ * calculando os horários conforme a frequência e horários padrão.
+ */
+export function gerarSlotsAprazamentoLocal(prescricao: PrescricaoLocal): AprazamentoLocal[] {
+  let horarios: string[] = [];
+  if (Array.isArray(prescricao.horarios_padrao) && prescricao.horarios_padrao.length > 0) {
+    horarios = prescricao.horarios_padrao;
+  } else if (typeof prescricao.horarios_padrao === 'string' && prescricao.horarios_padrao.trim()) {
+    try {
+      const parsed = JSON.parse(prescricao.horarios_padrao);
+      if (Array.isArray(parsed) && parsed.length > 0) horarios = parsed;
+      else horarios = prescricao.horarios_padrao.split(/[,•]/).map((s) => s.trim()).filter(Boolean);
+    } catch {
+      horarios = prescricao.horarios_padrao.split(/[,•]/).map((s) => s.trim()).filter(Boolean);
+    }
+  }
+
+  if (horarios.length === 0) {
+    const freq = prescricao.frequencia_horas || 12;
+    if (freq === 24) horarios = ['08:00'];
+    else if (freq === 12) horarios = ['08:00', '20:00'];
+    else if (freq === 8) horarios = ['08:00', '16:00', '00:00'];
+    else if (freq === 6) horarios = ['06:00', '12:00', '18:00', '00:00'];
+    else if (freq === 4) horarios = ['04:00', '08:00', '12:00', '16:00', '20:00', '00:00'];
+    else horarios = ['08:00', '20:00'];
+  }
+
+  const parseData = (dStr?: string) => {
+    if (!dStr || !dStr.trim()) return new Date();
+    const s = dStr.trim();
+    if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+      const [dia, mes, ano] = s.split('/');
+      return new Date(`${ano}-${mes}-${dia}T00:00:00Z`);
+    }
+    const d = new Date(s);
+    return Number.isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  const inicio = parseData(prescricao.data_inicio);
+  let fim = parseData(prescricao.data_fim);
+  if (fim < inicio || Number.isNaN(fim.getTime())) {
+    fim = new Date(inicio.getTime() + 30 * 86400000);
+  }
+
+  const slots: AprazamentoLocal[] = [];
+  const dia = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth(), inicio.getUTCDate()));
+  const ultimoDia = new Date(Date.UTC(fim.getUTCFullYear(), fim.getUTCMonth(), fim.getUTCDate()));
+
+  const MAX_SLOTS = 400;
+  while (dia <= ultimoDia && slots.length < MAX_SLOTS) {
+    const dataIso = dia.toISOString().slice(0, 10);
+    for (const h of horarios) {
+      if (slots.length >= MAX_SLOTS) break;
+      const [hora, min] = h.split(':');
+      const instante = new Date(`${dataIso}T${hora || '08'}:${min || '00'}:00-03:00`);
+      slots.push({
+        id: `apraz_${prescricao.id}_${dataIso}_${(h || '0800').replace(':', '')}`,
+        prescricao_id: prescricao.id,
+        paciente_id: prescricao.paciente_id,
+        horario_previsto: instante.toISOString(),
+        status: 'Pendente',
+        medicamento: prescricao.medicamento,
+        dosagem: prescricao.dosagem,
+        via_administracao: prescricao.via_administracao,
+      });
+    }
+    dia.setUTCDate(dia.getUTCDate() + 1);
+  }
+
+  return slots;
+}
+
