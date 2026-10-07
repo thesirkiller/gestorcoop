@@ -34,56 +34,88 @@ export default function ReconciliacaoMedicamentosPage() {
   const loadAuditoria = async () => {
     setLoading(true);
     try {
-      const response = await axios.get('/api/gestor/prontuarios');
-      if (response.data.success) {
-        const evolucoes = response.data.results || [];
-        
-        // Extrai todas as checagens e calcula os desvios
+      let response;
+      try {
+        response = await axios.get('/api/gestor/prontuarios/auditoria');
+      } catch (err: any) {
+        // Fallback resiliente caso rota de auditoria não responda
+        if (err?.response?.status === 404) {
+          response = await axios.get('/api/gestor/prontuarios');
+        } else {
+          throw err;
+        }
+      }
+
+      if (response?.data?.success) {
+        const rawList = response.data.results || [];
         const list: Discrepancy[] = [];
 
-        evolucoes.forEach((ev: any) => {
-          if (ev.aprazamentos) {
-            ev.aprazamentos.forEach((a: any) => {
-              const prev = new Date(a.horario_previsto).getTime();
-              const exec = a.horario_executado ? new Date(a.horario_executado).getTime() : null;
-              
-              let tipoDesvio: Discrepancy['tipoDesvio'] = 'Conforme';
-              let detalheDesvio = 'Administrado dentro da janela regulamentar';
+        const extrairDesvio = (a: any): { tipoDesvio: Discrepancy['tipoDesvio']; detalheDesvio: string } => {
+          if (a.tipoDesvio && a.detalheDesvio) {
+            return { tipoDesvio: a.tipoDesvio, detalheDesvio: a.detalheDesvio };
+          }
+          const prev = new Date(a.horario_previsto || a.horarioPrevisto).getTime();
+          const exec = a.horario_executado || a.horarioExecutado ? new Date(a.horario_executado || a.horarioExecutado).getTime() : null;
 
-              if (a.status === 'Nao_Administrado') {
-                tipoDesvio = 'Omissao_Com_Justificativa';
-                detalheDesvio = a.justificativa || 'Omissão justificada pelo técnico';
-              } else if (a.status === 'Pendente') {
-                // Se o horário previsto já passou há mais de 1 hora
-                const umaHoraEmMs = 60 * 60 * 1000;
-                if (Date.now() - prev > umaHoraEmMs) {
-                  tipoDesvio = 'Pendente_Atrasado';
-                  detalheDesvio = 'Medicamento atrasado sem checagem realizada';
-                }
-              } else if (a.status === 'Administrado' && exec) {
-                const diffMinutos = Math.round((exec - prev) / 60000);
-                
-                // Janela regulamentar aceitável é de até 60 minutos
-                if (Math.abs(diffMinutos) > 60) {
-                  tipoDesvio = 'Atraso';
-                  detalheDesvio = diffMinutos > 0 
-                    ? `Atraso de ${Math.floor(diffMinutos / 60)}h ${diffMinutos % 60}m` 
-                    : `Adiantamento de ${Math.floor(Math.abs(diffMinutos) / 60)}h ${Math.abs(diffMinutos) % 60}m`;
-                }
-              }
+          let tipoDesvio: Discrepancy['tipoDesvio'] = 'Conforme';
+          let detalheDesvio = 'Administrado dentro da janela regulamentar';
 
+          if (a.status === 'Nao_Administrado') {
+            tipoDesvio = 'Omissao_Com_Justificativa';
+            detalheDesvio = a.justificativa || 'Omissão justificada pelo técnico';
+          } else if (a.status === 'Pendente') {
+            const umaHoraEmMs = 60 * 60 * 1000;
+            if (Date.now() - prev > umaHoraEmMs) {
+              tipoDesvio = 'Pendente_Atrasado';
+              detalheDesvio = 'Medicamento atrasado sem checagem realizada';
+            } else {
+              tipoDesvio = 'Conforme';
+              detalheDesvio = 'Dentro da janela programada (pendente de administração)';
+            }
+          } else if (a.status === 'Administrado' && exec) {
+            const diffMinutos = Math.round((exec - prev) / 60000);
+            if (Math.abs(diffMinutos) > 60) {
+              tipoDesvio = 'Atraso';
+              detalheDesvio = diffMinutos > 0 
+                ? `Atraso de ${Math.floor(diffMinutos / 60)}h ${diffMinutos % 60}m` 
+                : `Adiantamento de ${Math.floor(Math.abs(diffMinutos) / 60)}h ${Math.abs(diffMinutos) % 60}m`;
+            }
+          }
+          return { tipoDesvio, detalheDesvio };
+        };
+
+        rawList.forEach((item: any) => {
+          if (item.aprazamentos && Array.isArray(item.aprazamentos)) {
+            // Formato legado com evoluções aninhadas
+            item.aprazamentos.forEach((a: any) => {
+              const desvio = extrairDesvio(a);
               list.push({
                 id: a.id,
-                pacienteNome: ev.paciente_nome,
-                profissionalNome: ev.profissional_nome || 'Dra. Ana Silva',
+                pacienteNome: item.paciente_nome || 'Paciente',
+                profissionalNome: item.profissional_nome || 'Equipe de Enfermagem',
                 medicamento: a.medicamento,
                 dosagem: a.dosagem,
-                horarioPrevisto: a.horario_previsto,
-                horarioExecutado: a.horario_executado,
+                horarioPrevisto: a.horario_previsto || a.horarioPrevisto,
+                horarioExecutado: a.horario_executado || a.horarioExecutado,
                 status: a.status,
-                tipoDesvio,
-                detalheDesvio
+                tipoDesvio: desvio.tipoDesvio,
+                detalheDesvio: desvio.detalheDesvio,
               });
+            });
+          } else {
+            // Formato direto de aprazamento/auditoria
+            const desvio = extrairDesvio(item);
+            list.push({
+              id: item.id,
+              pacienteNome: item.pacienteNome || item.paciente_nome || 'Paciente',
+              profissionalNome: item.profissionalNome || item.profissional_nome || 'Equipe de Enfermagem',
+              medicamento: item.medicamento,
+              dosagem: item.dosagem,
+              horarioPrevisto: item.horarioPrevisto || item.horario_previsto,
+              horarioExecutado: item.horarioExecutado || item.horario_executado,
+              status: item.status,
+              tipoDesvio: desvio.tipoDesvio,
+              detalheDesvio: desvio.detalheDesvio,
             });
           }
         });

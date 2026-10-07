@@ -51,7 +51,7 @@ test.describe('Admissão com Paciente do Bubble & Plano Terapêutico Dinâmico',
       route.fulfill({ json: { success: true, data: mockPacientesBubble } })
     );
 
-    await page.route('**/api/gestor/cooperados', (route) =>
+    await page.route('**/api/gestor/cooperados*', (route) =>
       route.fulfill({ json: { success: true, data: mockCooperados } })
     );
 
@@ -110,6 +110,7 @@ test.describe('Admissão com Paciente do Bubble & Plano Terapêutico Dinâmico',
         json: {
           success: true,
           data: {
+            completo: true,
             paciente: {
               id: 'bub_pac_marcos',
               nome: 'Marcos Vinicius Santos',
@@ -121,6 +122,8 @@ test.describe('Admissão com Paciente do Bubble & Plano Terapêutico Dinâmico',
             prescricoes: [],
             sinaisVitais: [],
             pareceres: [],
+            planos: [],
+            planoVigente: null,
           },
         },
       })
@@ -170,8 +173,11 @@ test.describe('Admissão com Paciente do Bubble & Plano Terapêutico Dinâmico',
     await page.locator('button:has-text("Téc. Carlos Enfermagem")').first().click();
     await page.locator('button:has-text("Téc. Roberto Soares")').first().click();
 
-    // 6. Submete o formulário com paciente do Bubble e Plano Dinâmico
-    await page.click('button:has-text("Admitir Paciente & Ativar Plano Terapêutico")');
+    // 6. Submete o formulário com paciente do Bubble e Plano Dinâmico aguardando a resposta da rota
+    await Promise.all([
+      page.waitForResponse((res) => res.url().includes('/api/gestor/prontuarios/pacientes') && res.request().method() === 'POST'),
+      page.click('button:has-text("Admitir Paciente & Ativar Plano Terapêutico")'),
+    ]);
 
     // 7. Valida que o payload enviado contém os dados integrados e as especialidades dinâmicas
     expect(payloadAdmissao).not.toBeNull();
@@ -181,6 +187,7 @@ test.describe('Admissão com Paciente do Bubble & Plano Terapêutico Dinâmico',
     expect(payloadAdmissao.plano_terapeutico.metas.length).toBeGreaterThanOrEqual(4); // 3 padrão + 1 adicionada dinamicamente
 
     // 8. O sistema redireciona com sucesso para a Dashboard Individual do paciente
+    await expect(page).toHaveURL(/\/gestor\/prontuarios\/bub_pac_marcos/, { timeout: 15000 });
     await expect(page.locator('h1:has-text("Marcos Vinicius Santos")')).toBeVisible({ timeout: 15000 });
   });
 });

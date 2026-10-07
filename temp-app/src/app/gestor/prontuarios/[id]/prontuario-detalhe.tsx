@@ -1,7 +1,7 @@
 /* eslint-disable */
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import axios from 'axios';
 import {
@@ -43,6 +43,7 @@ import type { PlanoTerapeutico } from '@/lib/tipos-clinicos';
 import DashboardGeral from './dashboard-geral';
 import PlanoTerapeuticoTab from './plano-terapeutico-tab';
 import { obterUrlCooperado } from '@/lib/subdominios';
+import { invalidarCacheNavegacao, CHAVE_CACHE_LISTAGEM_PACIENTES } from '@/lib/cache-navegacao';
 
 interface PacienteData {
   id: string;
@@ -222,17 +223,54 @@ export default function Prontuario360Detalhe() {
     auditor_nome: 'Dr. Marcos Gestor',
   });
 
+  // Paciente atualmente exibido e requisição de equipamentos em voo: respostas
+  // que chegam depois de trocar de paciente (ou de sair da tela) são descartadas.
+  const idAtualRef = useRef(id);
+  const equipamentosAbortRef = useRef<AbortController | null>(null);
+
   useEffect(() => {
+    idAtualRef.current = id;
+    setEquipamentos([]);
     carregarProntuarioCompleto();
+    return () => {
+      equipamentosAbortRef.current?.abort();
+      equipamentosAbortRef.current = null;
+    };
   }, [id]);
 
+  const carregarEquipamentos = async () => {
+    const alvo = id;
+    equipamentosAbortRef.current?.abort();
+    const controle = new AbortController();
+    equipamentosAbortRef.current = controle;
+    const obsoleta = () => controle.signal.aborted || idAtualRef.current !== alvo;
+    try {
+      const res = await axios.get(`/api/gestor/prontuarios/pacientes/${alvo}/equipamentos`, {
+        signal: controle.signal,
+      });
+      if (obsoleta()) return;
+      if (res.data?.success && Array.isArray(res.data.data)) {
+        setEquipamentos(res.data.data);
+      }
+    } catch (err) {
+      if (obsoleta() || axios.isCancel(err)) return;
+      console.warn('Erro ao carregar equipamentos do paciente:', err);
+      setPartialWarning('Os equipamentos do paciente não puderam ser carregados agora. Os dados clínicos estão atualizados.');
+    } finally {
+      if (equipamentosAbortRef.current === controle) equipamentosAbortRef.current = null;
+    }
+  };
+
   const carregarProntuarioCompleto = async (silencioso = false) => {
+    const alvo = id;
+    const obsoleta = () => idAtualRef.current !== alvo;
     if (!silencioso) setLoading(true);
     setError(null);
     setPartialWarning(null);
     try {
       // Tenta buscar pelo endpoint 360 de paciente
       const res = await axios.get(`/api/gestor/prontuarios/pacientes/${id}`);
+      if (obsoleta()) return;
       if (res.data.success && res.data.data) {
         const d = res.data.data;
         setPaciente(d.paciente);
@@ -244,6 +282,19 @@ export default function Prontuario360Detalhe() {
           setExpandedEvolucaoId(d.evolucoes[0].id);
         }
 
+        // Servidor novo: `/pacientes/[id]` já trouxe planos e plano vigente numa
+        // única ida ao banco. Os equipamentos (Bubble, mais lento) chegam em
+        // segundo plano, sem segurar a tela.
+        if (d.completo === true) {
+          const planosCarregados: PlanoTerapeutico[] = Array.isArray(d.planos) ? d.planos : [];
+          // Mesma regra do caminho antigo: plano Ativo mais recente, senão o vigente do servidor, senão o primeiro.
+          const ativoRecente = planosCarregados.find((p: any) => p.status === 'Ativo');
+          setPlanos(planosCarregados);
+          setPlanoVigente(ativoRecente || d.planoVigente || planosCarregados[0] || null);
+          if (!silencioso) carregarEquipamentos();
+          return;
+        }
+
         // Buscar dados unificados da dashboard do paciente, planos, prescrições, sinais e pareceres em paralelo
         try {
           const [resDash, resPlanos, resPresc, resSinais, resPareceres] = await Promise.allSettled([
@@ -253,6 +304,7 @@ export default function Prontuario360Detalhe() {
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/sinais-vitais`),
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/parecer`),
           ]);
+          if (obsoleta()) return;
           if ([resDash, resPlanos, resPresc, resSinais, resPareceres].some((result) => result.status === 'rejected' ||
             (result.status === 'fulfilled' && result.value.data?.success !== true))) {
             setPartialWarning('Parte dos dados do prontuário não pôde ser carregada. Atualize a página antes de tomar decisões clínicas.');
@@ -302,10 +354,15 @@ export default function Prontuario360Detalhe() {
         }
       } else {
         // Fallback: se id for de uma evolução, busca paciente correspondente
-        const resEvo = await axios.get('/api/gestor/prontuarios');
+        // (só precisa de id/paciente_id: pede a projeção leve da linha do tempo)
+        const resEvo = await axios.get('/api/gestor/prontuarios', {
+          headers: { 'X-Gestorcoop-Projecao': 'resumo' },
+        });
+        if (obsoleta()) return;
         const evo = resEvo.data.results?.find((e: any) => e.id === id || e.paciente_id === id);
         if (evo) {
           const resPac = await axios.get(`/api/gestor/prontuarios/pacientes/${evo.paciente_id || id}`);
+          if (obsoleta()) return;
           if (resPac.data.success) {
             const d = resPac.data.data;
             setPaciente(d.paciente);
@@ -320,10 +377,12 @@ export default function Prontuario360Detalhe() {
         }
       }
     } catch (e: any) {
+      if (obsoleta()) return;
       console.error('Erro ao carregar prontuário 360:', e);
       setError(e.response?.data?.error || 'Erro ao carregar dados do prontuário.');
     } finally {
-      if (!silencioso) setLoading(false);
+      // A carga do paciente novo controla o próprio indicador de carregamento.
+      if (!silencioso && !obsoleta()) setLoading(false);
     }
   };
 
@@ -345,6 +404,7 @@ export default function Prontuario360Detalhe() {
 
       if (res.data?.success && res.data?.data) {
         setPrescricoes((prev) => [res.data.data, ...prev]);
+        invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
       }
 
       setIsNovaPrescricaoOpen(false);
@@ -374,6 +434,7 @@ export default function Prontuario360Detalhe() {
       const res = await axios.post(`/api/gestor/prontuarios/pacientes/${paciente.id}/sinais-vitais`, novoSinalForm);
       if (res.data?.success && res.data?.data) {
         setSinaisVitais((prev) => [res.data.data, ...prev]);
+        invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
       }
 
       setIsNovoSinalOpen(false);
@@ -433,6 +494,7 @@ export default function Prontuario360Detalhe() {
         ...paciente,
         limite_visitas_mes: Number(novaCotaValor) || 0,
       });
+      invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
       setEditandoCota(false);
       await carregarProntuarioCompleto();
     } catch (err: any) {
@@ -686,7 +748,7 @@ export default function Prontuario360Detalhe() {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="bg-slate-100 text-slate-700 text-[10px] font-bold px-2 py-0.5 rounded-md uppercase tracking-wider border border-slate-200">
-                  Cota mensal legada de visitas
+                  Cota Contratada de Visitas Técnicas
                 </span>
                 {paciente.limite_atingido ? (
                   <span className="bg-rose-50 text-rose-800 text-[10px] font-bold px-2 py-0.5 rounded-md border border-rose-200 flex items-center gap-1">
@@ -700,7 +762,7 @@ export default function Prontuario360Detalhe() {
                 )}
               </div>
               <h3 className="text-base font-bold tracking-tight">
-                {paciente.visitas_realizadas_mes || 0} de {paciente.limite_visitas_mes || 0} visitas realizadas este mês
+                {paciente.visitas_realizadas_mes || 0} de {paciente.limite_visitas_mes || 0} visitas técnicas realizadas este mês
               </h3>
               <p className="text-xs text-slate-600 mt-0.5">
                 {paciente.limite_atingido

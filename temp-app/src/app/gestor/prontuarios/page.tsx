@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   FileText,
@@ -36,6 +36,13 @@ import { fetchFullDataset } from '@/lib/client-fetch';
 import { formatarNomeEspecialidade, EspecialidadeProfissional } from '@/lib/tipos-clinicos';
 import SeletorCooperadosMeta, { CooperadoItem } from './_components/SeletorCooperadosMeta';
 import { obterUrlCooperado } from '@/lib/subdominios';
+import {
+  lerCacheNavegacao,
+  gravarCacheNavegacao,
+  invalidarCacheNavegacao,
+  CHAVE_CACHE_LISTAGEM_PACIENTES,
+  chaveCacheListagemEvolucoes,
+} from '@/lib/cache-navegacao';
 
 interface PacienteSummary {
   id: string;
@@ -100,6 +107,11 @@ interface Evolution {
   soap_avaliacao?: string;
   soap_plano?: string;
   aprazamentos?: any[];
+  // Projeção leve (`X-Gestorcoop-Projecao: resumo`): texto já truncado e
+  // contagens de aprazamentos no lugar do SOAP completo e da lista de aprazamentos.
+  resumo?: string;
+  aprazamentos_total?: number;
+  aprazamentos_administrados?: number;
 }
 
 const ESPECIALIDADES_DISPONIVEIS: { valor: EspecialidadeProfissional; rotulo: string }[] = [
@@ -120,7 +132,8 @@ export default function ProntuariosAuditDashboard() {
   const [activeTab, setActiveTab] = useState<'pacientes' | 'evolucoes'>('pacientes');
   const [pacientes, setPacientes] = useState<PacienteSummary[]>([]);
   const [evolutions, setEvolutions] = useState<Evolution[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [carregandoPacientes, setCarregandoPacientes] = useState(true);
+  const [carregandoEvolucoes, setCarregandoEvolucoes] = useState(true);
   const [search, setSearch] = useState('');
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedComplexidade, setSelectedComplexidade] = useState('');
@@ -128,6 +141,9 @@ export default function ProntuariosAuditDashboard() {
   // Dados do Bubble & Cooperados para Admissão
   const [pacientesBubble, setPacientesBubble] = useState<any[]>([]);
   const [cooperados, setCooperados] = useState<CooperadoItem[]>([]);
+  const basesAuxiliaresSolicitadas = useRef(false);
+  const requisicaoEvolucoesAtual = useRef(0);
+  const [carregandoBasesAuxiliares, setCarregandoBasesAuxiliares] = useState(false);
 
   // Modal Novo Paciente & Início de Plano Terapêutico
   const [isNovoPacienteOpen, setIsNovoPacienteOpen] = useState(false);
@@ -174,6 +190,10 @@ export default function ProntuariosAuditDashboard() {
   const [copiadoGeral, setCopiadoGeral] = useState(false);
   const [toastMensagem, setToastMensagem] = useState<string | null>(null);
 
+  // Paginação escalável na listagem de pacientes
+  const ITENS_POR_PAGINA = 12;
+  const [paginaAtual, setPaginaAtual] = useState(1);
+
   const exibirToast = (msg: string) => {
     setToastMensagem(msg);
     setTimeout(() => setToastMensagem(null), 3500);
@@ -216,43 +236,123 @@ export default function ProntuariosAuditDashboard() {
     }
   };
 
+  // Pacientes: uma vez por abertura da tela. O filtro de complexidade é aplicado
+  // no cliente (`filteredPacientes`), então não precisa refazer requisição.
   useEffect(() => {
-    carregarDados();
-    carregarBasesAuxiliares();
+    carregarPacientes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedSpecialty, selectedComplexidade]);
+  }, []);
 
-  const carregarDados = async () => {
-    setLoading(true);
-    try {
-      const [resPacientes, resEvolucoes] = await Promise.all([
-        axios.get('/api/gestor/prontuarios/pacientes'),
-        axios.get('/api/gestor/prontuarios', {
-          params: { specialty: selectedSpecialty || undefined },
-        }),
-      ]);
+  // Evoluções: só quando o filtro de especialidade (aplicado no servidor) muda.
+  useEffect(() => {
+    carregarEvolucoes();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSpecialty]);
 
-      if (resPacientes.data?.success) {
-        setPacientes(resPacientes.data.data || []);
+  const carregarPacientes = async (forcar = false) => {
+    if (!forcar) {
+      const cache = lerCacheNavegacao<PacienteSummary[]>(CHAVE_CACHE_LISTAGEM_PACIENTES);
+      if (cache) {
+        setPacientes(cache.data);
+        setCarregandoPacientes(false);
+        if (!cache.isStale) return;
+        // Se for stale (> 45s), revalida silenciosamente em segundo plano sem skeleton
+      } else {
+        setCarregandoPacientes(true);
       }
-      if (resEvolucoes.data?.success) {
-        setEvolutions(resEvolucoes.data.results || []);
+    } else {
+      setCarregandoPacientes(true);
+    }
+
+    try {
+      const resPacientes = await axios.get('/api/gestor/prontuarios/pacientes');
+      if (resPacientes.data?.success) {
+        const lista = resPacientes.data.data || [];
+        setPacientes(lista);
+        gravarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES, lista);
       }
     } catch (e) {
-      console.error('Erro ao carregar dados do prontuário:', e);
+      console.error('Erro ao carregar pacientes do prontuário:', e);
     } finally {
-      setLoading(false);
+      setCarregandoPacientes(false);
     }
   };
 
-  const carregarBasesAuxiliares = async () => {
+  const carregarEvolucoes = async (forcar = false) => {
+    const chave = chaveCacheListagemEvolucoes(selectedSpecialty);
+    const requisicao = ++requisicaoEvolucoesAtual.current;
+
+    if (!forcar) {
+      const cache = lerCacheNavegacao<Evolution[]>(chave);
+      if (cache) {
+        setEvolutions(cache.data);
+        setCarregandoEvolucoes(false);
+        if (!cache.isStale) return;
+      } else {
+        setCarregandoEvolucoes(true);
+      }
+    } else {
+      setCarregandoEvolucoes(true);
+    }
+
+    try {
+      const resEvolucoes = await axios.get('/api/gestor/prontuarios', {
+        params: { specialty: selectedSpecialty || undefined },
+        // Projeção leve: sem transcrições/SOAP completo, com contagem de
+        // aprazamentos para o KPI. Servidor antigo ignora o cabeçalho e devolve
+        // o payload completo, que a tela também entende.
+        headers: { 'X-Gestorcoop-Projecao': 'resumo' },
+      });
+      if (requisicao !== requisicaoEvolucoesAtual.current) return;
+      if (resEvolucoes.data?.success) {
+        const lista = resEvolucoes.data.results || [];
+        setEvolutions(lista);
+        gravarCacheNavegacao(chave, lista);
+      }
+    } catch (e) {
+      if (requisicao !== requisicaoEvolucoesAtual.current) return;
+      console.error('Erro ao carregar evoluções do prontuário:', e);
+    } finally {
+      if (requisicao === requisicaoEvolucoesAtual.current) setCarregandoEvolucoes(false);
+    }
+  };
+
+  // Base do Bubble e lista completa de cooperados só servem ao modal de admissão:
+  // são carregadas na primeira abertura dele, não a cada visita à tela. Se a
+  // carga falhar (ou cair nos dados de exemplo), a próxima abertura tenta de novo.
+  const garantirBasesAuxiliares = () => {
+    if (basesAuxiliaresSolicitadas.current) return;
+    basesAuxiliaresSolicitadas.current = true;
+    setCarregandoBasesAuxiliares(true);
+    carregarBasesAuxiliares()
+      .then((completo) => {
+        if (!completo) basesAuxiliaresSolicitadas.current = false;
+      })
+      .catch(() => {
+        basesAuxiliaresSolicitadas.current = false;
+      })
+      .finally(() => setCarregandoBasesAuxiliares(false));
+  };
+
+  /** Retorna `true` só se as duas bases vieram do servidor (sem fallback). */
+  const carregarBasesAuxiliares = async (): Promise<boolean> => {
+    let bubbleOk = false;
+    let cooperadosOk = false;
     try {
       const [resBubble] = await Promise.all([
-        axios.get('/api/gestor/pacientes').catch(() => ({ data: { data: [] } })),
+        axios
+          .get('/api/gestor/pacientes', {
+            // A rota pode responder com a lista memoizada (60 s) que a própria
+            // listagem de prontuários já usa, em vez de paginar o Bubble de novo.
+            headers: { 'X-Gestorcoop-Cache': 'permitido' },
+          })
+          .catch(() => null),
       ]);
 
-      if (resBubble.data?.data && Array.isArray(resBubble.data.data)) {
+      // Falha de rede/servidor: mantém o que já havia (retentativa na próxima abertura).
+      if (resBubble && resBubble.data?.success !== false && Array.isArray(resBubble.data?.data)) {
         setPacientesBubble(resBubble.data.data);
+        bubbleOk = true;
       }
 
       const formatarCooperados = (lista: any[]): CooperadoItem[] =>
@@ -278,13 +378,16 @@ export default function ProntuariosAuditDashboard() {
         await fetchFullDataset<any>('/api/gestor/cooperados', (rawCoops) => {
           setCooperados(formatarCooperados(rawCoops));
         });
+        cooperadosOk = true;
       } catch (errPaging) {
         console.warn('Falha ao paginar cooperados, buscando via GET simples:', errPaging);
         const resCoop = await axios.get('/api/gestor/cooperados').catch(() => ({ data: { data: [] } }));
         if (resCoop.data?.data && Array.isArray(resCoop.data.data) && resCoop.data.data.length > 0) {
           setCooperados(formatarCooperados(resCoop.data.data));
+          cooperadosOk = true;
         } else {
-          // Fallback para dev local com dados realistas
+          // Fallback para dev local com dados realistas (não conta como carga
+          // concluída: a próxima abertura do modal tenta o servidor de novo)
           setCooperados([
             { id: 'coop_tec_carlos', nome: 'Carlos Enfermagem (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
             { id: 'coop_tec_roberto', nome: 'Roberto Soares (Téc.)', cargo: 'Técnico de Enfermagem', profissoes: ['Técnico de Enfermagem'] },
@@ -297,9 +400,11 @@ export default function ProntuariosAuditDashboard() {
     } catch (e) {
       console.warn('Erro ao carregar bases do Bubble e cooperados:', e);
     }
+    return bubbleOk && cooperadosOk;
   };
 
   const abrirModalAdmissaoComPaciente = (pacienteBubble?: any) => {
+    garantirBasesAuxiliares();
     if (pacienteBubble) {
       setModoOrigemModal('bubble');
       setPacienteBubbleSelecionado(pacienteBubble);
@@ -439,6 +544,7 @@ export default function ProntuariosAuditDashboard() {
 
       const res = await axios.post('/api/gestor/prontuarios/pacientes', payload);
       if (res.data?.success) {
+        invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
         setIsNovoPacienteOpen(false);
         const pacienteId = res.data.data?.id || novoPacienteForm.id;
         // Redireciona diretamente para a Dashboard Individual do Paciente com plano ativo
@@ -467,6 +573,17 @@ export default function ProntuariosAuditDashboard() {
     return matchSearch && matchComp;
   });
 
+  // Reseta para a página 1 ao alterar filtros
+  useEffect(() => {
+    setPaginaAtual(1);
+  }, [search, selectedComplexidade]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filteredPacientes.length / ITENS_POR_PAGINA));
+  const pacientesPaginados = filteredPacientes.slice(
+    (paginaAtual - 1) * ITENS_POR_PAGINA,
+    paginaAtual * ITENS_POR_PAGINA
+  );
+
   // Filtragem Pacientes Bubble no Modal
   const bubbleFiltradosModal = pacientesBubble.filter((b) => {
     const t = buscaBubbleModal.toLowerCase();
@@ -494,7 +611,11 @@ export default function ProntuariosAuditDashboard() {
   let totalAprazados = 0;
   let totalAdministrados = 0;
   filteredEvolutions.forEach((ev) => {
-    if (ev.aprazamentos) {
+    if (typeof ev.aprazamentos_total === 'number') {
+      // Projeção leve: contagem já feita no servidor (funciona com D1).
+      totalAprazados += ev.aprazamentos_total;
+      totalAdministrados += ev.aprazamentos_administrados || 0;
+    } else if (ev.aprazamentos) {
       ev.aprazamentos.forEach((a) => {
         totalAprazados++;
         if (a.status === 'Administrado') {
@@ -739,7 +860,7 @@ export default function ProntuariosAuditDashboard() {
 
       {/* Content Grid */}
       <div className="max-w-7xl mx-auto">
-        {loading ? (
+        {(activeTab === 'pacientes' ? carregandoPacientes : carregandoEvolucoes) ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
             {[1, 2, 3].map((i) => (
               <div key={i} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm animate-pulse space-y-4">
@@ -771,8 +892,9 @@ export default function ProntuariosAuditDashboard() {
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {filteredPacientes.map((p) => (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {pacientesPaginados.map((p) => (
                 <div
                   key={p.id}
                   className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-5 flex flex-col justify-between"
@@ -917,6 +1039,43 @@ export default function ProntuariosAuditDashboard() {
                   </div>
                 </div>
               ))}
+              </div>
+
+              {totalPaginas > 1 && (
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-white rounded-2xl border border-slate-200 px-6 py-4 shadow-xs">
+                  <div className="text-xs text-slate-500 font-medium">
+                    Mostrando <span className="font-bold text-slate-800">{(paginaAtual - 1) * ITENS_POR_PAGINA + 1}</span> a{' '}
+                    <span className="font-bold text-slate-800">
+                      {Math.min(paginaAtual * ITENS_POR_PAGINA, filteredPacientes.length)}
+                    </span>{' '}
+                    de <span className="font-bold text-slate-800">{filteredPacientes.length}</span> pacientes
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={paginaAtual <= 1}
+                      onClick={() => setPaginaAtual((p) => Math.max(1, p - 1))}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                      Anterior
+                    </button>
+
+                    <span className="px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 rounded-lg">
+                      Página {paginaAtual} de {totalPaginas}
+                    </span>
+
+                    <button
+                      type="button"
+                      disabled={paginaAtual >= totalPaginas}
+                      onClick={() => setPaginaAtual((p) => Math.min(totalPaginas, p + 1))}
+                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                      Próxima
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )
         ) : (
@@ -951,7 +1110,7 @@ export default function ProntuariosAuditDashboard() {
                           {ev.check_in ? new Date(ev.check_in).toLocaleString('pt-BR') : '--'}
                         </td>
                         <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">
-                          {ev.soap_avaliacao || ev.transcricao_revisada || 'Sem resumo cadastrado'}
+                          {ev.resumo || ev.soap_avaliacao || ev.transcricao_revisada || 'Sem resumo cadastrado'}
                         </td>
                         <td className="py-3.5 px-4 text-center">
                           <Link
@@ -1045,7 +1204,9 @@ export default function ProntuariosAuditDashboard() {
                         />
                       </div>
                       <span className="text-[11px] font-bold text-indigo-700 shrink-0">
-                        {bubbleFiltradosModal.length} pacientes encontrados
+                        {carregandoBasesAuxiliares && pacientesBubble.length === 0
+                          ? 'Carregando base…'
+                          : `${bubbleFiltradosModal.length} pacientes encontrados`}
                       </span>
                     </div>
 

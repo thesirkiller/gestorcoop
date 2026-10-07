@@ -160,11 +160,11 @@ test.describe('Fluxo Real E2E - Prontuário e Plano Terapêutico (Paciente New T
     await btnSalvarPresc.click();
 
     // Verificar que aparece na lista
-    await expect(page.locator('text=Amoxicilina + Clavulanato 875mg')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('text=Amoxicilina + Clavulanato 875mg').first()).toBeVisible({ timeout: 15_000 });
 
     // Recarregar a página
     await page.reload({ waitUntil: 'networkidle' });
     await page.locator('button').filter({ hasText: /Prescrições Médicas/i }).first().click();
-    await expect(page.locator('text=Amoxicilina + Clavulanato 875mg')).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator('text=Amoxicilina + Clavulanato 875mg').first()).toBeVisible({ timeout: 15_000 });
   });
 });

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { getDb, D1IndisponivelError, novoId, agoraIso } from './client';
+import { getDb, D1IndisponivelError, novoId, agoraIso, type D1Database } from './client';
 import { bubbleApi } from '@/lib/bubble';
 
 export type EspecialidadeProfissional =
@@ -45,6 +45,16 @@ export interface PacienteClinico {
   ultima_evolucao_data?: string;
   ultimo_profissional_nome?: string;
   ultimo_sinal_vital?: SinalVitalClinico | null;
+  tem_plano_terapeutico?: boolean;
+  plano_vigente?: {
+    id: string;
+    data_inicio: string;
+    data_fim: string;
+    total_previsto: number;
+    total_realizado: number;
+    total_restante: number;
+    tem_pendencias: boolean;
+  } | null;
 }
 
 export interface PrescricaoClinica {
@@ -181,28 +191,78 @@ export interface PlanoTerapeutico {
 
 // -------------------------------------------------------------
 // Banco de dados em memória para Fallback / Dev local sem D1
-// Compartilhado via globalThis entre todos os módulos de rotas do Next.js
+// Sincronizado via process.env e globalThis entre todos os módulos de rotas do Next.js
 // -------------------------------------------------------------
 const g = globalThis as any;
-if (!g.__gestorcoop_inMemoryPacientes) g.__gestorcoop_inMemoryPacientes = new Map();
-if (!g.__gestorcoop_inMemoryPrescricoes) g.__gestorcoop_inMemoryPrescricoes = new Map();
-if (!g.__gestorcoop_inMemoryAprazamentos) g.__gestorcoop_inMemoryAprazamentos = new Map();
-if (!g.__gestorcoop_inMemorySinaisVitais) g.__gestorcoop_inMemorySinaisVitais = new Map();
-if (!g.__gestorcoop_inMemoryEvolucoes) g.__gestorcoop_inMemoryEvolucoes = new Map();
-if (!g.__gestorcoop_inMemoryPareceres) g.__gestorcoop_inMemoryPareceres = new Map();
-if (!g.__gestorcoop_inMemoryPlanosTerapeuticos) g.__gestorcoop_inMemoryPlanosTerapeuticos = new Map();
-if (!g.__gestorcoop_inMemoryPlanoMetas) g.__gestorcoop_inMemoryPlanoMetas = new Map();
 
-const inMemoryPacientes: Map<string, PacienteClinico> = g.__gestorcoop_inMemoryPacientes;
-const inMemoryPrescricoes: Map<string, PrescricaoClinica> = g.__gestorcoop_inMemoryPrescricoes;
-const inMemoryAprazamentos: Map<string, AprazamentoClinico> = g.__gestorcoop_inMemoryAprazamentos;
-const inMemorySinaisVitais: Map<string, SinalVitalClinico> = g.__gestorcoop_inMemorySinaisVitais;
-const inMemoryEvolucoes: Map<string, EvolucaoClinica> = g.__gestorcoop_inMemoryEvolucoes;
-const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = g.__gestorcoop_inMemoryPareceres;
-const inMemoryPlanosTerapeuticos: Map<string, PlanoTerapeutico> = g.__gestorcoop_inMemoryPlanosTerapeuticos;
-const inMemoryPlanoMetas: Map<string, MetaPlanoTerapeutico> = g.__gestorcoop_inMemoryPlanoMetas;
+function criarMapaCompartilhado<K, V>(nome: string): Map<K, V> {
+  const globalKey = `__gestorcoop_inMemory_${nome}`;
+  if (!g[globalKey]) g[globalKey] = new Map<K, V>();
+  const localMap: Map<K, V> = g[globalKey];
+  const envKey = `__GESTORCOOP_STORE_${nome}`;
 
-function getClinicalDb() {
+  const sincronizarDoEnv = () => {
+    try {
+      if (typeof process !== 'undefined' && process.env && process.env[envKey]) {
+        const entries: [K, V][] = JSON.parse(process.env[envKey]!);
+        for (const [k, v] of entries) {
+          localMap.set(k, v);
+        }
+      }
+    } catch {}
+  };
+
+  const persistirNoEnv = () => {
+    try {
+      if (typeof process !== 'undefined' && process.env) {
+        process.env[envKey] = JSON.stringify(Array.from(localMap.entries()));
+      }
+    } catch {}
+  };
+
+  sincronizarDoEnv();
+
+  return new Proxy(localMap, {
+    get(target, prop) {
+      if (
+        prop === 'get' ||
+        prop === 'has' ||
+        prop === 'values' ||
+        prop === 'entries' ||
+        prop === 'keys' ||
+        prop === 'size' ||
+        prop === Symbol.iterator ||
+        prop === 'forEach'
+      ) {
+        sincronizarDoEnv();
+      }
+      if (prop === 'size') return target.size;
+      const val = (target as any)[prop];
+      if (typeof val === 'function') {
+        return function (...args: any[]) {
+          sincronizarDoEnv();
+          const res = val.apply(target, args);
+          if (prop === 'set' || prop === 'delete' || prop === 'clear') {
+            persistirNoEnv();
+          }
+          return res;
+        };
+      }
+      return val;
+    },
+  });
+}
+
+export const inMemoryPacientes: Map<string, PacienteClinico> = criarMapaCompartilhado('Pacientes');
+const inMemoryPrescricoes: Map<string, PrescricaoClinica> = criarMapaCompartilhado('Prescricoes');
+const inMemoryAprazamentos: Map<string, AprazamentoClinico> = criarMapaCompartilhado('Aprazamentos');
+const inMemorySinaisVitais: Map<string, SinalVitalClinico> = criarMapaCompartilhado('SinaisVitais');
+const inMemoryEvolucoes: Map<string, EvolucaoClinica> = criarMapaCompartilhado('Evolucoes');
+const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = criarMapaCompartilhado('Pareceres');
+const inMemoryPlanosTerapeuticos: Map<string, PlanoTerapeutico> = criarMapaCompartilhado('PlanosTerapeuticos');
+const inMemoryPlanoMetas: Map<string, MetaPlanoTerapeutico> = criarMapaCompartilhado('PlanoMetas');
+
+export function getClinicalDb() {
   const db = getDb();
   if (!db && process.env.NODE_ENV === 'production') throw new D1IndisponivelError();
   return db;
@@ -446,10 +506,46 @@ async function executarComandoDdl(db: any, sql: string): Promise<void> {
   }
 }
 
+/**
+ * Sonda do schema em UMA instrução.
+ *
+ * Cada isolate novo do Worker começa com `schemaGarantido = false`, e o caminho
+ * de DDL abaixo dispara ~19 comandos em sequência — um round trip ao D1 cada —
+ * antes da primeira consulta clínica. Isolates são reciclados o tempo todo, então
+ * esse custo aparecia em boa parte das aberturas de prontuário.
+ *
+ * A sonda referencia exatamente as tabelas e colunas que o DDL cria/adiciona. Se
+ * ela executa sem erro, o DDL inteiro seria no-op e pode ser pulado; se qualquer
+ * tabela ou coluna faltar, o SQLite responde "no such table/column" e caímos no
+ * caminho completo, como antes.
+ */
+const SONDA_SCHEMA = [
+  'SELECT',
+  '(SELECT COUNT(*) FROM (SELECT telefone, responsavel_nome, responsavel_telefone, diagnostico_principal, cid10, complexidade, plano_saude, numero_carteirinha, status, created_at, limite_visitas_mes FROM pacientes LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM planos_terapeuticos LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM plano_terapeutico_metas LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM prescricoes LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM aprazamentos LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM sinais_vitais LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM pareceres_auditoria LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM evolucoes LIMIT 0)) AS ok',
+].join(' ');
+
+async function schemaJaAplicado(db: any): Promise<boolean> {
+  if (typeof db?.prepare !== 'function') return false;
+  try {
+    await db.prepare(SONDA_SCHEMA).first();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function garantirSchemaD1(db: any): Promise<void> {
   if (!db || schemaGarantido) return;
   if (schemaEmAndamento) return schemaEmAndamento;
   schemaEmAndamento = (async () => {
+  if (await schemaJaAplicado(db)) return;
   try {
     await executarComandoDdl(db, `
       CREATE TABLE IF NOT EXISTS pacientes (
@@ -565,7 +661,9 @@ export async function garantirSchemaD1(db: any): Promise<void> {
         soap_objetivo TEXT,
         soap_avaliacao TEXT,
         soap_plano TEXT
-      )`
+      )`,
+      'CREATE INDEX IF NOT EXISTS idx_prescricoes_paciente_status ON prescricoes(paciente_id, status)',
+      'CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome COLLATE NOCASE)'
     ];
     for (const cmd of comandos) {
       await executarComandoDdl(db, cmd);
@@ -581,6 +679,109 @@ export async function garantirSchemaD1(db: any): Promise<void> {
   } finally {
     schemaEmAndamento = null;
   }
+}
+
+// -------------------------------------------------------------
+// Mapeadores de linha do D1 (compartilhados pelas consultas unitárias e pelas
+// consultas agregadas abaixo, para que os dois caminhos devolvam o mesmo formato)
+// -------------------------------------------------------------
+
+function parseJsonSeguro<T>(valor: unknown, padrao: T): T {
+  if (valor == null || valor === '') return padrao;
+  if (typeof valor !== 'string') return valor as T;
+  try {
+    return JSON.parse(valor) as T;
+  } catch {
+    return padrao;
+  }
+}
+
+export function mapearPacienteRow(r: any): PacienteClinico {
+  return {
+    id: r.id,
+    nome: r.nome,
+    cpf: r.cpf,
+    data_nascimento: r.data_nascimento,
+    endereco: r.endereco,
+    telefone: r.telefone,
+    responsavel_nome: r.responsavel_nome,
+    responsavel_telefone: r.responsavel_telefone,
+    diagnostico_principal: r.diagnostico_principal,
+    cid10: r.cid10,
+    complexidade: r.complexidade,
+    plano_saude: r.plano_saude,
+    numero_carteirinha: r.numero_carteirinha,
+    warnings: r.warnings ? (typeof r.warnings === 'string' ? JSON.parse(r.warnings) : r.warnings) : [],
+    status: r.status || 'Ativo',
+    limite_visitas_mes: Number(r.limite_visitas_mes || 0),
+    created_at: r.created_at,
+  };
+}
+
+/** Colunas das consultas de evolução com nome/CPF do paciente (alias `e` e `pac`). */
+const COLUNAS_EVOLUCAO_COM_PACIENTE = 'e.*, pac.nome AS paciente_nome, pac.cpf AS paciente_cpf';
+
+export function mapearEvolucaoRow(r: any): EvolucaoClinica {
+  return {
+    id: r.id,
+    paciente_id: r.paciente_id,
+    paciente_nome: r.paciente_nome || undefined,
+    paciente_cpf: r.paciente_cpf || undefined,
+    profissional_id: r.profissional_id,
+    tipo_profissional: r.tipo_profissional,
+    profissional_nome: r.profissional_nome || '',
+    turno: r.turno || undefined,
+    check_in: r.check_in,
+    check_out: r.check_out,
+    audio_url: r.audio_url || undefined,
+    transcricao_crua: r.transcricao_crua || undefined,
+    transcricao_revisada: r.transcricao_revisada || '',
+    soap_subjetivo: r.soap_subjetivo || undefined,
+    soap_objetivo: r.soap_objetivo || undefined,
+    soap_avaliacao: r.soap_avaliacao || undefined,
+    soap_plano: r.soap_plano || undefined,
+    status: r.status || 'Finalizado',
+    data_assinatura: r.data_assinatura || undefined,
+    assinatura_digital: r.assinatura_digital || undefined,
+  };
+}
+
+function mapearPrescricaoRow(p: any): PrescricaoClinica {
+  return {
+    ...p,
+    horarios_padrao: p.horarios_padrao ? JSON.parse(p.horarios_padrao) : [],
+  } as PrescricaoClinica;
+}
+
+function mapearMetaRow(m: any): MetaPlanoTerapeutico {
+  return {
+    id: m.id,
+    plano_id: m.plano_id,
+    especialidade: m.especialidade,
+    quantidade_prevista: Number(m.quantidade_prevista || 1),
+    profissionais_designados: parseJsonSeguro<ProfissionalDesignado[]>(m.profissionais_designados, []),
+    created_at: m.created_at,
+  };
+}
+
+function mapearPlanoRow(row: any, metas: MetaPlanoTerapeutico[]): PlanoTerapeutico {
+  return {
+    id: row.id,
+    paciente_id: row.paciente_id,
+    data_inicio: row.data_inicio,
+    data_fim: row.data_fim,
+    status: row.status,
+    observacoes: row.observacoes,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    metas,
+  };
+}
+
+/** Prefixo `YYYY-MM` do mês seguinte, para filtrar `check_in` por intervalo (usa o índice). */
+function mesSeguinteIso(mesIso: string): string {
+  const [ano, mes] = mesIso.split('-').map(Number);
+  return mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, '0')}`;
 }
 
 export async function listarPacientesClinicos(filtro?: {
@@ -609,25 +810,7 @@ export async function listarPacientesClinicos(filtro?: {
       }
 
       const res = await db.prepare(query).bind(...params).all();
-      lista = (res.results || []).map((r: any) => ({
-        id: r.id,
-        nome: r.nome,
-        cpf: r.cpf,
-        data_nascimento: r.data_nascimento,
-        endereco: r.endereco,
-        telefone: r.telefone,
-        responsavel_nome: r.responsavel_nome,
-        responsavel_telefone: r.responsavel_telefone,
-        diagnostico_principal: r.diagnostico_principal,
-        cid10: r.cid10,
-        complexidade: r.complexidade,
-        plano_saude: r.plano_saude,
-        numero_carteirinha: r.numero_carteirinha,
-        warnings: r.warnings ? (typeof r.warnings === 'string' ? JSON.parse(r.warnings) : r.warnings) : [],
-        status: r.status || 'Ativo',
-        limite_visitas_mes: Number(r.limite_visitas_mes || 0),
-        created_at: r.created_at,
-      }));
+      lista = (res.results || []).map(mapearPacienteRow);
     } catch (e) {
       throw e;
     }
@@ -694,25 +877,7 @@ export async function obterPacienteClinico(id: string): Promise<PacienteClinico 
     try {
       const res = await db.prepare('SELECT * FROM pacientes WHERE id = ?').bind(id).first<any>();
       if (res) {
-        paciente = {
-          id: res.id,
-          nome: res.nome,
-          cpf: res.cpf,
-          data_nascimento: res.data_nascimento,
-          endereco: res.endereco,
-          telefone: res.telefone,
-          responsavel_nome: res.responsavel_nome,
-          responsavel_telefone: res.responsavel_telefone,
-          diagnostico_principal: res.diagnostico_principal,
-          cid10: res.cid10,
-          complexidade: res.complexidade,
-          plano_saude: res.plano_saude,
-          numero_carteirinha: res.numero_carteirinha,
-          warnings: res.warnings ? (typeof res.warnings === 'string' ? JSON.parse(res.warnings) : res.warnings) : [],
-          status: res.status || 'Ativo',
-          limite_visitas_mes: Number(res.limite_visitas_mes || 0),
-          created_at: res.created_at,
-        };
+        paciente = mapearPacienteRow(res);
       }
     } catch (e) {
       throw e;
@@ -884,7 +1049,7 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
   return registro;
 }
 
-export async function listarEvolucoesClinicas(filtros?: {
+export interface FiltrosEvolucoes {
   paciente_id?: string;
   profissional_id?: string;
   especialidade?: string;
@@ -892,65 +1057,61 @@ export async function listarEvolucoesClinicas(filtros?: {
   data_inicio?: string;
   data_fim?: string;
   limit?: number;
-}): Promise<EvolucaoClinica[]> {
+}
+
+/**
+ * SQL da linha do tempo de evoluções (alias `e` e `pac`), compartilhado pela
+ * consulta completa e pela projeção leve, para que as duas apliquem exatamente
+ * os mesmos filtros, ordem e limite.
+ */
+function montarConsultaEvolucoes(colunas: string, filtros?: FiltrosEvolucoes): { sql: string; params: any[] } {
+  // LEFT JOIN pela PK do paciente: sem ele a linha do tempo do gestor saía
+  // sem `paciente_nome`/`paciente_cpf` (coluna principal da tabela e campo de
+  // busca). As colunas do WHERE vão prefixadas: `status` existe nas duas tabelas.
+  let sql = `SELECT ${colunas} FROM evolucoes e LEFT JOIN pacientes pac ON pac.id = e.paciente_id WHERE 1=1`;
+  const params: any[] = [];
+  if (filtros?.paciente_id) {
+    sql += ' AND e.paciente_id = ?';
+    params.push(filtros.paciente_id);
+  }
+  if (filtros?.profissional_id) {
+    sql += ' AND e.profissional_id = ?';
+    params.push(filtros.profissional_id);
+  }
+  if (filtros?.especialidade) {
+    sql += ' AND e.tipo_profissional = ?';
+    params.push(filtros.especialidade);
+  }
+  if (filtros?.status) {
+    sql += ' AND e.status = ?';
+    params.push(filtros.status);
+  }
+  if (filtros?.data_inicio) {
+    sql += ' AND e.check_in >= ?';
+    params.push(filtros.data_inicio);
+  }
+  if (filtros?.data_fim) {
+    sql += ' AND e.check_in <= ?';
+    params.push(filtros.data_fim + 'T23:59:59');
+  }
+  sql += ' ORDER BY e.check_in DESC';
+  if (filtros?.limit) {
+    sql += ` LIMIT ${Number(filtros.limit)}`;
+  }
+  return { sql, params };
+}
+
+export async function listarEvolucoesClinicas(filtros?: FiltrosEvolucoes): Promise<EvolucaoClinica[]> {
   seedClinicalMemory();
   const db = getClinicalDb();
   if (db) {
     try {
       await garantirSchemaD1(db);
-      let query = 'SELECT * FROM evolucoes WHERE 1=1';
-      const params: any[] = [];
-      if (filtros?.paciente_id) {
-        query += ' AND paciente_id = ?';
-        params.push(filtros.paciente_id);
-      }
-      if (filtros?.profissional_id) {
-        query += ' AND profissional_id = ?';
-        params.push(filtros.profissional_id);
-      }
-      if (filtros?.especialidade) {
-        query += ' AND tipo_profissional = ?';
-        params.push(filtros.especialidade);
-      }
-      if (filtros?.status) {
-        query += ' AND status = ?';
-        params.push(filtros.status);
-      }
-      if (filtros?.data_inicio) {
-        query += ' AND check_in >= ?';
-        params.push(filtros.data_inicio);
-      }
-      if (filtros?.data_fim) {
-        query += ' AND check_in <= ?';
-        params.push(filtros.data_fim + 'T23:59:59');
-      }
-      query += ' ORDER BY check_in DESC';
-      if (filtros?.limit) {
-        query += ` LIMIT ${Number(filtros.limit)}`;
-      }
+      const { sql: query, params } = montarConsultaEvolucoes(COLUNAS_EVOLUCAO_COM_PACIENTE, filtros);
       const stmt = db.prepare(query);
       const rows = (await (params.length ? stmt.bind(...params) : stmt).all<any>()).results;
       if (rows) {
-        return rows.map((r: any) => ({
-          id: r.id,
-          paciente_id: r.paciente_id,
-          profissional_id: r.profissional_id,
-          tipo_profissional: r.tipo_profissional,
-          profissional_nome: r.profissional_nome || '',
-          turno: r.turno || undefined,
-          check_in: r.check_in,
-          check_out: r.check_out,
-          audio_url: r.audio_url || undefined,
-          transcricao_crua: r.transcricao_crua || undefined,
-          transcricao_revisada: r.transcricao_revisada || '',
-          soap_subjetivo: r.soap_subjetivo || undefined,
-          soap_objetivo: r.soap_objetivo || undefined,
-          soap_avaliacao: r.soap_avaliacao || undefined,
-          soap_plano: r.soap_plano || undefined,
-          status: r.status || 'Finalizado',
-          data_assinatura: r.data_assinatura || undefined,
-          assinatura_digital: r.assinatura_digital || undefined,
-        }));
+        return rows.map(mapearEvolucaoRow);
       }
     } catch (e) {
       throw e;
@@ -1003,6 +1164,129 @@ export async function listarEvolucoesClinicas(filtros?: {
   }
 
   return lista;
+}
+
+/** Tamanho máximo do texto de resumo na projeção leve (a célula da tabela é truncada em 1 linha). */
+export const LIMITE_RESUMO_EVOLUCAO = 240;
+
+/**
+ * Item da linha do tempo na projeção leve: o que a tabela/CSV/KPIs da
+ * listagem usam, sem `transcricao_crua`, `audio_url`, assinatura e SOAP completo.
+ */
+export interface EvolucaoResumo {
+  id: string;
+  paciente_id: string;
+  paciente_nome?: string;
+  paciente_cpf?: string;
+  profissional_id: string;
+  profissional_nome: string;
+  tipo_profissional: EspecialidadeProfissional | string;
+  turno?: string;
+  check_in: string;
+  check_out: string;
+  status: StatusEvolucao | string;
+  data_assinatura?: string;
+  /** `soap_avaliacao || transcricao_revisada`, truncado em `LIMITE_RESUMO_EVOLUCAO` caracteres. */
+  resumo?: string;
+  /** Aprazamentos do paciente executados durante o atendimento (mesmo critério do caminho em memória). */
+  aprazamentos_total: number;
+  aprazamentos_administrados: number;
+}
+
+const COLUNAS_EVOLUCAO_RESUMO =
+  'e.id, e.paciente_id, pac.nome AS paciente_nome, pac.cpf AS paciente_cpf, e.profissional_id, ' +
+  'e.profissional_nome, e.tipo_profissional, e.turno, e.check_in, e.check_out, e.status, e.data_assinatura, ' +
+  `substr(COALESCE(NULLIF(e.soap_avaliacao, ''), NULLIF(e.transcricao_revisada, '')), 1, ${LIMITE_RESUMO_EVOLUCAO}) AS resumo`;
+
+/**
+ * Projeção leve da linha do tempo global (`GET /api/gestor/prontuarios` com
+ * `X-Gestorcoop-Projecao: resumo`). Mesmos filtros, ordem e limite de
+ * `listarEvolucoesClinicas`, mas sem transcrições/áudio/SOAP — que eram a maior
+ * parte do payload de 100 evoluções e não aparecem na tabela.
+ *
+ * Também devolve a contagem de aprazamentos executados em cada atendimento: o
+ * KPI de conformidade medicamentosa dependia de `ev.aprazamentos`, que só o
+ * caminho em memória anexa — com D1 ele ficava sempre em 100%.
+ *
+ * D1: 2 instruções num único `batch` (uma ida). A contagem usa
+ * `e.id IN (<mesma consulta com LIMIT>)`, que o SQLite materializa: o JOIN com
+ * prescrições/aprazamentos roda só para as evoluções devolvidas.
+ */
+export async function listarEvolucoesResumo(
+  filtros?: FiltrosEvolucoes,
+  opcoes: { db?: D1Database } = {},
+): Promise<EvolucaoResumo[]> {
+  seedClinicalMemory();
+  const db = opcoes.db ?? getClinicalDb();
+
+  if (!db) {
+    const completas = await listarEvolucoesClinicas(filtros);
+    return completas.map((ev) => {
+      const aprazamentos = ev.aprazamentos || [];
+      return {
+        id: ev.id,
+        paciente_id: ev.paciente_id,
+        paciente_nome: ev.paciente_nome || undefined,
+        paciente_cpf: ev.paciente_cpf || undefined,
+        profissional_id: ev.profissional_id,
+        profissional_nome: ev.profissional_nome || '',
+        tipo_profissional: ev.tipo_profissional,
+        turno: ev.turno || undefined,
+        check_in: ev.check_in,
+        check_out: ev.check_out,
+        status: ev.status || 'Finalizado',
+        data_assinatura: ev.data_assinatura || undefined,
+        resumo: (ev.soap_avaliacao || ev.transcricao_revisada || '').slice(0, LIMITE_RESUMO_EVOLUCAO) || undefined,
+        aprazamentos_total: aprazamentos.length,
+        aprazamentos_administrados: aprazamentos.filter((a) => a.status === 'Administrado').length,
+      };
+    });
+  }
+
+  await garantirSchemaD1(db);
+
+  const principal = montarConsultaEvolucoes(COLUNAS_EVOLUCAO_RESUMO, filtros);
+  const ids = montarConsultaEvolucoes('e.id', filtros);
+  const [rEvo, rAprazamentos] = await db.batch<any>([
+    db.prepare(principal.sql).bind(...principal.params),
+    db.prepare(
+      "SELECT e.id AS evolucao_id, COUNT(*) AS total, SUM(CASE WHEN a.status = 'Administrado' THEN 1 ELSE 0 END) AS administrados " +
+        'FROM evolucoes e ' +
+        'JOIN prescricoes pr ON pr.paciente_id = e.paciente_id ' +
+        'JOIN aprazamentos a ON a.prescricao_id = pr.id ' +
+        `WHERE e.id IN (${ids.sql}) ` +
+        "AND a.horario_executado IS NOT NULL AND a.horario_executado <> '' " +
+        'AND a.horario_executado >= e.check_in ' +
+        "AND a.horario_executado <= COALESCE(NULLIF(e.check_out, ''), strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) " +
+        'GROUP BY e.id'
+    ).bind(...ids.params),
+  ]);
+
+  const contagem = new Map<string, { total: number; administrados: number }>();
+  for (const r of rAprazamentos.results || []) {
+    contagem.set(r.evolucao_id, { total: Number(r.total || 0), administrados: Number(r.administrados || 0) });
+  }
+
+  return (rEvo.results || []).map((r: any) => {
+    const c = contagem.get(r.id);
+    return {
+      id: r.id,
+      paciente_id: r.paciente_id,
+      paciente_nome: r.paciente_nome || undefined,
+      paciente_cpf: r.paciente_cpf || undefined,
+      profissional_id: r.profissional_id,
+      profissional_nome: r.profissional_nome || '',
+      tipo_profissional: r.tipo_profissional,
+      turno: r.turno || undefined,
+      check_in: r.check_in,
+      check_out: r.check_out,
+      status: r.status || 'Finalizado',
+      data_assinatura: r.data_assinatura || undefined,
+      resumo: r.resumo || undefined,
+      aprazamentos_total: c?.total ?? 0,
+      aprazamentos_administrados: c?.administrados ?? 0,
+    };
+  });
 }
 
 export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & { id?: string }): Promise<EvolucaoClinica> {
@@ -1396,9 +1680,34 @@ export function formatarNomeEspecialidade(esp: string): string {
   return map[esp] || esp.replace(/_/g, ' ');
 }
 
+/**
+ * Conta evoluções por especialidade normalizada dentro da vigência do plano.
+ * Mesmo critério de antes: mesmo paciente, `check_in` preenchido e comparação
+ * textual com `data_inicio T00:00:00.000Z` / `data_fim T23:59:59.999Z`.
+ */
 export function enriquecerPlanoComCalculos(plano: PlanoTerapeutico, evolucoes: EvolucaoClinica[]): PlanoTerapeutico {
   const inicioIso = `${plano.data_inicio}T00:00:00.000Z`;
   const fimIso = `${plano.data_fim}T23:59:59.999Z`;
+  const contagem = new Map<string, number>();
+  for (const ev of evolucoes) {
+    if (ev.paciente_id !== plano.paciente_id || !ev.check_in) continue;
+    if (ev.check_in < inicioIso || ev.check_in > fimIso) continue;
+    const esp = normalizarEspecialidade(ev.tipo_profissional || '');
+    contagem.set(esp, (contagem.get(esp) || 0) + 1);
+  }
+  return calcularProgressoPlano(plano, (esp) => contagem.get(esp) || 0);
+}
+
+/**
+ * Regras de progresso/pendência do plano, separadas da origem da contagem.
+ * `contarRealizadas` recebe a especialidade JÁ normalizada. Assim a listagem
+ * agregada (contagem feita no D1 com GROUP BY) e o detalhe (contagem sobre as
+ * evoluções carregadas) aplicam exatamente a mesma regra.
+ */
+export function calcularProgressoPlano(
+  plano: PlanoTerapeutico,
+  contarRealizadas: (especialidadeNormalizada: string) => number,
+): PlanoTerapeutico {
   const hoje = new Date().toISOString().split('T')[0];
   const planoEncerradoOuProximo = hoje >= plano.data_fim;
 
@@ -1409,17 +1718,7 @@ export function enriquecerPlanoComCalculos(plano: PlanoTerapeutico, evolucoes: E
   const metasEnriquecidas: MetaPlanoTerapeutico[] = (plano.metas || []).map((meta) => {
     const metaEspNormalizada = normalizarEspecialidade(meta.especialidade);
 
-    // Contar evoluções do paciente que batem com esta especialidade dentro do período do plano
-    const evolucoesDaMeta = evolucoes.filter((ev) => {
-      if (ev.paciente_id !== plano.paciente_id) return false;
-      const evEsp = normalizarEspecialidade(ev.tipo_profissional || '');
-      if (evEsp !== metaEspNormalizada) return false;
-      if (!ev.check_in) return false;
-      const dataEv = ev.check_in;
-      return dataEv >= inicioIso && dataEv <= fimIso;
-    });
-
-    const realizadas = evolucoesDaMeta.length;
+    const realizadas = contarRealizadas(metaEspNormalizada);
     const restante = Math.max(0, meta.quantidade_prevista - realizadas);
     totalPrevisto += meta.quantidade_prevista;
     totalRealizado += realizadas;
@@ -1553,62 +1852,54 @@ export async function salvarPlanoTerapeutico(dados: {
 export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): Promise<PlanoTerapeutico[]> {
   seedClinicalMemory();
   const db = getClinicalDb();
-  if (db) await garantirSchemaD1(db);
-  let planos: PlanoTerapeutico[] = [];
-
   if (db) {
-    try {
-      const rows = (await db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC').bind(pacienteId).all<any>()).results;
-      if (rows && rows.length > 0) {
-        for (const row of rows) {
-          const metaRows = (await db.prepare('SELECT * FROM plano_terapeutico_metas WHERE plano_id = ?').bind(row.id).all<any>()).results;
-          const metas: MetaPlanoTerapeutico[] = (metaRows || []).map((m: any) => ({
-            id: m.id,
-            plano_id: m.plano_id,
-            especialidade: m.especialidade,
-            quantidade_prevista: Number(m.quantidade_prevista || 1),
-            profissionais_designados: m.profissionais_designados ? JSON.parse(m.profissionais_designados) : [],
-            created_at: m.created_at,
-          }));
-
-          planos.push({
-            id: row.id,
-            paciente_id: row.paciente_id,
-            data_inicio: row.data_inicio,
-            data_fim: row.data_fim,
-            status: row.status,
-            observacoes: row.observacoes,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
-            metas,
-          });
-        }
-      }
-    } catch (e) {
-      throw e;
-    }
+    await garantirSchemaD1(db);
+    // Uma ida ao D1: antes eram 1 (planos) + 1 por plano (metas) + 1 (evoluções),
+    // todas em sequência.
+    const [rPlanos, rMetas, rEvolucoes] = await db.batch<any>([
+      db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC').bind(pacienteId),
+      db.prepare(
+        'SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id = ? ORDER BY m.rowid'
+      ).bind(pacienteId),
+      db.prepare('SELECT * FROM evolucoes WHERE paciente_id = ? ORDER BY check_in DESC').bind(pacienteId),
+    ]);
+    const planos = montarPlanos(rPlanos.results || [], rMetas.results || []);
+    const evolucoes = (rEvolucoes.results || []).map(mapearEvolucaoRow);
+    return planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes));
   }
 
-  if (!db && planos.length === 0) {
-    planos = Array.from(inMemoryPlanosTerapeuticos.values()).filter((p) => p.paciente_id === pacienteId);
-  }
+  const planos = Array.from(inMemoryPlanosTerapeuticos.values()).filter((p) => p.paciente_id === pacienteId);
 
   // Buscar evoluções para cálculo de progresso
   const evolucoes = await listarEvolucoesClinicas({ paciente_id: pacienteId });
   return planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes));
 }
 
+/** Agrupa as metas (já em ordem de inserção) nos planos, preservando a ordem dos planos. */
+function montarPlanos(planoRows: any[], metaRows: any[]): PlanoTerapeutico[] {
+  const metasPorPlano = new Map<string, MetaPlanoTerapeutico[]>();
+  for (const m of metaRows) {
+    const meta = mapearMetaRow(m);
+    const lista = metasPorPlano.get(meta.plano_id);
+    if (lista) lista.push(meta);
+    else metasPorPlano.set(meta.plano_id, [meta]);
+  }
+  return planoRows.map((row) => mapearPlanoRow(row, metasPorPlano.get(row.id) || []));
+}
+
 export async function obterPlanoTerapeuticoVigente(pacienteId: string, dataIso?: string): Promise<PlanoTerapeutico | null> {
   const planos = await listarPlanosTerapeuticosPorPaciente(pacienteId);
+  return selecionarPlanoVigente(planos, dataIso);
+}
+
+/**
+ * Primeiro plano `Ativo` (na ordem recebida — `data_inicio DESC`) cuja vigência
+ * cobre a data de referência (UTC, YYYY-MM-DD).
+ */
+export function selecionarPlanoVigente(planos: PlanoTerapeutico[], dataIso?: string): PlanoTerapeutico | null {
   if (planos.length === 0) return null;
-
   const dataRef = (dataIso || new Date().toISOString()).split('T')[0]; // YYYY-MM-DD
-
-  // Primeiro busca plano ativo com vigência cobrindo a data
-  const planoVigente = planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim);
-  if (planoVigente) return planoVigente;
-
-  return null;
+  return planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim) || null;
 }
 
 export async function validarCheckInPlanoTerapeutico(params: {
@@ -1697,4 +1988,619 @@ export async function validarCheckInPlanoTerapeutico(params: {
     realizadas,
     previstas,
   };
+}
+
+// -------------------------------------------------------------
+// Consultas agregadas ("RPC") do módulo de prontuários
+//
+// O D1 não tem stored procedures; o equivalente a uma RPC aqui é UMA chamada
+// `db.batch([...])`: várias instruções, um único round trip ao banco, executadas
+// em transação implícita (leitura consistente). As funções abaixo substituem os
+// laços que faziam uma consulta por paciente/plano (N+1) nas telas do gestor.
+// -------------------------------------------------------------
+
+export interface FiltrosListagemPacientes {
+  status?: string;
+  complexidade?: string;
+  busca?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface ResumoPacientesClinicos {
+  /** Pacientes do D1 com contadores clínicos (prescrições, última evolução, cota do mês, último sinal). */
+  pacientes: PacienteClinico[];
+  /** Plano vigente hoje, já com progresso calculado, indexado por `paciente_id`. */
+  planosVigentes: Map<string, PlanoTerapeutico>;
+  /** Total de pacientes que atendem aos filtros. */
+  total?: number;
+  /** Página atual quando paginado. */
+  page?: number;
+  /** Limite de itens por página quando paginado. */
+  limit?: number;
+  /** Total de páginas disponíveis quando paginado. */
+  totalPages?: number;
+}
+
+function aplicarCotaMensal(p: PacienteClinico, realizadasNoMes: number): void {
+  p.visitas_realizadas_mes = realizadasNoMes;
+  const limite = p.limite_visitas_mes || 0;
+  p.visitas_restantes_mes = limite > 0 ? Math.max(0, limite - realizadasNoMes) : undefined;
+  p.limite_atingido = limite > 0 ? realizadasNoMes >= limite : false;
+}
+
+/**
+ * Listagem de pacientes do painel de prontuários em UMA ida ao D1.
+ *
+ * Suporta filtros por status, complexidade, busca textual e paginação escalável.
+ * Quando paginado, todas as 8 subconsultas são estritamente delimitadas aos pacientes
+ * da página selecionada via subconsulta indexada.
+ * A contagem de prescrições ativas usa subconsulta correlacionada com covering index
+ * `idx_prescricoes_paciente_status`, eliminando agregação sobre a tabela inteira.
+ */
+export async function listarPacientesComResumoClinico(
+  filtro: FiltrosListagemPacientes = {},
+  opcoes: { db?: D1Database } = {},
+): Promise<ResumoPacientesClinicos> {
+  seedClinicalMemory();
+  const db = opcoes.db ?? getClinicalDb();
+
+  if (!db) {
+    // Dev local sem D1: dados em memória, o custo por paciente é desprezível.
+    let pacientes = await listarPacientesClinicos(filtro);
+    if (filtro.busca && filtro.busca.trim()) {
+      const bLower = filtro.busca.trim().toLowerCase();
+      pacientes = pacientes.filter(
+        (p) =>
+          (p.nome && p.nome.toLowerCase().includes(bLower)) ||
+          (p.cpf && p.cpf.includes(bLower)) ||
+          (p.diagnostico_principal && p.diagnostico_principal.toLowerCase().includes(bLower)) ||
+          (p.endereco && p.endereco.toLowerCase().includes(bLower))
+      );
+    }
+    const total = pacientes.length;
+    const paginar = typeof filtro.limit === 'number' && filtro.limit > 0;
+    const limit = paginar ? Math.max(1, Math.floor(filtro.limit!)) : total;
+    const page = paginar ? Math.max(1, Math.floor(filtro.page || 1)) : 1;
+    const totalPages = paginar ? Math.max(1, Math.ceil(total / limit)) : 1;
+
+    if (paginar) {
+      const offset = (page - 1) * limit;
+      pacientes = pacientes.slice(offset, offset + limit);
+    }
+
+    const ids = new Set<string>([
+      ...pacientes.map((p) => p.id),
+      ...Array.from(inMemoryPlanosTerapeuticos.values()).map((p) => p.paciente_id),
+    ]);
+    const planosVigentes = new Map<string, PlanoTerapeutico>();
+    for (const id of Array.from(ids)) {
+      try {
+        const plano = await obterPlanoTerapeuticoVigente(id);
+        if (plano) planosVigentes.set(id, plano);
+      } catch {
+        // mesmo comportamento da rota antiga: falha no plano não derruba a listagem
+      }
+    }
+    return {
+      pacientes,
+      planosVigentes,
+      total,
+      page,
+      limit,
+      totalPages,
+    };
+  }
+
+  await garantirSchemaD1(db);
+
+  const hoje = new Date().toISOString().split('T')[0];
+  const mes = hoje.slice(0, 7);
+  const mesSeguinte = mesSeguinteIso(mes);
+
+  // Prefixo `pac.`: o mesmo filtro é reaproveitado nas consultas que juntam
+  // pacientes com evoluções/sinais (`status` também existe em `evolucoes`).
+  let filtroPacientes = '1=1';
+  const paramsPacientes: unknown[] = [];
+  if (filtro.status) {
+    filtroPacientes += ' AND pac.status = ?';
+    paramsPacientes.push(filtro.status);
+  }
+  if (filtro.complexidade) {
+    filtroPacientes += ' AND pac.complexidade = ?';
+    paramsPacientes.push(filtro.complexidade);
+  }
+  if (filtro.busca && filtro.busca.trim()) {
+    const b = `%${filtro.busca.trim().toLowerCase()}%`;
+    filtroPacientes += ' AND (LOWER(pac.nome) LIKE ? OR pac.cpf LIKE ? OR LOWER(pac.diagnostico_principal) LIKE ? OR LOWER(pac.endereco) LIKE ?)';
+    paramsPacientes.push(b, b, b, b);
+  }
+
+  const paginar = typeof filtro.limit === 'number' && filtro.limit > 0;
+  const limit = paginar ? Math.max(1, Math.floor(filtro.limit!)) : undefined;
+  const page = paginar ? Math.max(1, Math.floor(filtro.page || 1)) : 1;
+  const offset = paginar ? (page - 1) * limit! : 0;
+
+  // Subconsulta para delimitar a página de pacientes com desempate determinístico por ID
+  const subqueryPacientes = `SELECT pac_sub.id FROM pacientes pac_sub WHERE ${filtroPacientes.replace(/\bpac\./g, 'pac_sub.')} ORDER BY pac_sub.nome COLLATE NOCASE ASC, pac_sub.id ASC` +
+    (paginar ? ' LIMIT ? OFFSET ?' : '');
+  const paramsSubquery = paginar ? [...paramsPacientes, limit, offset] : [...paramsPacientes];
+
+  const filtroPlanoVigente = "p.status = 'Ativo' AND p.data_inicio <= ? AND p.data_fim >= ?";
+
+  // Última evolução e último sinal: um *seek* por paciente listado, pelo índice
+  // (paciente_id, check_in DESC) / (paciente_id, data_hora DESC).
+  // Prescrições ativas: seek por paciente através do covering index
+  // `idx_prescricoes_paciente_status (paciente_id, status)`.
+  const batchStatements: any[] = [
+    paginar
+      ? db.prepare(`SELECT pac.* FROM pacientes pac WHERE pac.id IN (${subqueryPacientes}) ORDER BY pac.nome COLLATE NOCASE ASC, pac.id ASC`).bind(...paramsSubquery)
+      : db.prepare(`SELECT pac.* FROM pacientes pac WHERE ${filtroPacientes} ORDER BY pac.nome COLLATE NOCASE ASC, pac.id ASC`).bind(...paramsPacientes),
+
+    paginar
+      ? db.prepare(
+          `SELECT pac.id AS paciente_id, (
+            SELECT COUNT(*) FROM prescricoes pr WHERE pr.paciente_id = pac.id AND pr.status = 'Ativa'
+          ) AS total FROM pacientes pac WHERE pac.id IN (${subqueryPacientes})`
+        ).bind(...paramsSubquery)
+      : db.prepare(
+          `SELECT pac.id AS paciente_id, (
+            SELECT COUNT(*) FROM prescricoes pr WHERE pr.paciente_id = pac.id AND pr.status = 'Ativa'
+          ) AS total FROM pacientes pac WHERE ${filtroPacientes}`
+        ).bind(...paramsPacientes),
+
+    paginar
+      ? db.prepare(
+          'SELECT pac.id AS paciente_id, e.check_in, e.profissional_nome FROM pacientes pac ' +
+            'JOIN evolucoes e ON e.rowid = (' +
+              'SELECT e2.rowid FROM evolucoes e2 WHERE e2.paciente_id = pac.id AND e2.check_in IS NOT NULL ' +
+              'ORDER BY e2.check_in DESC, e2.rowid ASC LIMIT 1' +
+            `) WHERE pac.id IN (${subqueryPacientes})`
+        ).bind(...paramsSubquery)
+      : db.prepare(
+          'SELECT pac.id AS paciente_id, e.check_in, e.profissional_nome FROM pacientes pac ' +
+            'JOIN evolucoes e ON e.rowid = (' +
+              'SELECT e2.rowid FROM evolucoes e2 WHERE e2.paciente_id = pac.id AND e2.check_in IS NOT NULL ' +
+              'ORDER BY e2.check_in DESC, e2.rowid ASC LIMIT 1' +
+            `) WHERE ${filtroPacientes}`
+        ).bind(...paramsPacientes),
+
+    paginar
+      ? db.prepare(
+          `SELECT paciente_id, COUNT(*) AS total FROM evolucoes WHERE paciente_id IN (${subqueryPacientes}) AND check_in >= ? AND check_in < ? GROUP BY paciente_id`
+        ).bind(...paramsSubquery, mes, mesSeguinte)
+      : db.prepare(
+          'SELECT paciente_id, COUNT(*) AS total FROM evolucoes WHERE check_in >= ? AND check_in < ? GROUP BY paciente_id'
+        ).bind(mes, mesSeguinte),
+
+    paginar
+      ? db.prepare(
+          'SELECT sv.* FROM pacientes pac ' +
+            'JOIN sinais_vitais sv ON sv.rowid = (' +
+              'SELECT s2.rowid FROM sinais_vitais s2 WHERE s2.paciente_id = pac.id ' +
+              'ORDER BY s2.data_hora DESC, s2.rowid ASC LIMIT 1' +
+            `) WHERE pac.id IN (${subqueryPacientes})`
+        ).bind(...paramsSubquery)
+      : db.prepare(
+          'SELECT sv.* FROM pacientes pac ' +
+            'JOIN sinais_vitais sv ON sv.rowid = (' +
+              'SELECT s2.rowid FROM sinais_vitais s2 WHERE s2.paciente_id = pac.id ' +
+              'ORDER BY s2.data_hora DESC, s2.rowid ASC LIMIT 1' +
+            `) WHERE ${filtroPacientes}`
+        ).bind(...paramsPacientes),
+
+    paginar
+      ? db.prepare(
+          `SELECT p.* FROM planos_terapeuticos p WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} ORDER BY p.paciente_id, p.data_inicio DESC`
+        ).bind(...paramsSubquery, hoje, hoje)
+      : db.prepare(
+          `SELECT p.* FROM planos_terapeuticos p WHERE ${filtroPlanoVigente} ORDER BY p.paciente_id, p.data_inicio DESC`
+        ).bind(hoje, hoje),
+
+    paginar
+      ? db.prepare(
+          `SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} ORDER BY m.rowid`
+        ).bind(...paramsSubquery, hoje, hoje)
+      : db.prepare(
+          `SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE ${filtroPlanoVigente} ORDER BY m.rowid`
+        ).bind(hoje, hoje),
+
+    paginar
+      ? db.prepare(
+          'SELECT p.id AS plano_id, e.tipo_profissional AS tipo_profissional, COUNT(*) AS total ' +
+          'FROM planos_terapeuticos p JOIN evolucoes e ON e.paciente_id = p.paciente_id ' +
+          "AND e.check_in >= (p.data_inicio || 'T00:00:00.000Z') AND e.check_in <= (p.data_fim || 'T23:59:59.999Z') " +
+          `WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} GROUP BY p.id, e.tipo_profissional`
+        ).bind(...paramsSubquery, hoje, hoje)
+      : db.prepare(
+          'SELECT p.id AS plano_id, e.tipo_profissional AS tipo_profissional, COUNT(*) AS total ' +
+          'FROM planos_terapeuticos p JOIN evolucoes e ON e.paciente_id = p.paciente_id ' +
+          "AND e.check_in >= (p.data_inicio || 'T00:00:00.000Z') AND e.check_in <= (p.data_fim || 'T23:59:59.999Z') " +
+          `WHERE ${filtroPlanoVigente} GROUP BY p.id, e.tipo_profissional`
+        ).bind(hoje, hoje),
+  ];
+
+  if (paginar) {
+    batchStatements.push(
+      db.prepare(`SELECT COUNT(*) AS total FROM pacientes pac WHERE ${filtroPacientes}`).bind(...paramsPacientes)
+    );
+  }
+
+  const batchResults = await db.batch<any>(batchStatements);
+  const rPac = batchResults[0];
+  const rPresc = batchResults[1];
+  const rUltEvo = batchResults[2];
+  const rVisitas = batchResults[3];
+  const rSinal = batchResults[4];
+  const rPlanos = batchResults[5];
+  const rMetas = batchResults[6];
+  const rContagem = batchResults[7];
+  const rTotal = paginar ? batchResults[8] : null;
+
+  const porPaciente = <T>(rows: any[] | undefined, valor: (r: any) => T) =>
+    new Map<string, T>((rows || []).map((r) => [r.paciente_id, valor(r)]));
+
+  const prescricoesAtivas = porPaciente(rPresc?.results, (r) => Number(r.total || 0));
+  const ultimaEvolucao = porPaciente(rUltEvo?.results, (r) => r);
+  const visitasMes = porPaciente(rVisitas?.results, (r) => Number(r.total || 0));
+  const ultimoSinal = porPaciente(rSinal?.results, (r) => ({ ...r }) as SinalVitalClinico);
+
+  const pacientes = (rPac?.results || []).map(mapearPacienteRow);
+  for (const p of pacientes) {
+    p.total_prescricoes_ativas = prescricoesAtivas.get(p.id) || 0;
+    const ult = ultimaEvolucao.get(p.id);
+    if (ult) {
+      p.ultima_evolucao_data = ult.check_in;
+      p.ultimo_profissional_nome = ult.profissional_nome || '';
+    }
+    aplicarCotaMensal(p, visitasMes.get(p.id) || 0);
+    p.ultimo_sinal_vital = ultimoSinal.get(p.id) || null;
+  }
+
+  const contagemPorPlano = new Map<string, Map<string, number>>();
+  for (const r of rContagem?.results || []) {
+    const esp = normalizarEspecialidade(r.tipo_profissional || '');
+    let mapa = contagemPorPlano.get(r.plano_id);
+    if (!mapa) {
+      mapa = new Map();
+      contagemPorPlano.set(r.plano_id, mapa);
+    }
+    mapa.set(esp, (mapa.get(esp) || 0) + Number(r.total || 0));
+  }
+
+  const planosVigentes = new Map<string, PlanoTerapeutico>();
+  for (const plano of montarPlanos(rPlanos?.results || [], rMetas?.results || [])) {
+    if (planosVigentes.has(plano.paciente_id)) continue;
+    const contagem = contagemPorPlano.get(plano.id);
+    planosVigentes.set(plano.paciente_id, calcularProgressoPlano(plano, (esp) => contagem?.get(esp) || 0));
+  }
+
+  const total = paginar ? Number(rTotal?.results?.[0]?.total || 0) : pacientes.length;
+  const totalPages = paginar ? Math.max(1, Math.ceil(total / limit!)) : 1;
+
+  return {
+    pacientes,
+    planosVigentes,
+    total,
+    page: paginar ? page : 1,
+    limit: paginar ? limit! : pacientes.length,
+    totalPages,
+  };
+}
+
+export interface Prontuario360 {
+  paciente: PacienteClinico;
+  evolucoes: EvolucaoClinica[];
+  prescricoes: PrescricaoClinica[];
+  sinaisVitais: SinalVitalClinico[];
+  pareceres: ParecerAuditoriaClinica[];
+  planos: PlanoTerapeutico[];
+  planoVigente: PlanoTerapeutico | null;
+}
+
+/**
+ * Prontuário 360° de um paciente em UMA ida ao D1.
+ *
+ * A tela de detalhe disparava 6 requisições HTTP (paciente, dashboard, planos,
+ * prescrições, sinais, pareceres) que, somadas, faziam ~20 consultas ao D1 — a
+ * maioria repetida (evoluções eram lidas 5 vezes). Aqui são 7 instruções num
+ * único `batch`, e progresso do plano e cota mensal saem das mesmas evoluções.
+ *
+ * Retorna `null` quando o paciente não existe nem no D1, nem na memória, nem no
+ * Bubble (o auto-provisionamento continua a cargo de `obterPacienteClinico`).
+ */
+export async function carregarProntuario360(
+  pacienteId: string,
+  opcoes: { db?: D1Database; limiteSinais?: number } = {},
+): Promise<Prontuario360 | null> {
+  seedClinicalMemory();
+  const db = opcoes.db ?? getClinicalDb();
+  const limiteSinais = opcoes.limiteSinais ?? 100;
+
+  if (!db) {
+    const paciente = await obterPacienteClinico(pacienteId);
+    if (!paciente) return null;
+    const [evolucoes, prescricoes, sinaisVitais, pareceres, planos] = await Promise.all([
+      listarEvolucoesClinicas({ paciente_id: pacienteId }),
+      listarPrescricoesClinicas(pacienteId, false),
+      listarSinaisVitaisClinicos(pacienteId, limiteSinais),
+      listarPareceresClinicos(pacienteId),
+      listarPlanosTerapeuticosPorPaciente(pacienteId),
+    ]);
+    return { paciente, evolucoes, prescricoes, sinaisVitais, pareceres, planos, planoVigente: selecionarPlanoVigente(planos) };
+  }
+
+  await garantirSchemaD1(db);
+
+  const [rPac, rEvo, rPresc, rSinais, rPar, rPlanos, rMetas] = await db.batch<any>([
+    db.prepare('SELECT * FROM pacientes WHERE id = ?').bind(pacienteId),
+    db.prepare(
+      `SELECT ${COLUNAS_EVOLUCAO_COM_PACIENTE} FROM evolucoes e LEFT JOIN pacientes pac ON pac.id = e.paciente_id WHERE e.paciente_id = ? ORDER BY e.check_in DESC`
+    ).bind(pacienteId),
+    db.prepare('SELECT * FROM prescricoes WHERE paciente_id = ? ORDER BY created_at DESC').bind(pacienteId),
+    db.prepare('SELECT * FROM sinais_vitais WHERE paciente_id = ? ORDER BY data_hora DESC LIMIT ?').bind(pacienteId, limiteSinais),
+    db.prepare('SELECT * FROM pareceres_auditoria WHERE paciente_id = ? ORDER BY data_registro DESC').bind(pacienteId),
+    db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC').bind(pacienteId),
+    db.prepare(
+      'SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id = ? ORDER BY m.rowid'
+    ).bind(pacienteId),
+  ]);
+
+  const evolucoes = (rEvo.results || []).map(mapearEvolucaoRow);
+
+  let paciente: PacienteClinico | null = rPac.results?.[0] ? mapearPacienteRow(rPac.results[0]) : null;
+  if (!paciente) {
+    // Ainda não está no D1: memória do isolate ou auto-provisionamento pelo Bubble.
+    // Um paciente recém-provisionado não tem registros clínicos, então as listas
+    // vazias do batch continuam corretas.
+    paciente = await obterPacienteClinico(pacienteId);
+    if (!paciente) return null;
+  }
+  const mesAtualIso = new Date().toISOString().slice(0, 7);
+  aplicarCotaMensal(paciente, evolucoes.filter((ev) => ev.check_in && ev.check_in.startsWith(mesAtualIso)).length);
+
+  const planos = montarPlanos(rPlanos.results || [], rMetas.results || []).map((plano) =>
+    enriquecerPlanoComCalculos(plano, evolucoes)
+  );
+
+  return {
+    paciente,
+    evolucoes,
+    prescricoes: (rPresc.results || []).map(mapearPrescricaoRow),
+    sinaisVitais: (rSinais.results || []) as SinalVitalClinico[],
+    pareceres: (rPar.results || []) as ParecerAuditoriaClinica[],
+    planos,
+    planoVigente: selecionarPlanoVigente(planos),
+  };
+}
+
+// -------------------------------------------------------------
+// Auditoria e Reconciliação de Medicamentos (Fase 2)
+// -------------------------------------------------------------
+
+export type TipoDesvioAuditoria = 'Atraso' | 'Omissao_Com_Justificativa' | 'Pendente_Atrasado' | 'Conforme';
+
+export interface AprazamentoAuditoria {
+  id: string;
+  prescricao_id: string;
+  paciente_id: string;
+  paciente_nome: string;
+  paciente_cpf?: string;
+  profissional_id?: string;
+  profissional_nome: string;
+  medicamento: string;
+  dosagem: string;
+  via_administracao: string;
+  horario_previsto: string;
+  horario_executado?: string;
+  status: 'Pendente' | 'Administrado' | 'Nao_Administrado' | string;
+  justificativa?: string;
+  tipoDesvio: TipoDesvioAuditoria;
+  detalheDesvio: string;
+  // Aliases compatíveis com camelCase da tela
+  pacienteNome: string;
+  profissionalNome: string;
+  horarioPrevisto: string;
+  horarioExecutado?: string;
+}
+
+export interface FiltrosAuditoria {
+  paciente_id?: string;
+  data_inicio?: string;
+  data_fim?: string;
+  status?: string;
+  limit?: number;
+}
+
+/**
+ * Calcula o tipo e detalhe do desvio clínico de um aprazamento em relação ao horário previsto.
+ */
+export function calcularDesvioAprazamento(
+  a: {
+    horario_previsto: string;
+    horario_executado?: string | null;
+    status: string;
+    justificativa?: string | null;
+  },
+  agoraMs = Date.now()
+): { tipoDesvio: TipoDesvioAuditoria; detalheDesvio: string } {
+  const prev = new Date(a.horario_previsto).getTime();
+  const exec = a.horario_executado ? new Date(a.horario_executado).getTime() : null;
+
+  let tipoDesvio: TipoDesvioAuditoria = 'Conforme';
+  let detalheDesvio = 'Administrado dentro da janela regulamentar';
+
+  if (a.status === 'Nao_Administrado') {
+    tipoDesvio = 'Omissao_Com_Justificativa';
+    detalheDesvio = a.justificativa || 'Omissão justificada pelo técnico';
+  } else if (a.status === 'Pendente') {
+    const umaHoraEmMs = 60 * 60 * 1000;
+    if (agoraMs - prev > umaHoraEmMs) {
+      tipoDesvio = 'Pendente_Atrasado';
+      detalheDesvio = 'Medicamento atrasado sem checagem realizada';
+    } else {
+      tipoDesvio = 'Conforme';
+      detalheDesvio = 'Dentro da janela programada (pendente de administração)';
+    }
+  } else if (a.status === 'Administrado' && exec) {
+    const diffMinutos = Math.round((exec - prev) / 60000);
+    if (Math.abs(diffMinutos) > 60) {
+      tipoDesvio = 'Atraso';
+      detalheDesvio =
+        diffMinutos > 0
+          ? `Atraso de ${Math.floor(diffMinutos / 60)}h ${diffMinutos % 60}m`
+          : `Adiantamento de ${Math.floor(Math.abs(diffMinutos) / 60)}h ${Math.abs(diffMinutos) % 60}m`;
+    }
+  }
+
+  return { tipoDesvio, detalheDesvio };
+}
+
+/**
+ * Consulta direta `aprazamentos JOIN prescricoes LEFT JOIN pacientes` no D1
+ * para reconciliação e auditoria de medicamentos, com 1 round-trip e total paridade.
+ */
+export async function listarAprazamentosParaAuditoria(filtros?: FiltrosAuditoria): Promise<AprazamentoAuditoria[]> {
+  const db = getClinicalDb();
+  if (db) {
+    try {
+      await garantirSchemaD1(db);
+      const limit = Math.min(filtros?.limit && filtros.limit > 0 ? filtros.limit : 200, 1000);
+      let sql = `
+        SELECT
+          ap.id,
+          ap.prescricao_id,
+          ap.horario_previsto,
+          ap.horario_executado,
+          ap.status,
+          ap.justificativa,
+          ap.profissional_id,
+          ap.assinatura_digital,
+          pr.paciente_id,
+          pr.medicamento,
+          pr.dosagem,
+          pr.via_administracao,
+          pac.nome AS paciente_nome,
+          pac.cpf AS paciente_cpf,
+          COALESCE(
+            NULLIF(
+              (SELECT ev.profissional_nome FROM evolucoes ev WHERE ev.profissional_id = ap.profissional_id AND ev.profissional_nome != '' LIMIT 1),
+              ''
+            ),
+            'Equipe de Enfermagem'
+          ) AS profissional_nome
+        FROM aprazamentos ap
+        JOIN prescricoes pr ON pr.id = ap.prescricao_id
+        LEFT JOIN pacientes pac ON pac.id = pr.paciente_id
+      `;
+      const condicoes: string[] = [];
+      const params: unknown[] = [];
+
+      if (filtros?.paciente_id) {
+        condicoes.push('pr.paciente_id = ?');
+        params.push(filtros.paciente_id);
+      }
+      if (filtros?.status) {
+        condicoes.push('ap.status = ?');
+        params.push(filtros.status);
+      }
+      if (filtros?.data_inicio) {
+        condicoes.push('ap.horario_previsto >= ?');
+        params.push(filtros.data_inicio.includes('T') ? filtros.data_inicio : filtros.data_inicio + 'T00:00:00.000Z');
+      }
+      if (filtros?.data_fim) {
+        condicoes.push('ap.horario_previsto <= ?');
+        params.push(filtros.data_fim.includes('T') ? filtros.data_fim : filtros.data_fim + 'T23:59:59.999Z');
+      }
+
+      if (condicoes.length > 0) {
+        sql += ` WHERE ${condicoes.join(' AND ')}`;
+      }
+      sql += ' ORDER BY ap.horario_previsto DESC LIMIT ?';
+      params.push(limit);
+
+      const rows = (await db.prepare(sql).bind(...params).all<any>()).results || [];
+      return rows.map((r: any) => {
+        const desvio = calcularDesvioAprazamento(r);
+        return {
+          id: r.id,
+          prescricao_id: r.prescricao_id,
+          paciente_id: r.paciente_id,
+          paciente_nome: r.paciente_nome || 'Paciente',
+          paciente_cpf: r.paciente_cpf || '',
+          profissional_id: r.profissional_id || undefined,
+          profissional_nome: r.profissional_nome || 'Equipe de Enfermagem',
+          medicamento: r.medicamento,
+          dosagem: r.dosagem,
+          via_administracao: r.via_administracao,
+          horario_previsto: r.horario_previsto,
+          horario_executado: r.horario_executado || undefined,
+          status: r.status,
+          justificativa: r.justificativa || undefined,
+          tipoDesvio: desvio.tipoDesvio,
+          detalheDesvio: desvio.detalheDesvio,
+          pacienteNome: r.paciente_nome || 'Paciente',
+          profissionalNome: r.profissional_nome || 'Equipe de Enfermagem',
+          horarioPrevisto: r.horario_previsto,
+          horarioExecutado: r.horario_executado || undefined,
+        };
+      });
+    } catch (e) {
+      throw e;
+    }
+  }
+
+  seedClinicalMemory();
+  const aprazamentos = Array.from(inMemoryAprazamentos.values());
+  const resultados: AprazamentoAuditoria[] = [];
+
+  for (const ap of aprazamentos) {
+    const prescricao = inMemoryPrescricoes.get(ap.prescricao_id);
+    const pacienteId = prescricao?.paciente_id || ap.paciente_id;
+    if (!pacienteId) continue;
+    if (filtros?.paciente_id && pacienteId !== filtros.paciente_id) continue;
+    if (filtros?.status && ap.status !== filtros.status) continue;
+    if (filtros?.data_inicio) {
+      const inicioIso = filtros.data_inicio.includes('T') ? filtros.data_inicio : filtros.data_inicio + 'T00:00:00.000Z';
+      if (ap.horario_previsto < inicioIso) continue;
+    }
+    if (filtros?.data_fim) {
+      const fimIso = filtros.data_fim.includes('T') ? filtros.data_fim : filtros.data_fim + 'T23:59:59.999Z';
+      if (ap.horario_previsto > fimIso) continue;
+    }
+
+    const paciente = inMemoryPacientes.get(pacienteId);
+    const desvio = calcularDesvioAprazamento(ap);
+    const profissionalNome =
+      ap.profissional_nome ||
+      Array.from(inMemoryEvolucoes.values()).find((e) => e.profissional_id === ap.profissional_id)?.profissional_nome ||
+      'Equipe de Enfermagem';
+
+    resultados.push({
+      id: ap.id,
+      prescricao_id: ap.prescricao_id,
+      paciente_id: pacienteId,
+      paciente_nome: paciente?.nome || 'Paciente',
+      paciente_cpf: paciente?.cpf || '',
+      profissional_id: ap.profissional_id,
+      profissional_nome: profissionalNome,
+      medicamento: ap.medicamento || prescricao?.medicamento || 'Medicamento',
+      dosagem: ap.dosagem || prescricao?.dosagem || '',
+      via_administracao: ap.via_administracao || prescricao?.via_administracao || 'Oral',
+      horario_previsto: ap.horario_previsto,
+      horario_executado: ap.horario_executado,
+      status: ap.status,
+      justificativa: ap.justificativa,
+      tipoDesvio: desvio.tipoDesvio,
+      detalheDesvio: desvio.detalheDesvio,
+      pacienteNome: paciente?.nome || 'Paciente',
+      profissionalNome: profissionalNome,
+      horarioPrevisto: ap.horario_previsto,
+      horarioExecutado: ap.horario_executado,
+    });
+  }
+
+  resultados.sort((a, b) => new Date(b.horario_previsto).getTime() - new Date(a.horario_previsto).getTime());
+  const limit = Math.min(filtros?.limit && filtros.limit > 0 ? filtros.limit : 200, 1000);
+  return resultados.slice(0, limit);
 }

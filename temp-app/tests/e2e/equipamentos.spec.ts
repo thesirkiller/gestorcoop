@@ -71,6 +71,21 @@ test('Exibe botões de Conferir para equipamentos com status de conferência pen
   await expect(row2.getByRole('button', { name: 'Conferir' })).toBeVisible();
 });
 
+test('Abas e busca permanecem acessíveis em tela estreita', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await autenticar(page);
+  await mockApis(page);
+  await page.goto('/gestor/equipamentos');
+
+  const busca = page.getByRole('textbox', { name: 'Buscar na seção atual' });
+  await expect(busca).toBeVisible();
+  await page.getByRole('button', { name: 'Catálogo de Equipamentos' }).click();
+  await expect(page.getByRole('button', { name: 'Catálogo de Equipamentos' })).toHaveAttribute('aria-current', 'page');
+  await busca.fill('LUMI-MERC-5310');
+  await expect(page.getByText('Concentrador de oxigênio com nebulização')).toBeVisible();
+  await expect(page.getByText('Cama Hospitalar Motorizada')).toHaveCount(0);
+});
+
 test('Realiza o fluxo de conferência de um equipamento Aguardando conferência', async ({ page }) => {
   await autenticar(page);
   await mockApis(page);

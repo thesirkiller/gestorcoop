@@ -24,6 +24,8 @@ import { Equipamento, HistoricoEventoEquipamento, OrdemServicoManutencao, Pacien
 import { TipoCobrancaLocacao, RentabilidadeResultado } from '@/lib/equipamentos-financeiro';
 import { generateSerialNumber } from '@/lib/equipamentos-helpers';
 
+const brlFormatter = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+
 // Banner de erro renderizado dentro do modal que originou a falha, para que a
 // mensagem não apareça também no banner da página (que é só para a listagem).
 function ModalErrorBanner({ message }: { message: string }) {
@@ -134,10 +136,16 @@ export default function GestorEquipamentos() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const [resEquip, resPat, resRent] = await Promise.all([
+      const [resEquip, resPat, resRent, resReserva] = await Promise.all([
         axios.get('/api/gestor/equipamentos'),
         axios.get('/api/gestor/pacientes'),
         axios.get('/api/gestor/locacoes'),
+        // Reservas são complementares; a falha delas não impede as listagens principais.
+        axios.get('/api/gestor/equipamentos/reservas', { params: { status: 'Ativa' } })
+          .catch((error) => {
+            console.error('Erro ao carregar reservas:', error);
+            return null;
+          }),
       ]);
 
       if (resEquip.data.success) {
@@ -146,14 +154,7 @@ export default function GestorEquipamentos() {
       }
       if (resPat.data.success) setPacientes(resPat.data.data || []);
       if (resRent.data.success) setLocacoes(resRent.data.data || []);
-
-      // Reservas ativas são complementares: uma falha aqui não deve zerar a tela.
-      try {
-        const resReserva = await axios.get('/api/gestor/equipamentos/reservas', { params: { status: 'Ativa' } });
-        if (resReserva.data.success) setReservas(resReserva.data.data || []);
-      } catch (reservaErr) {
-        console.error('Erro ao carregar reservas:', reservaErr);
-      }
+      if (resReserva?.data.success) setReservas(resReserva.data.data || []);
     } catch (err) {
       console.error('Erro ao carregar dados:', err);
       setErrorMsg('Falha ao obter dados do Bubble. Certifique-se de que o servidor está rodando e as tabelas estão criadas.');
@@ -168,7 +169,7 @@ export default function GestorEquipamentos() {
 
   // Helper formatting BRL
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
+    return brlFormatter.format(val);
   };
 
   // Helper formatting Dates
@@ -223,6 +224,26 @@ export default function GestorEquipamentos() {
     setSearchQuery('');
   }, [activeTab]);
 
+  const equipamentosById = React.useMemo(
+    () => new Map(equipamentos.map((equipamento) => [equipamento._id, equipamento])),
+    [equipamentos]
+  );
+  const pacientesById = React.useMemo(
+    () => new Map(pacientes.map((paciente) => [paciente._id, paciente])),
+    [pacientes]
+  );
+  const locacoesAtivasByPaciente = React.useMemo(() => {
+    const grouped = new Map<string, LocacaoEquipamento[]>();
+    for (const locacao of locacoes) {
+      if (locacao.txt_status !== 'Ativo') continue;
+      if (!locacao.fk_paciente) continue;
+      const current = grouped.get(locacao.fk_paciente) || [];
+      current.push(locacao);
+      grouped.set(locacao.fk_paciente, current);
+    }
+    return grouped;
+  }, [locacoes]);
+
   // Filters & Search (Memoized)
   const filteredEquipamentos = React.useMemo(() => {
     const term = searchQuery.toLowerCase();
@@ -253,39 +274,39 @@ export default function GestorEquipamentos() {
         return p.txt_tipo === 'Hospital';
       }
       if (patientFilter === 'com_equipamento') {
-        return locacoes.some((l) => l.fk_paciente === p._id && l.txt_status === 'Ativo');
+        return p._id ? locacoesAtivasByPaciente.has(p._id) : false;
       }
       return true;
     });
-  }, [pacientes, searchQuery, patientFilter, locacoes]);
+  }, [pacientes, searchQuery, patientFilter, locacoesAtivasByPaciente]);
 
   const filteredLocacoes = React.useMemo(() => {
     const term = searchQuery.toLowerCase();
     return locacoes.filter((l) => {
-      const equip = equipamentos.find((e) => e._id === l.fk_equipamento);
-      const pac = pacientes.find((p) => p._id === l.fk_paciente);
+      const equip = equipamentosById.get(l.fk_equipamento);
+      const pac = pacientesById.get(l.fk_paciente);
       return (
         (equip?.txt_nome || '').toLowerCase().includes(term) ||
         (pac?.txt_nome || '').toLowerCase().includes(term) ||
         (equip?.txt_numero_serie || '').toLowerCase().includes(term)
       );
     });
-  }, [locacoes, searchQuery, equipamentos, pacientes]);
+  }, [locacoes, searchQuery, equipamentosById, pacientesById]);
 
   const filteredReservas = React.useMemo(() => {
     const term = searchQuery.toLowerCase();
     return reservas
       .filter((r) => r.txt_status === 'Ativa')
       .filter((r) => {
-        const equip = equipamentos.find((e) => e._id === r.fk_equipamento);
-        const pac = pacientes.find((p) => p._id === r.fk_paciente);
+        const equip = equipamentosById.get(r.fk_equipamento);
+        const pac = pacientesById.get(r.fk_paciente);
         return (
           (equip?.txt_nome || '').toLowerCase().includes(term) ||
           (pac?.txt_nome || '').toLowerCase().includes(term) ||
           (equip?.txt_numero_serie || '').toLowerCase().includes(term)
         );
       });
-  }, [reservas, searchQuery, equipamentos, pacientes]);
+  }, [reservas, searchQuery, equipamentosById, pacientesById]);
 
   // Dias restantes até a validade da reserva (negativo = vencida).
   const diasAteValidade = (dataIso?: string) => {
@@ -744,7 +765,9 @@ export default function GestorEquipamentos() {
           </button>
           <button
             onClick={fetchData}
-            className="bg-white hover:bg-slate-500/10 border border-slate-200 text-slate-600 p-2 rounded-lg transition-all shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+            disabled={loading}
+            aria-label={loading ? 'Atualizando dados' : 'Atualizar dados'}
+            className="bg-white hover:bg-slate-500/10 border border-slate-200 text-slate-600 p-2 rounded-lg transition-colors shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50 disabled:cursor-not-allowed"
             title="Atualizar dados"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -799,7 +822,7 @@ export default function GestorEquipamentos() {
       {/* Backlog alerts */}
       <div className="max-w-7xl mx-auto bg-slate-50 border border-slate-200/80 rounded-xl p-4 mb-8 relative flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Info className="w-5 h-5 text-indigo-600 shrink-0 animate-pulse" />
+          <Info className="w-5 h-5 text-indigo-600 shrink-0" />
           <div>
             <h4 className="text-xs uppercase font-bold text-slate-500 tracking-wider">Ações Operacionais Pendentes</h4>
             <p className="text-[11px] text-slate-500 mt-0.5">Fluxos que exigem atenção ou liberação no ciclo de vida atual.</p>
@@ -832,7 +855,7 @@ export default function GestorEquipamentos() {
 
       {/* Navigation Tabs and Register Actions */}
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 border-b border-slate-200 pb-px relative">
-        <div className="flex gap-6">
+        <div className="flex gap-6 overflow-x-auto min-w-0" aria-label="Seções de equipamentos">
           {[
             { id: 'locacoes', label: 'Locações Ativas' },
             { id: 'equipamentos', label: 'Catálogo de Equipamentos' },
@@ -842,7 +865,8 @@ export default function GestorEquipamentos() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as 'locacoes' | 'equipamentos' | 'reservas' | 'pacientes')}
-              className={`pb-3 text-xs font-bold transition-all relative focus:outline-none ${
+              aria-current={activeTab === tab.id ? 'page' : undefined}
+              className={`pb-3 text-xs font-bold transition-colors relative whitespace-nowrap focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 ${
                 activeTab === tab.id
                   ? 'text-slate-950 border-b-2 border-indigo-600'
                   : 'text-slate-500 hover:text-slate-800'
@@ -854,11 +878,12 @@ export default function GestorEquipamentos() {
         </div>
 
         {/* Search bar & quick registers */}
-        <div className="flex items-center gap-2 pb-2 md:pb-0">
-          <div className="relative">
+        <div className="flex flex-wrap items-center gap-2 pb-2 md:pb-0">
+          <div className="relative min-w-0 w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
+              aria-label="Buscar na seção atual"
               placeholder={
                 activeTab === 'locacoes'
                   ? 'Buscar por cliente ou equipamento...'
@@ -870,14 +895,14 @@ export default function GestorEquipamentos() {
               }
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 rounded-lg pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none transition-all shadow-sm w-64"
+              className="bg-white border border-slate-200 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-100 rounded-lg pl-9 pr-4 py-1.5 text-xs text-slate-800 placeholder-slate-500 focus:outline-none transition-colors shadow-sm w-full sm:w-64"
             />
           </div>
 
           {activeTab === 'locacoes' && (
             <button
               onClick={handleOpenRentalModal}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25 w-full sm:w-auto"
             >
               <Plus className="w-3.5 h-3.5" />
               Nova Locação
@@ -887,7 +912,7 @@ export default function GestorEquipamentos() {
           {activeTab === 'equipamentos' && (
             <button
               onClick={() => handleOpenEquipModal(null)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25 w-full sm:w-auto"
             >
               <Plus className="w-3.5 h-3.5" />
               Cadastrar Equipamento
@@ -900,7 +925,7 @@ export default function GestorEquipamentos() {
                 setModalErrorMsg('');
                 setIsPatientModalOpen(true);
               }}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition-all focus:outline-none focus:ring-2 focus:ring-indigo-500/25 w-full sm:w-auto"
             >
               <Plus className="w-3.5 h-3.5" />
               Cadastrar Cliente
@@ -910,7 +935,7 @@ export default function GestorEquipamentos() {
       </div>
 
       {/* Main Tables Container */}
-      <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] z-10 relative overflow-hidden">
+      <div className="max-w-7xl mx-auto bg-white border border-slate-200 rounded-xl shadow-[0_1px_2px_rgba(0,0,0,0.02)] z-10 relative overflow-hidden" aria-busy={loading}>
         {loading ? (
           <div className="p-20 flex flex-col items-center justify-center text-slate-500 gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
@@ -926,7 +951,7 @@ export default function GestorEquipamentos() {
                     <tr className="bg-slate-50/50 border-b border-slate-200/80 text-slate-500 uppercase text-[10px] font-bold tracking-wider">
                       <th className="px-6 py-3.5">Cliente</th>
                       <th className="px-6 py-3.5">Equipamento</th>
-                      <th className="px-6 py-3.5">Valor Estimado</th>
+                      <th className="px-6 py-3.5 text-right">Valor Estimado</th>
                       <th className="px-6 py-3.5">Início</th>
                       <th className="px-6 py-3.5">Fim Previsto</th>
                       <th className="px-6 py-3.5">Devolução</th>
@@ -943,8 +968,8 @@ export default function GestorEquipamentos() {
                       </tr>
                     ) : (
                       filteredLocacoes.map((l) => {
-                        const equip = equipamentos.find((e) => e._id === l.fk_equipamento);
-                        const pac = pacientes.find((p) => p._id === l.fk_paciente);
+                        const equip = equipamentosById.get(l.fk_equipamento);
+                        const pac = pacientesById.get(l.fk_paciente);
                         return (
                           <tr key={l._id} className="hover:bg-slate-50/30 transition-colors">
                             <td className="px-6 py-4">
@@ -955,13 +980,15 @@ export default function GestorEquipamentos() {
                               <div className="font-semibold text-slate-800">{equip?.txt_nome || 'N/A'}</div>
                               <div className="text-[10px] text-slate-400">S/N: {equip?.txt_numero_serie || '-'}</div>
                               {l.txt_observacoes ? (
-                                <div 
-                                  className="text-[10px] text-indigo-600/80 bg-indigo-50/50 border border-indigo-100/50 rounded px-1.5 py-0.5 mt-1 inline-block max-w-[200px] truncate cursor-pointer hover:bg-indigo-100/80 transition-colors"
+                                <button
+                                  type="button"
+                                  className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded px-1.5 py-0.5 mt-1 block max-w-[200px] truncate text-left hover:bg-indigo-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 transition-colors"
                                   onClick={() => handleOpenEditNotesModal(l)}
                                   title={`Observações: ${l.txt_observacoes}. Clique para editar.`}
+                                  aria-label={`Editar observações de ${equip?.txt_nome || 'equipamento'}`}
                                 >
                                   Obs: {l.txt_observacoes}
-                                </div>
+                                </button>
                               ) : (
                                 <button
                                   onClick={() => handleOpenEditNotesModal(l)}
@@ -971,7 +998,7 @@ export default function GestorEquipamentos() {
                                 </button>
                               )}
                             </td>
-                            <td className="px-6 py-4 font-semibold text-slate-900">
+                            <td className="px-6 py-4 font-semibold text-slate-900 text-right tabular-nums whitespace-nowrap">
                               {formatCurrency(l.num_total_estimado ?? l.num_valor_aluguel)}
                             </td>
                             <td className="px-6 py-4 text-slate-500">{formatDate(l.date_inicio)}</td>
@@ -1048,7 +1075,7 @@ export default function GestorEquipamentos() {
                       <th className="px-6 py-3.5">Equipamento</th>
                       <th className="px-6 py-3.5">Marca / Modelo</th>
                       <th className="px-6 py-3.5">Nº Série</th>
-                      <th className="px-6 py-3.5">Preço Padrão</th>
+                      <th className="px-6 py-3.5 text-right">Preço Padrão</th>
                       <th className="px-6 py-3.5">Status</th>
                       <th className="px-6 py-3.5 text-right">Ações</th>
                     </tr>
@@ -1073,7 +1100,7 @@ export default function GestorEquipamentos() {
                             {e.txt_modelo && <span className="text-slate-400 text-[10px] block">{e.txt_modelo}</span>}
                           </td>
                           <td className="px-6 py-4 text-slate-500 font-mono">{e.txt_numero_serie}</td>
-                          <td className="px-6 py-4 font-semibold text-slate-900">
+                          <td className="px-6 py-4 font-semibold text-slate-900 text-right tabular-nums whitespace-nowrap">
                             {formatCurrency(e.num_preco_padrao)}
                           </td>
                           <td className="px-6 py-4">
@@ -1167,8 +1194,8 @@ export default function GestorEquipamentos() {
                       </tr>
                     ) : (
                       filteredReservas.map((r) => {
-                        const equip = equipamentos.find((e) => e._id === r.fk_equipamento);
-                        const pac = pacientes.find((p) => p._id === r.fk_paciente);
+                        const equip = equipamentosById.get(r.fk_equipamento);
+                        const pac = pacientesById.get(r.fk_paciente);
                         const dias = diasAteValidade(r.date_validade);
                         return (
                           <tr key={r._id} className="hover:bg-slate-50/30 transition-colors">
@@ -1268,9 +1295,9 @@ export default function GestorEquipamentos() {
                         </tr>
                       ) : (
                         filteredPacientes.map((p) => {
-                          const activePatientRentals = locacoes.filter((l) => l.fk_paciente === p._id && l.txt_status === 'Ativo');
+                          const activePatientRentals = p._id ? locacoesAtivasByPaciente.get(p._id) || [] : [];
                           const activePatientEquipamentos = activePatientRentals
-                            .map((locacao) => equipamentos.find((equipamento) => equipamento._id === locacao.fk_equipamento))
+                            .map((locacao) => locacao.fk_equipamento ? equipamentosById.get(locacao.fk_equipamento) : undefined)
                             .filter((equipamento): equipamento is Equipamento => Boolean(equipamento));
                           const hasActiveRental = activePatientRentals.length > 0;
                           return (

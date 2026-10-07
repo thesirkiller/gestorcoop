@@ -2,107 +2,107 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { obterSessao } from '@/lib/sessao';
 import {
-  listarPacientesClinicos,
+  listarPacientesComResumoClinico,
   salvarPacienteClinico,
   salvarPlanoTerapeutico,
-  obterPlanoTerapeuticoVigente,
+  getClinicalDb,
+  inMemoryPacientes,
 } from '@/lib/db/prontuarios';
-import { bubbleApi } from '@/lib/bubble';
+import { sincronizarPacientesBubbleParaD1 } from '@/lib/sync-pacientes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 
+/*
+ * Listagem de pacientes de prontuários: lê diretamente do D1 em 1 round trip,
+ * com contadores clínicos (prescrições ativas indexadas, última evolução, cota mensal)
+ * e plano vigente calculados em batch. A sincronização Bubble -> D1 roda em segundo
+ * plano via cron-worker (/api/cron/sync-pacientes-bubble), eliminando a paginação
+ * pesada do Bubble do caminho síncrono das requisições do usuário.
+ */
+
 export async function GET(request: NextRequest) {
   try {
-    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
+    if (!(await obterSessao('gestor', request))) {
+      return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
+    }
     const { searchParams } = new URL(request.url);
     const busca = searchParams.get('busca') || undefined;
     const status = searchParams.get('status') || undefined;
     const complexidade = searchParams.get('complexidade') || undefined;
+    const pageParam = searchParams.get('page');
+    const limitParam = searchParams.get('limit');
+    const pageParsed = pageParam ? parseInt(pageParam, 10) : undefined;
+    const limitParsed = limitParam ? parseInt(limitParam, 10) : undefined;
+    const page = Number.isInteger(pageParsed) && pageParsed! >= 1 ? pageParsed : undefined;
+    const limit = Number.isInteger(limitParsed) && limitParsed! >= 1 ? Math.min(limitParsed!, 500) : undefined;
 
-    // 1. Pacientes cadastrados no banco clínico (D1/memória)
-    const pacientesClinicos = await listarPacientesClinicos({
-      busca: undefined, // filtramos depois de mesclar com o Bubble
+    // 1. Leitura direta do D1 em batch único agregado com paginação e filtros
+    let resumoClinico = await listarPacientesComResumoClinico({
       status,
       complexidade,
+      busca,
+      page,
+      limit,
     });
 
-    const idsClinicos = new Set(pacientesClinicos.map((p) => p.id));
+    // Fallback: se o banco estiver vazio (ex: primeiro start antes do cron rodar),
+    // aciona sincronização inicial para popular a base
+    if ((resumoClinico.total ?? resumoClinico.pacientes.length) === 0 && !busca && !status && !complexidade) {
+      try {
+        const db = getClinicalDb();
+        let precisaSync = false;
+        if (db) {
+          const count = await db.prepare('SELECT COUNT(*) AS total FROM pacientes').first<{ total: number }>();
+          precisaSync = !count || Number(count.total) === 0;
+        } else {
+          precisaSync = inMemoryPacientes.size === 0;
+        }
 
-    // 2. Pacientes vindos da base do GestorCoop no Bubble
-    let pacientesBubble: any[] = [];
-    try {
-      pacientesBubble = (await bubbleApi.getPacientes()) || [];
-    } catch (e) {
-      console.warn('Não foi possível obter pacientes do Bubble no GET /prontuarios/pacientes:', e);
-    }
-
-    const unificados: any[] = [...pacientesClinicos];
-
-    // Mescla pacientes do Bubble que ainda não possuem registro clínico aberto no D1
-    for (const b of pacientesBubble) {
-      const bId = b._id;
-      if (bId && !idsClinicos.has(bId)) {
-        unificados.push({
-          id: bId,
-          nome: b.txt_nome || 'Paciente sem Nome',
-          cpf: b.txt_cpf || '',
-          data_nascimento: '',
-          endereco: b.txt_endereco || '',
-          telefone: b.txt_whatsapp || '',
-          diagnostico_principal: '',
-          cid10: '',
-          complexidade: undefined,
-          plano_saude: '',
-          warnings: [],
-          status: 'Ativo',
-          limite_visitas_mes: 0,
-          origem: 'Bubble',
-          tem_plano_terapeutico: false,
-        });
+        if (precisaSync) {
+          console.log('[prontuarios/pacientes] Base vazia; sincronizando base inicial do Bubble...');
+          await sincronizarPacientesBubbleParaD1({ db });
+          resumoClinico = await listarPacientesComResumoClinico({
+            status,
+            complexidade,
+            busca,
+            page,
+            limit,
+          });
+        }
+      } catch (errFallback) {
+        console.warn('[prontuarios/pacientes] Fallback de sincronização inicial falhou:', errFallback);
       }
     }
 
-    // 3. Verifica para cada paciente se já possui Plano Terapêutico vigente
-    for (const p of unificados) {
-      try {
-        const plano = await obterPlanoTerapeuticoVigente(p.id);
-        if (plano && plano.metas && plano.metas.length > 0) {
-          p.tem_plano_terapeutico = true;
-          p.plano_vigente = {
-            id: plano.id,
-            data_inicio: plano.data_inicio,
-            data_fim: plano.data_fim,
-            total_previsto: plano.total_previsto,
-            total_realizado: plano.total_realizado,
-            total_restante: plano.total_restante,
-            tem_pendencias: plano.tem_pendencias,
-          };
-        } else {
-          p.tem_plano_terapeutico = false;
-        }
-      } catch {
+    const { pacientes, planosVigentes, total, totalPages } = resumoClinico;
+
+    // 2. Plano Terapêutico vigente de cada paciente (já calculado no batch)
+    for (const p of pacientes) {
+      const plano = planosVigentes.get(p.id);
+      if (plano && plano.metas && plano.metas.length > 0) {
+        p.tem_plano_terapeutico = true;
+        p.plano_vigente = {
+          id: plano.id,
+          data_inicio: plano.data_inicio,
+          data_fim: plano.data_fim,
+          total_previsto: plano.total_previsto ?? 0,
+          total_realizado: plano.total_realizado ?? 0,
+          total_restante: plano.total_restante ?? 0,
+          tem_pendencias: Boolean(plano.tem_pendencias),
+        };
+      } else {
         p.tem_plano_terapeutico = false;
       }
     }
 
-    // 4. Filtragem por busca (nome, CPF, diagnóstico)
-    let resultadoFinal = unificados;
-    if (busca) {
-      const bLower = busca.toLowerCase();
-      resultadoFinal = resultadoFinal.filter(
-        (p) =>
-          (p.nome && p.nome.toLowerCase().includes(bLower)) ||
-          (p.cpf && p.cpf.includes(bLower)) ||
-          (p.diagnostico_principal && p.diagnostico_principal.toLowerCase().includes(bLower)) ||
-          (p.endereco && p.endereco.toLowerCase().includes(bLower))
-      );
-    }
-
     return NextResponse.json({
       success: true,
-      data: resultadoFinal,
-      total: resultadoFinal.length,
+      data: pacientes,
+      total: total ?? pacientes.length,
+      page: page ?? 1,
+      limit: limit ?? (total ?? pacientes.length),
+      totalPages: totalPages ?? 1,
     });
   } catch (error: any) {
     console.error('Erro na rota GET /api/gestor/prontuarios/pacientes:', error);
@@ -115,7 +115,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
+    if (!(await obterSessao('gestor', request))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const body = await request.json();
     if (!body.nome) {
       return NextResponse.json(

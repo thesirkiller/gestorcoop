@@ -17,6 +17,7 @@ import {
 import { formatarNomeEspecialidade, PlanoTerapeutico } from '@/lib/tipos-clinicos';
 import { fetchFullDataset } from '@/lib/client-fetch';
 import SeletorCooperadosMeta, { CooperadoItem } from '../_components/SeletorCooperadosMeta';
+import { invalidarCacheNavegacao, CHAVE_CACHE_LISTAGEM_PACIENTES } from '@/lib/cache-navegacao';
 
 interface PlanoTerapeuticoTabProps {
   pacienteId: string;
@@ -240,6 +241,7 @@ export default function PlanoTerapeuticoTab({
         paciente_id: pacienteId,
       });
       if (res.data.success) {
+        invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
         setSucesso('Plano Terapêutico salvo com sucesso!');
         setModoEdicao(false);
         const salvo = res.data.data;

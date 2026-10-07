@@ -12,6 +12,7 @@
     "equip:homolog": "tsx scripts/homologacao-equipamentos.mts",
     "test:e2e": "playwright test",
     "test:documentacao": "node --import tsx --test tests/api/documentacao.test.ts",
+    "test:prontuarios": "node --require ./tests/api/stubs/next-on-pages.cjs --import tsx --test tests/api/prontuarios-rpc.test.ts tests/api/prontuarios-schema.test.ts",
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {

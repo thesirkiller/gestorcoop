@@ -2,17 +2,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { obterSessao } from '@/lib/sessao';
 import {
-  obterPacienteClinico,
+  carregarProntuario360,
   salvarPacienteClinico,
-  listarEvolucoesClinicas,
-  listarPrescricoesClinicas,
-  listarSinaisVitaisClinicos,
-  listarPareceresClinicos,
 } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
 
+/**
+ * Prontuário 360° em uma requisição e uma ida ao D1.
+ *
+ * Mantém os campos de sempre (`paciente`, `evolucoes`, `prescricoes`,
+ * `sinaisVitais`, `pareceres`) e acrescenta `planos`, `planoVigente` e
+ * `pendencias`. `completo: true` avisa a tela de detalhe que não precisa mais
+ * buscar `/planos`, `/prescricoes`, `/sinais-vitais` e `/parecer` em seguida —
+ * clientes antigos simplesmente ignoram os campos extras.
+ */
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -20,30 +25,21 @@ export async function GET(
   try {
     if (!(await obterSessao('gestor'))) return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
     const pacienteId = params.id;
-    const paciente = await obterPacienteClinico(pacienteId);
+    const prontuario = await carregarProntuario360(pacienteId, { limiteSinais: 100 });
 
-    if (!paciente) {
+    if (!prontuario) {
       return NextResponse.json(
         { success: false, error: 'Paciente não encontrado.' },
         { status: 404 }
       );
     }
 
-    const [evolucoes, prescricoes, sinaisVitais, pareceres] = await Promise.all([
-      listarEvolucoesClinicas({ paciente_id: pacienteId }),
-      listarPrescricoesClinicas(pacienteId, false),
-      listarSinaisVitaisClinicos(pacienteId, 100),
-      listarPareceresClinicos(pacienteId),
-    ]);
-
     return NextResponse.json({
       success: true,
       data: {
-        paciente,
-        evolucoes,
-        prescricoes,
-        sinaisVitais,
-        pareceres,
+        ...prontuario,
+        pendencias: prontuario.planoVigente?.pendencias_alertas || [],
+        completo: true,
       },
     });
   } catch (error: any) {

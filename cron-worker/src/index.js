@@ -2,7 +2,11 @@
 // wrangler.toml; ele apenas chama as rotas /api/cron/* do app (Pages) com o
 // segredo compartilhado. Toda a lógica de negócio vive no app Next.
 
-const ENDPOINTS = ['/api/cron/alertas-gerar', '/api/cron/reservas-expirar'];
+const ENDPOINTS = [
+  '/api/cron/alertas-gerar',
+  '/api/cron/reservas-expirar',
+  '/api/cron/sync-pacientes-bubble',
+];
 
 async function dispararRotinas(env) {
   const base = (env.APP_BASE_URL || '').replace(/\/$/, '');

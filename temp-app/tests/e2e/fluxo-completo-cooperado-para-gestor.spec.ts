@@ -221,6 +221,7 @@ test.describe('Jornada Completa: Cooperado Realiza Prontuário -> Gestor Valida 
             prescricoes: [],
             sinaisVitais: bancoSinaisVitais,
             pareceres: [],
+            completo: true,
           },
         },
       })

@@ -10,6 +10,7 @@ protegidas do app:
 
 - `POST /api/cron/alertas-gerar`
 - `POST /api/cron/reservas-expirar`
+- `POST /api/cron/sync-pacientes-bubble`
 
 autenticando com o header `Authorization: Bearer <CRON_SECRET>`.
 

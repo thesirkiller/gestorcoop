@@ -2,6 +2,7 @@
 import axios, { type AxiosInstance } from 'axios';
 import { validarTransicao } from './equipamentos-estados';
 import { normalizarUrlDocumento } from './documentos';
+import { invalidarCacheMemoria, CHAVE_CACHE_PACIENTES_BUBBLE } from './cache-memoria';
 
 /**
  * A URL do Bubble é exigida na PRIMEIRA CHAMADA, não no carregamento do módulo.
@@ -965,6 +966,7 @@ export const bubbleApi = {
       geo_local: data.txt_endereco,
     };
     const response = await bubbleClient.post('/obj/locais_de_trabalho_pacientes', payload);
+    invalidarCacheMemoria(CHAVE_CACHE_PACIENTES_BUBBLE);
     const createdId = response.data.id || response.data.response?.id;
 
     if (equipamentosV2Ativo && createdId && data.txt_endereco) {
@@ -991,6 +993,7 @@ export const bubbleApi = {
     if (data.fks_equipamentos !== undefined) payload.fks_equipamentos = data.fks_equipamentos;
     if (data.fks_locacoes !== undefined) payload.fks_locacoes = data.fks_locacoes;
     await bubbleClient.patch(`/obj/locais_de_trabalho_pacientes/${id}`, payload);
+    invalidarCacheMemoria(CHAVE_CACHE_PACIENTES_BUBBLE);
   },
 
   async getDomicilio(id: string): Promise<Domicilio> {

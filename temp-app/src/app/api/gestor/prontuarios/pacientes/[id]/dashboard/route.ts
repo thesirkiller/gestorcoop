@@ -1,16 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { obterSessao } from '@/lib/sessao';
-import {
-  obterPacienteClinico,
-  obterPlanoTerapeuticoVigente,
-  listarPlanosTerapeuticosPorPaciente,
-  listarEvolucoesClinicas,
-  listarPrescricoesClinicas,
-  listarSinaisVitaisClinicos,
-  listarPareceresClinicos,
-} from '@/lib/db/prontuarios';
-import { bubbleApi } from '@/lib/bubble';
+import { carregarProntuario360 } from '@/lib/db/prontuarios';
+import { listarEquipamentosDoPaciente } from '@/lib/prontuario-equipamentos';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -23,57 +15,30 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ success: false, error: 'ID do paciente ausente.' }, { status: 400 });
     }
 
-    const paciente = await obterPacienteClinico(pacienteId);
+    // Dados clínicos (uma ida ao D1) e equipamentos (Bubble, filtrado pelo
+    // paciente) em paralelo. Antes eram ~12 consultas ao D1 em cascata mais a
+    // varredura completa de locações e equipamentos no Bubble.
+    const [prontuario, equipamentosVinculados] = await Promise.all([
+      carregarProntuario360(pacienteId, { limiteSinais: 5 }),
+      listarEquipamentosDoPaciente(pacienteId).catch((e) => {
+        console.warn('Não foi possível obter equipamentos do Bubble para o paciente:', e);
+        return [] as any[];
+      }),
+    ]);
 
-    if (!paciente) {
+    if (!prontuario) {
       return NextResponse.json({ success: false, error: 'Paciente não encontrado.' }, { status: 404 });
     }
 
-    // Buscar dados clínicos
-    const [planoVigente, todosPlanos, evolucoes, prescricoes, sinaisVitais, pareceres] = await Promise.all([
-      obterPlanoTerapeuticoVigente(pacienteId),
-      listarPlanosTerapeuticosPorPaciente(pacienteId),
-      listarEvolucoesClinicas({ paciente_id: pacienteId }),
-      listarPrescricoesClinicas(pacienteId),
-      listarSinaisVitaisClinicos(pacienteId, 5),
-      listarPareceresClinicos(pacienteId),
-    ]);
-
-    // Buscar equipamentos vinculados ao paciente (do Bubble / D1)
-    let equipamentosVinculados: any[] = [];
-    try {
-      const todasLocacoes = (await bubbleApi.getLocacoes()) as any[];
-      const locacoesDoPaciente = todasLocacoes.filter((l) => l.fk_paciente === pacienteId);
-
-      if (locacoesDoPaciente.length > 0) {
-        const todosEquipamentos = (await bubbleApi.getEquipamentos()) as any[];
-        const eqMap = new Map(todosEquipamentos.map((e) => [e._id, e]));
-
-        equipamentosVinculados = locacoesDoPaciente.map((loc) => {
-          const equip = eqMap.get(loc.fk_equipamento) || {};
-          return {
-            id: loc._id,
-            equipamento_id: loc.fk_equipamento,
-            nome: equip.txt_nome || loc.txt_nome || 'Equipamento Hospitalar',
-            categoria: equip.txt_categoria || 'Domiciliar',
-            numero_serie: equip.txt_numero_serie || 'N/A',
-            status_locacao: loc.txt_status || 'Ativo',
-            data_inicio: loc.date_inicio,
-            data_fim_previsto: loc.date_fim_previsto,
-            valor_aluguel: loc.num_valor_aluguel,
-          };
-        });
-      }
-    } catch (e) {
-      console.warn('Não foi possível obter equipamentos do Bubble para o paciente:', e);
-    }
+    const { paciente, planoVigente, planos: todosPlanos, evolucoes, prescricoes: todasPrescricoes, sinaisVitais, pareceres } = prontuario;
+    const prescricoes = todasPrescricoes.filter((p) => p.status === 'Ativa');
 
     // Compilar estatísticas e pendências
     const pendencias: string[] = planoVigente?.pendencias_alertas || [];
 
     const estatisticas = {
       total_evolucoes: evolucoes.length,
-      prescricoes_ativas: prescricoes.filter((p) => p.status === 'Ativa').length,
+      prescricoes_ativas: prescricoes.length,
       equipamentos_instalados: equipamentosVinculados.filter((e) => e.status_locacao === 'Ativo').length,
       metas_plano_vigente: {
         total_previsto: planoVigente?.total_previsto || 0,

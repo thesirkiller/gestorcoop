@@ -155,6 +155,7 @@ const mockEquipamentosMarcos = [
 ];
 
 test('Gravação Oficial de Tutorial em Vídeo: Dashboard Individual & Plano Terapêutico', async ({ page }) => {
+  test.setTimeout(120_000);
   await autenticarGestor(page);
 
   // Mocks de dados
@@ -162,7 +163,7 @@ test('Gravação Oficial de Tutorial em Vídeo: Dashboard Individual & Plano Ter
     route.fulfill({ json: { nome: 'Dr. Roberto Cardozo (Gestor Clínico)' } })
   );
 
-  await page.route('**/api/gestor/cooperados', (route) =>
+  await page.route('**/api/gestor/cooperados*', (route) =>
     route.fulfill({
       json: {
         success: true,
@@ -399,13 +400,13 @@ test('Gravação Oficial de Tutorial em Vídeo: Dashboard Individual & Plano Ter
     'Dr. Marcos Mendes (1 visita médica) e Dra. Camila Odonto (2 atendimentos odontológicos).',
     2800
   );
-  const btnMedico = page.locator('button:has-text("Dr. Marcos Mendes")').nth(1);
+  const btnMedico = page.locator('button:has-text("Dr. Marcos Mendes")').first();
   await btnMedico.scrollIntoViewIfNeeded();
   await btnMedico.hover();
   await btnMedico.click();
   await page.waitForTimeout(800);
 
-  const btnDentista = page.locator('button:has-text("Dra. Camila Odonto")').nth(2);
+  const btnDentista = page.locator('button:has-text("Dra. Camila Odonto")').first();
   await btnDentista.scrollIntoViewIfNeeded();
   await btnDentista.hover();
   await btnDentista.click();

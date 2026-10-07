@@ -27,7 +27,11 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev -- -p 3005',
     url: 'http://localhost:3005',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120_000,
+    env: {
+      ...process.env,
+      CLINICAL_LOCAL_D1: 'true',
+    },
   },
 });

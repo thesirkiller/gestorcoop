@@ -1,6 +1,7 @@
 /* eslint-disable */
 import { NextRequest, NextResponse } from 'next/server';
 import { bubbleApi } from '@/lib/bubble';
+import { memoizarComTtl, CHAVE_CACHE_PACIENTES_BUBBLE, TTL_PACIENTES_BUBBLE_MS } from '@/lib/cache-memoria';
 
 import { obterSessaoCooperado } from '@/lib/sessao-cooperado';
 import { getDb } from '@/lib/db/client';
@@ -33,7 +34,11 @@ export async function GET(request: NextRequest) {
       console.log(`Buscando atendimentos/serviços integrados do Bubble para o cooperado: ${cooperadoId}`);
       try {
         const servicos = (await bubbleApi.getServicosByCooperado(cooperadoId)) as any[];
-        const bubblePacientes = (await bubbleApi.getPacientes()) as any[];
+        const bubblePacientes = ((await memoizarComTtl(
+          CHAVE_CACHE_PACIENTES_BUBBLE,
+          TTL_PACIENTES_BUBBLE_MS,
+          () => bubbleApi.getPacientes()
+        )) || []) as any[];
 
         // Encontrar pacientes vinculados aos serviços ativos do profissional
         const activePatientIds = new Set(servicos.map((s) => s.fk_paciente).filter(Boolean));
