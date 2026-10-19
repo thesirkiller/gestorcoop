@@ -24,10 +24,11 @@ export async function GET(
       success: true,
       data: prontuario.aprazamentos || [],
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Erro na rota GET /api/gestor/prontuarios/pacientes/[id]/aprazamentos:', error);
+    const mensagem = error instanceof Error ? error.message : 'Erro ao listar aprazamentos do paciente.';
     return NextResponse.json(
-      { success: false, error: error.message || 'Erro ao listar aprazamentos do paciente.' },
+      { success: false, error: mensagem },
       { status: 500 }
     );
   }
