@@ -21,6 +21,7 @@ const ROTAS_COOPERADO_PUBLICAS = [
   '/api/cooperado/adesao',
   '/api/cooperado/verificar-cpf',
   '/api/cooperado/upload',
+  '/api/cooperado/validar-conselho',
   '/api/webhooks',
 ];
 
