@@ -1,0 +1,7 @@
+# Falsos positivos de fixtures de testes automatizados (segredos fictícios de JWT/Cron)
+temp-app/tests/api/cooperado-profile.test.ts:generic-api-key:10
+temp-app/tests/api/prontuarios-rpc.test.ts:generic-api-key:65
+temp-app/tests/api/prontuarios-rpc.test.ts:generic-api-key:1037
+temp-app/tests/e2e/sessao-iframe.spec.ts:generic-api-key:20
+temp-app/tests/e2e/sessao-iframe.spec.ts:generic-api-key:57
+temp-app/tests/e2e/sessao-iframe.spec.ts:generic-api-key:61

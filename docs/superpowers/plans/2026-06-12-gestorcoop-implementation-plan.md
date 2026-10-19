@@ -32,7 +32,7 @@ npm install -D @types/node @types/react
 ```bash
 cat << 'EOF' > .env.local
 BUBBLE_API_URL=https://gestorcoop.app/version-test/api/1.1
-BUBBLE_API_TOKEN=6c21a37e162a035046428bc4372ee8ba
+BUBBLE_API_TOKEN=placeholder_bubble_api_token
 ZAPSIGN_API_TOKEN=placeholder_zapsign_token
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 EOF
