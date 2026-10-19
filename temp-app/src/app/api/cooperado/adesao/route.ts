@@ -4,8 +4,9 @@ import { zapsignApi } from '@/lib/zapsign';
 import { isValidCPF, cpfDigits } from '@/lib/cpf';
 import { normalizeProfissaoBubble } from '@/lib/profissoes';
 import { jsPDF } from 'jspdf';
-import { DocumentoAdesao, documentosObrigatoriosPendentes, normalizarUrlDocumento } from '@/lib/documentos';
+import { DocumentoAdesao, documentosObrigatoriosPendentes, isTipoDocumentoValido, normalizarUrlDocumento } from '@/lib/documentos';
 import { verificarComprovanteUpload } from '@/lib/comprovante-upload';
+import { isValidPIS, validarRegistroConselho, conselhoPorProfissao } from '@/lib/validacao-conselho';
 
 import { montarTermoResolvido } from '@/lib/termo-template';
 
@@ -24,16 +25,58 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'CPF inválido. Confira os números digitados.' }, { status: 400 });
     }
 
+    if (personalData.pis !== undefined && personalData.pis !== null && String(personalData.pis).trim() !== '') {
+      if (!isValidPIS(String(personalData.pis))) {
+        return NextResponse.json({ error: 'PIS/PASEP inválido. Confira os números digitados.' }, { status: 400 });
+      }
+    }
+
     if (!addressData || !Array.isArray(professions) || !professions.length || !Array.isArray(bankAccounts) || !bankAccounts.length || !personalData.email?.trim()) {
       return NextResponse.json({ error: 'Preencha endereço, e-mail, profissão e conta bancária antes de finalizar.' }, { status: 400 });
     }
+
+    const profissoesValidas: Array<{
+      name: string;
+      registration: string;
+      emissionDate?: string;
+      isPrincipal?: boolean;
+    }> = [];
+
+    for (const prof of professions) {
+      if (!prof || typeof prof !== 'object' || !prof.name) {
+        return NextResponse.json({ error: 'Dados de profissão inválidos.' }, { status: 400 });
+      }
+      const validacaoConselho = validarRegistroConselho({
+        conselho: prof.council ?? prof.conselho ?? conselhoPorProfissao(prof.name),
+        uf: prof.uf ?? '',
+        numero: prof.registration ?? prof.numero ?? prof.coren ?? '',
+        categoria: prof.categoria ?? prof.category ?? '',
+        profissao: prof.name,
+      });
+      if (!validacaoConselho.valid) {
+        return NextResponse.json(
+          { error: validacaoConselho.error || 'Número de registro do conselho profissional inválido.' },
+          { status: 400 }
+        );
+      }
+      profissoesValidas.push({
+        name: prof.name,
+        registration: validacaoConselho.registroFormatado,
+        emissionDate: prof.emissionDate,
+        isPrincipal: prof.isPrincipal,
+      });
+    }
+
     if (!Array.isArray(uploadedFiles) || uploadedFiles.some(file => !file || typeof file !== 'object')) {
-      return NextResponse.json({ error: 'Envie a identificação e o comprovante de residência antes de finalizar.' }, { status: 400 });
+      return NextResponse.json({ error: 'Envie todos os documentos obrigatórios antes de finalizar.' }, { status: 400 });
     }
     const documents = uploadedFiles as DocumentoAdesao[];
+    if (documents.some(file => !isTipoDocumentoValido(file.tipo))) {
+      return NextResponse.json({ error: 'Há documento com tipo inválido. Selecione o tipo correto de cada anexo.' }, { status: 400 });
+    }
     const missing = documentosObrigatoriosPendentes(documents);
     if (missing.length) {
-      return NextResponse.json({ error: `Documentos obrigatórios pendentes: ${missing.join(', ')}.` }, { status: 400 });
+      return NextResponse.json({ error: `Documentos obrigatórios pendentes: ${missing.join(', ')}.`, pendentes: missing }, { status: 400 });
     }
     const documentUrls = documents.map(file => normalizarUrlDocumento(file.url));
     if (documentUrls.some(url => !url) || new Set(documentUrls).size !== documents.length) {
@@ -135,7 +178,7 @@ export async function POST(request: Request) {
     const professionIds: string[] = [];
     const professionOptionNames: string[] = [];
 
-    for (const prof of (professions || [])) {
+    for (const prof of profissoesValidas) {
       // O option set do Bubble só aceita valores exatos ('Psicologo (a)' sem
       // acento, 'Técnico (a) de Enfermagem ' com espaço final...). Normaliza o
       // que veio do cliente; sem correspondência, omite o option set em vez de

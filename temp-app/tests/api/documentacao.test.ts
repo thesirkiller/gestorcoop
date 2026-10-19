@@ -48,8 +48,8 @@ const request = (body: unknown) => new Request('http://localhost/api', { method:
 async function payload() {
   return {
     personalData: { nomeCompleto: 'Pessoa Teste', cpf: '529.982.247-25', email: 'teste@example.com', whatsapp: '62999999999' },
-    addressData: { rua: 'Rua Teste' }, professions: [{ name: 'Enfermeiro (a)' }], bankAccounts: [{ bank: 'Banco', agency: '1', account: '2' }],
-    uploadedFiles: await Promise.all(['identificacao', 'residencia'].map(async tipo => {
+    addressData: { rua: 'Rua Teste' }, professions: [{ name: 'Enfermeiro (a)', registration: 'COREN-GO 248591' }], bankAccounts: [{ bank: 'Banco', agency: '1', account: '2' }],
+    uploadedFiles: await Promise.all(['identificacao', 'conselho', 'certidao_regularidade', 'residencia', 'cartao_vacinacao'].map(async tipo => {
       const url = `https://cdn.bubble.io/${tipo}.pdf`;
       return { url, tipo, name: `${tipo}.pdf`, comprovante: await criarComprovanteUpload(url) };
     })),

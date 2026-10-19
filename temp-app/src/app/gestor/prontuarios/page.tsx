@@ -33,9 +33,16 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { fetchFullDataset } from '@/lib/client-fetch';
-import { formatarNomeEspecialidade, EspecialidadeProfissional } from '@/lib/tipos-clinicos';
+import { formatarNomeEspecialidade, EspecialidadeProfissional, ResponsavelPaciente } from '@/lib/tipos-clinicos';
 import SeletorCooperadosMeta, { CooperadoItem } from './_components/SeletorCooperadosMeta';
 import { obterUrlCooperado } from '@/lib/subdominios';
+import {
+  EMPRESAS_CONTRATANTES,
+  obterEmpresaContratante,
+  resolverEmpresaDoPaciente,
+  salvarEmpresaContratanteLocal,
+  salvarSexoPacienteLocal,
+} from '@/lib/empresas-contratantes';
 import {
   lerCacheNavegacao,
   gravarCacheNavegacao,
@@ -49,14 +56,17 @@ interface PacienteSummary {
   nome: string;
   cpf: string;
   data_nascimento?: string;
+  sexo?: string;
   endereco?: string;
   telefone?: string;
   responsavel_nome?: string;
   responsavel_telefone?: string;
+  responsaveis?: ResponsavelPaciente[];
   diagnostico_principal?: string;
   cid10?: string;
   complexidade?: 'Baixa' | 'Média' | 'Alta';
   plano_saude?: string;
+  empresa_contratante?: string;
   warnings?: string[];
   status?: string;
   limite_visitas_mes?: number;
@@ -101,6 +111,9 @@ interface Evolution {
   check_out: string;
   status: string;
   data_assinatura?: string;
+  responsavel_id?: string;
+  responsavel_nome?: string;
+  responsavel_parentesco?: string;
   transcricao_revisada?: string;
   soap_subjetivo?: string;
   soap_objetivo?: string;
@@ -160,17 +173,26 @@ export default function ProntuariosAuditDashboard() {
     nome: '',
     cpf: '',
     data_nascimento: '',
+    sexo: 'Feminino',
     endereco: '',
     telefone: '',
     responsavel_nome: '',
     responsavel_telefone: '',
+    responsaveis: [] as ResponsavelPaciente[],
     diagnostico_principal: 'Reabilitação e Acompanhamento Domiciliar',
     cid10: '',
     complexidade: 'Média' as 'Baixa' | 'Média' | 'Alta',
-    plano_saude: '',
+    empresa_contratante: 'verdes-mares',
+    plano_saude: 'Verdes Mares',
     numero_carteirinha: '',
     warnings: '',
     limite_visitas_mes: 13,
+  });
+
+  const [novoRespInput, setNovoRespInput] = useState({
+    nome: '',
+    parentesco: 'Filho(a)',
+    telefone: '',
   });
 
   // Plano Terapêutico Dinâmico
@@ -408,19 +430,33 @@ export default function ProntuariosAuditDashboard() {
     if (pacienteBubble) {
       setModoOrigemModal('bubble');
       setPacienteBubbleSelecionado(pacienteBubble);
+      const empResolvida = resolverEmpresaDoPaciente({
+        id: pacienteBubble._id || pacienteBubble.id,
+        nome: pacienteBubble.txt_nome || pacienteBubble.nome,
+        empresa_contratante: pacienteBubble.empresa_contratante,
+        plano_saude: pacienteBubble.plano_saude,
+      });
+      const respIniciais: ResponsavelPaciente[] = Array.isArray(pacienteBubble.responsaveis) && pacienteBubble.responsaveis.length > 0
+        ? pacienteBubble.responsaveis
+        : pacienteBubble.responsavel_nome
+          ? [{ id: 'resp_principal', nome: pacienteBubble.responsavel_nome, parentesco: 'Familiar / Responsável', telefone: pacienteBubble.responsavel_telefone || '', principal: true }]
+          : [];
       setNovoPacienteForm({
         id: pacienteBubble._id || pacienteBubble.id,
         nome: pacienteBubble.txt_nome || pacienteBubble.nome || '',
         cpf: pacienteBubble.txt_cpf || pacienteBubble.cpf || '',
         data_nascimento: pacienteBubble.data_nascimento || '',
+        sexo: pacienteBubble.sexo || 'Feminino',
         endereco: pacienteBubble.txt_endereco || pacienteBubble.endereco || '',
         telefone: pacienteBubble.txt_whatsapp || pacienteBubble.telefone || '',
-        responsavel_nome: pacienteBubble.responsavel_nome || '',
-        responsavel_telefone: pacienteBubble.responsavel_telefone || '',
+        responsavel_nome: respIniciais[0]?.nome || pacienteBubble.responsavel_nome || '',
+        responsavel_telefone: respIniciais[0]?.telefone || pacienteBubble.responsavel_telefone || '',
+        responsaveis: respIniciais,
         diagnostico_principal: pacienteBubble.diagnostico_principal || 'Acompanhamento Domiciliar',
         cid10: pacienteBubble.cid10 || '',
         complexidade: pacienteBubble.complexidade || 'Média',
-        plano_saude: pacienteBubble.plano_saude || '',
+        empresa_contratante: empResolvida.id,
+        plano_saude: pacienteBubble.plano_saude || empResolvida.nomeCurto,
         numero_carteirinha: pacienteBubble.numero_carteirinha || '',
         warnings: Array.isArray(pacienteBubble.warnings) ? pacienteBubble.warnings.join('\n') : '',
         limite_visitas_mes: pacienteBubble.limite_visitas_mes || 13,
@@ -432,19 +468,23 @@ export default function ProntuariosAuditDashboard() {
         nome: '',
         cpf: '',
         data_nascimento: '',
+        sexo: 'Feminino',
         endereco: '',
         telefone: '',
         responsavel_nome: '',
         responsavel_telefone: '',
+        responsaveis: [],
         diagnostico_principal: 'Reabilitação Neurológica / Cuidados Domiciliares',
         cid10: '',
         complexidade: 'Média',
-        plano_saude: '',
+        empresa_contratante: 'verdes-mares',
+        plano_saude: 'Verdes Mares',
         numero_carteirinha: '',
         warnings: '',
         limite_visitas_mes: 13,
       });
     }
+    setNovoRespInput({ nome: '', parentesco: 'Filho(a)', telefone: '' });
 
     setPlanoDinamico({
       data_inicio: hojeIso,
@@ -462,14 +502,77 @@ export default function ProntuariosAuditDashboard() {
 
   const selecionarPacienteDoBubble = (pac: any) => {
     setPacienteBubbleSelecionado(pac);
+    const temEmpresaNoPac = Boolean(pac.empresa_contratante || pac.plano_saude);
+    const empResolvida = temEmpresaNoPac
+      ? resolverEmpresaDoPaciente({
+          id: pac._id || pac.id,
+          nome: pac.txt_nome || pac.nome,
+          empresa_contratante: pac.empresa_contratante,
+          plano_saude: pac.plano_saude,
+        })
+      : obterEmpresaContratante(novoPacienteForm.empresa_contratante);
+
+    const respBubble: ResponsavelPaciente[] = Array.isArray(pac.responsaveis) && pac.responsaveis.length > 0
+      ? pac.responsaveis
+      : pac.responsavel_nome
+        ? [{ id: 'resp_principal', nome: pac.responsavel_nome, parentesco: 'Familiar / Responsável', telefone: pac.responsavel_telefone || '', principal: true }]
+        : novoPacienteForm.responsaveis;
+
     setNovoPacienteForm({
       ...novoPacienteForm,
       id: pac._id || pac.id,
       nome: pac.txt_nome || pac.nome || '',
       cpf: pac.txt_cpf || pac.cpf || '',
+      data_nascimento: pac.data_nascimento || novoPacienteForm.data_nascimento || '',
+      sexo: pac.sexo || novoPacienteForm.sexo || 'Feminino',
       endereco: pac.txt_endereco || pac.endereco || '',
       telefone: pac.txt_whatsapp || pac.telefone || '',
-      diagnostico_principal: novoPacienteForm.diagnostico_principal || 'Acompanhamento Multiprofissional',
+      responsavel_nome: pac.responsavel_nome || respBubble[0]?.nome || novoPacienteForm.responsavel_nome || '',
+      responsavel_telefone: pac.responsavel_telefone || respBubble[0]?.telefone || novoPacienteForm.responsavel_telefone || '',
+      responsaveis: respBubble,
+      empresa_contratante: empResolvida.id,
+      plano_saude: pac.plano_saude || empResolvida.nomeCurto,
+      diagnostico_principal:
+        pac.diagnostico_principal ||
+        novoPacienteForm.diagnostico_principal ||
+        'Acompanhamento Multiprofissional',
+    });
+  };
+
+  const adicionarResponsavelNoModalAdmissao = () => {
+    const nomeLimpo = novoRespInput.nome.trim();
+    if (!nomeLimpo) return;
+    const novaLista: ResponsavelPaciente[] = [
+      ...novoPacienteForm.responsaveis,
+      {
+        id: `resp_${Date.now()}_${novoPacienteForm.responsaveis.length + 1}`,
+        nome: nomeLimpo,
+        parentesco: novoRespInput.parentesco || 'Familiar / Responsável',
+        telefone: novoRespInput.telefone.trim() || undefined,
+        principal: novoPacienteForm.responsaveis.length === 0,
+      },
+    ];
+    const principal = novaLista.find((r) => r.principal) || novaLista[0];
+    setNovoPacienteForm({
+      ...novoPacienteForm,
+      responsaveis: novaLista,
+      responsavel_nome: principal?.nome || novoPacienteForm.responsavel_nome,
+      responsavel_telefone: principal?.telefone || novoPacienteForm.responsavel_telefone,
+    });
+    setNovoRespInput({ nome: '', parentesco: 'Filho(a)', telefone: '' });
+  };
+
+  const removerResponsavelNoModalAdmissao = (idResp: string) => {
+    const filtrados = novoPacienteForm.responsaveis.filter((r) => r.id !== idResp);
+    if (filtrados.length > 0 && !filtrados.some((r) => r.principal)) {
+      filtrados[0] = { ...filtrados[0], principal: true };
+    }
+    const principal = filtrados.find((r) => r.principal) || filtrados[0];
+    setNovoPacienteForm({
+      ...novoPacienteForm,
+      responsaveis: filtrados,
+      responsavel_nome: principal?.nome || '',
+      responsavel_telefone: principal?.telefone || '',
     });
   };
 
@@ -533,8 +636,33 @@ export default function ProntuariosAuditDashboard() {
         ? novoPacienteForm.warnings.split('\n').filter((w) => w.trim().length > 0)
         : [];
 
+      const empresaObj = obterEmpresaContratante(novoPacienteForm.empresa_contratante);
+
+      const responsaveisFinal: ResponsavelPaciente[] = [...(novoPacienteForm.responsaveis || [])];
+      const nomeRespPendente = novoRespInput.nome.trim();
+      if (nomeRespPendente) {
+        responsaveisFinal.push({
+          id: `resp_${Date.now()}_${responsaveisFinal.length + 1}`,
+          nome: nomeRespPendente,
+          parentesco: novoRespInput.parentesco || 'Familiar / Responsável',
+          telefone: novoRespInput.telefone.trim() || undefined,
+          principal: responsaveisFinal.length === 0,
+        });
+      }
+      if (responsaveisFinal.length > 0 && !responsaveisFinal.some((r) => r.principal)) {
+        responsaveisFinal[0] = { ...responsaveisFinal[0], principal: true };
+      }
+      const principalResp = responsaveisFinal.find((r) => r.principal) || responsaveisFinal[0];
+
       const payload = {
         ...novoPacienteForm,
+        responsaveis: responsaveisFinal,
+        responsavel_nome: principalResp
+          ? `${principalResp.nome}${principalResp.parentesco ? ` (${principalResp.parentesco})` : ''}`
+          : novoPacienteForm.responsavel_nome,
+        responsavel_telefone: principalResp?.telefone || novoPacienteForm.responsavel_telefone,
+        empresa_contratante: empresaObj.id,
+        plano_saude: empresaObj.nomeCurto,
         limite_visitas_mes: Number(novoPacienteForm.limite_visitas_mes || planoDinamico.metas[0]?.quantidade_prevista || 13),
         warnings: warningsArray,
         plano_terapeutico: {
@@ -547,9 +675,15 @@ export default function ProntuariosAuditDashboard() {
 
       const res = await axios.post('/api/gestor/prontuarios/pacientes', payload);
       if (res.data?.success) {
+        const pacienteId = res.data.data?.id || novoPacienteForm.id;
+        if (pacienteId) {
+          salvarEmpresaContratanteLocal(pacienteId, empresaObj.id, novoPacienteForm.nome);
+          if (novoPacienteForm.sexo) {
+            salvarSexoPacienteLocal(pacienteId, novoPacienteForm.sexo);
+          }
+        }
         invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
         setIsNovoPacienteOpen(false);
-        const pacienteId = res.data.data?.id || novoPacienteForm.id;
         // Redireciona diretamente para a Dashboard Individual do Paciente com plano ativo
         router.push(`/gestor/prontuarios/${pacienteId}`);
       } else {
@@ -897,7 +1031,9 @@ export default function ProntuariosAuditDashboard() {
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {pacientesPaginados.map((p) => (
+                {pacientesPaginados.map((p) => {
+                const empCard = resolverEmpresaDoPaciente(p);
+                return (
                 <div
                   key={p.id}
                   className="bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all p-5 flex flex-col justify-between"
@@ -906,17 +1042,26 @@ export default function ProntuariosAuditDashboard() {
                     {/* Header do Card */}
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div>
-                        <span
-                          className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider mb-1 ${
-                            p.complexidade === 'Alta'
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                              : p.complexidade === 'Média'
-                              ? 'bg-amber-100 text-amber-800 border border-amber-200'
-                              : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          }`}
-                        >
-                          Complexidade {p.complexidade || 'Média'}
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                          <span
+                            className={`inline-block px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${
+                              p.complexidade === 'Alta'
+                                ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                : p.complexidade === 'Média'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}
+                          >
+                            Complexidade {p.complexidade || 'Média'}
+                          </span>
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold border ${empCard.corBadgeBg} ${empCard.corBadgeTexto} ${empCard.corBadgeBorda}`}
+                            title={`Empresa Contratante: ${empCard.nome}`}
+                          >
+                            <Building className="w-3 h-3" />
+                            {empCard.nomeCurto}
+                          </span>
+                        </div>
                         <h3 className="text-base font-bold text-slate-900 tracking-tight leading-tight">
                           {p.nome}
                         </h3>
@@ -1041,7 +1186,8 @@ export default function ProntuariosAuditDashboard() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               </div>
 
               {totalPaginas > 1 && (
@@ -1290,6 +1436,27 @@ export default function ProntuariosAuditDashboard() {
                       placeholder="000.000.000-00"
                     />
                   </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Data de Nascimento (DN)</label>
+                    <input
+                      type="date"
+                      value={novoPacienteForm.data_nascimento}
+                      onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, data_nascimento: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Sexo</label>
+                    <select
+                      value={novoPacienteForm.sexo}
+                      onChange={(e) => setNovoPacienteForm({ ...novoPacienteForm, sexo: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 font-semibold"
+                    >
+                      <option value="Feminino">Feminino</option>
+                      <option value="Masculino">Masculino</option>
+                      <option value="Outro">Outro / Não informado</option>
+                    </select>
+                  </div>
                   <div className="md:col-span-2">
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">Endereço do Domicílio</label>
                     <input
@@ -1300,7 +1467,176 @@ export default function ProntuariosAuditDashboard() {
                       placeholder="Rua, número, complemento e cidade"
                     />
                   </div>
+                  <div className="md:col-span-2" data-testid="secao-cadastro-responsaveis-modal">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[11px] font-bold text-slate-700">
+                        Familiares / Responsáveis pela Finalização do Plantão
+                      </label>
+                      <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                        Habilitados para validação no App do Cooperado
+                      </span>
+                    </div>
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                        <div className="sm:col-span-5">
+                          <input
+                            type="text"
+                            data-testid="input-admissao-responsavel-nome"
+                            value={novoRespInput.nome}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNovoRespInput({ ...novoRespInput, nome: val });
+                              if (novoPacienteForm.responsaveis.length === 0) {
+                                setNovoPacienteForm({ ...novoPacienteForm, responsavel_nome: val });
+                              }
+                            }}
+                            className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800"
+                            placeholder="Nome completo do familiar/responsável"
+                          />
+                        </div>
+                        <div className="sm:col-span-3">
+                          <select
+                            data-testid="select-admissao-responsavel-parentesco"
+                            value={novoRespInput.parentesco}
+                            onChange={(e) => setNovoRespInput({ ...novoRespInput, parentesco: e.target.value })}
+                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700"
+                          >
+                            <option value="Filho(a)">Filho(a)</option>
+                            <option value="Cônjuge">Cônjuge</option>
+                            <option value="Neto(a)">Neto(a)</option>
+                            <option value="Irmão(ã)">Irmão(ã)</option>
+                            <option value="Cuidador(a) Familiar">Cuidador(a) Familiar</option>
+                            <option value="Responsável Legal">Responsável Legal</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <input
+                            type="text"
+                            data-testid="input-admissao-responsavel-telefone"
+                            value={novoRespInput.telefone}
+                            onChange={(e) => setNovoRespInput({ ...novoRespInput, telefone: e.target.value })}
+                            className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800"
+                            placeholder="WhatsApp"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <button
+                            type="button"
+                            data-testid="btn-admissao-adicionar-responsavel"
+                            onClick={adicionarResponsavelNoModalAdmissao}
+                            className="w-full h-full px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Adicionar
+                          </button>
+                        </div>
+                      </div>
+
+                      {novoPacienteForm.responsaveis.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {novoPacienteForm.responsaveis.map((r) => (
+                            <div
+                              key={r.id}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50/80 border border-indigo-200 text-xs text-indigo-950"
+                            >
+                              <span className="font-bold">{r.nome}</span>
+                              <span className="text-[10px] font-semibold text-indigo-700 bg-white px-1.5 py-0.2 rounded border border-indigo-100">
+                                {r.parentesco}
+                              </span>
+                              {r.principal && (
+                                <span className="text-[9px] font-extrabold uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">
+                                  Principal
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => removerResponsavelNoModalAdmissao(r.id)}
+                                className="text-rose-500 hover:text-rose-700 ml-0.5"
+                                title="Remover responsável"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
+              </div>
+
+              {/* ETAPA 1.5: SELEÇÃO DE EMPRESA CONTRATANTE (HOME CARE) & PREVIEW DE LOGOMARCA */}
+              <div className="p-4 rounded-2xl bg-teal-50/50 border border-teal-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="text-xs font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                      <Building className="w-4 h-4 text-teal-600" />
+                      Empresa Contratante / Prestadora (Exibição de Logomarca) *
+                    </label>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Selecione a empresa prestadora para vincular o cabeçalho oficial e a logomarca nas evoluções e impressões do prontuário.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  {EMPRESAS_CONTRATANTES.map((emp) => {
+                    const selecionada = novoPacienteForm.empresa_contratante === emp.id;
+                    return (
+                      <button
+                        key={emp.id}
+                        type="button"
+                        onClick={() =>
+                          setNovoPacienteForm({
+                            ...novoPacienteForm,
+                            empresa_contratante: emp.id,
+                            plano_saude: emp.nomeCurto,
+                          })
+                        }
+                        className={`p-2.5 rounded-xl border text-left transition-all flex items-center gap-2.5 ${
+                          selecionada
+                            ? 'bg-white border-teal-600 ring-2 ring-teal-500/20 shadow-sm'
+                            : 'bg-white/70 border-slate-200 hover:bg-white'
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={emp.logoUrl}
+                          alt={emp.nome}
+                          className="h-9 w-11 object-contain shrink-0 rounded bg-white p-0.5 border border-slate-100"
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-black text-slate-900 truncate">{emp.nomeCurto}</span>
+                            {selecionada && <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono whitespace-nowrap">CNPJ: {emp.cnpj}</div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Preview do Cabeçalho Institucional da Empresa Selecionada */}
+                {(() => {
+                  const empPreview = obterEmpresaContratante(novoPacienteForm.empresa_contratante);
+                  return (
+                    <div className="bg-white p-3 rounded-xl border border-slate-200 flex items-center gap-3 shadow-2xs">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={empPreview.logoUrl}
+                        alt={`Preview ${empPreview.nome}`}
+                        className="h-11 w-auto object-contain shrink-0"
+                      />
+                      <div className="text-xs">
+                        <div className="font-black text-slate-900 uppercase">{empPreview.nome}</div>
+                        <div className="text-[10px] font-bold text-slate-600 uppercase">
+                          {empPreview.cabecalhoTexto}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* ETAPA 2: DADOS CLÍNICOS COMPLEMENTARES */}

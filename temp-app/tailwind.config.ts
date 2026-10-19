@@ -44,7 +44,9 @@ const config: Config = {
         },
 
         // --- Superfícies (elevação = luminosidade) e estrutura
-        base: token("base"),
+        // NOTA: `base` fica em `backgroundColor`/`borderColor`/`ringOffsetColor`
+        // abaixo para não gerar `.text-base { color: var(--c-base) }`, que colidiria
+        // com o utilitário tipográfico `text-base` (1rem) do Tailwind.
         canvas: token("canvas"),
         surface: token("surface"),
         raised: token("raised"),
@@ -117,10 +119,22 @@ const config: Config = {
         "idle-ink": token("idle-ink"),
       },
 
+      backgroundColor: {
+        base: token("base"),
+      },
+      borderColor: {
+        base: token("base"),
+      },
+      ringOffsetColor: {
+        base: token("base"),
+      },
+
       // `font-strong` / `font-heavy` descem um degrau no tema escuro.
+      // No Windows (Segoe UI / system-ui), weight 900 cai num corte fino; 800 garante negrito sólido.
       fontWeight: {
         strong: "var(--w-strong)",
         heavy: "var(--w-heavy)",
+        black: "800",
       },
 
       // No escuro `shadow-card` e `shadow-raised` viram `none`: a profundidade

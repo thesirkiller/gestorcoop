@@ -132,8 +132,7 @@ function montarTextoEvolucao(tipoProfissional: string, soap: SoapEstruturado): s
  * viaja na resposta e a tela bloqueia a assinatura.
  */
 function simulacaoPermitida(): boolean {
-  if (process.env.IA_PERMITIR_SIMULACAO === 'true') return true;
-  return process.env.NODE_ENV !== 'production';
+  return process.env.IA_PERMITIR_SIMULACAO === 'true';
 }
 
 export async function POST(request: NextRequest) {

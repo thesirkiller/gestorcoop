@@ -40,11 +40,11 @@ export async function POST(
       temp_celsius: body.temp_celsius ? Number(body.temp_celsius) : undefined,
       spo2_percent: body.spo2_percent ? Number(body.spo2_percent) : undefined,
       glicemia_mg_dl: body.glicemia_mg_dl ? Number(body.glicemia_mg_dl) : undefined,
-      dor_escala: body.dor_escala !== undefined ? Number(body.dor_escala) : undefined,
-      nivel_consciencia: body.nivel_consciencia || 'Alerta',
+      dor_escala: body.dor_escala !== undefined && body.dor_escala !== '' && body.dor_escala !== null ? Number(body.dor_escala) : undefined,
+      nivel_consciencia: body.nivel_consciencia?.trim() || undefined,
       observacoes: body.observacoes || '',
       profissional_id: body.profissional_id,
-      profissional_nome: body.profissional_nome || 'Profissional Cooperado',
+      profissional_nome: body.profissional_nome?.trim() || 'Profissional Cooperado',
     });
 
     return NextResponse.json({

@@ -1,11 +1,24 @@
 /* eslint-disable */
 // Client-side IndexedDB Wrapper for Offline Clinical Operations
+export interface ResponsavelPacienteLocal {
+  id: string;
+  nome: string;
+  parentesco: string;
+  telefone?: string;
+  cpf?: string;
+  principal?: boolean;
+}
+
 export interface PacienteLocal {
   id: string;
   nome: string;
   cpf?: string;
   data_nascimento?: string;
   endereco?: string;
+  telefone?: string;
+  responsavel_nome?: string;
+  responsavel_telefone?: string;
+  responsaveis?: ResponsavelPacienteLocal[];
   warnings?: string[]; // Alergias, etc.
   limite_visitas_mes?: number;
   visitas_realizadas_mes?: number;
@@ -46,24 +59,54 @@ export interface AprazamentoLocal {
   via_administracao?: string;
 }
 
+export interface SinalVitalLocal {
+  id?: string;
+  paciente_id?: string;
+  evolucao_id?: string;
+  data_hora: string;
+  pa_sistolica?: number | null;
+  pa_diastolica?: number | null;
+  fc_bpm?: number | null;
+  fr_rpm?: number | null;
+  temp_celsius?: number | null;
+  spo2_percent?: number | null;
+  glicemia_mg_dl?: number | null;
+  dor_escala?: number | null;
+  nivel_consciencia?: string | null;
+  observacoes?: string;
+}
+
 export interface EvolucaoLocal {
   id: string;
   paciente_id: string;
+  paciente_nome?: string;
+  paciente_cpf?: string;
   profissional_id: string;
-  tipo_profissional: 'Tecnico_Enfermagem' | 'Medico' | 'Terapeuta';
-  turno?: 'Diurno' | 'Noturno' | '24h';
+  profissional_nome?: string;
+  tipo_profissional: 'Tecnico_Enfermagem' | 'Medico' | 'Terapeuta' | string;
+  turno?: 'Diurno' | 'Noturno' | '24h' | string;
   check_in: string; // ISO Datetime
   check_out: string; // ISO Datetime
   audio_url?: string;
   transcricao_crua?: string;
   transcricao_revisada?: string;
-  status: 'Em_Andamento' | 'Assinado_Pendente_Sync' | 'Finalizado';
+  soap_subjetivo?: string;
+  soap_objetivo?: string;
+  soap_avaliacao?: string;
+  soap_plano?: string;
+  status: 'Em_Andamento' | 'Assinado_Pendente_Sync' | 'Finalizado' | 'Auditado';
   data_assinatura?: string;
+  assinatura_digital?: string;
+  assinatura_biometrica?: any;
+  responsavel_id?: string;
+  responsavel_nome?: string;
+  responsavel_parentesco?: string;
+  sinais_vitais?: SinalVitalLocal[];
 }
 
 export interface SyncAction {
   id?: number;
-  type: 'CHECK_IN' | 'CHECK_OUT' | 'CHECK_MEDICAMENTO' | 'EVOLUCAO_TEXTO' | 'SIGN_EVOLUCAO';
+  type: 'CHECK_IN' | 'CHECK_OUT' | 'CHECK_MEDICAMENTO' | 'EVOLUCAO_TEXTO' | 'SIGN_EVOLUCAO' | 'REGISTRAR_SINAIS_VITAIS';
   payload: any;
   timestamp: string;
 }
@@ -246,6 +289,56 @@ export const localDB = {
     });
   },
 
+  async saveEvolucoes(evolucoes: EvolucaoLocal[]): Promise<void> {
+    if (!evolucoes || evolucoes.length === 0) return;
+    const { store, transaction } = await getStore('evolucoes', 'readwrite');
+    const existingReq = store.getAll();
+    return new Promise((resolve, reject) => {
+      existingReq.onerror = () => reject(existingReq.error);
+      existingReq.onsuccess = () => {
+        const existingMap = new Map<string, EvolucaoLocal>();
+        for (const item of (existingReq.result || []) as EvolucaoLocal[]) {
+          if (item?.id) existingMap.set(item.id, item);
+        }
+        for (const ev of evolucoes) {
+          if (!ev?.id) continue;
+          const local = existingMap.get(ev.id);
+          if (local) {
+            // Preserva evolução local assinada pendente de sync caso o servidor ainda esteja em andamento,
+            // ou mescla metadados locais (ex: assinatura_biometrica, sinais_vitais) quando o servidor confirma Finalizado
+            const servidorFinalizado = ev.status === 'Finalizado' || ev.status === 'Auditado';
+            const statusFinal = servidorFinalizado
+              ? ev.status
+              : local.status === 'Assinado_Pendente_Sync' || local.status === 'Finalizado'
+                ? local.status
+                : ev.status || local.status;
+            store.put({
+              ...local,
+              ...ev,
+              status: statusFinal,
+              transcricao_revisada: ev.transcricao_revisada || local.transcricao_revisada || '',
+              check_out: ev.check_out || local.check_out || '',
+              data_assinatura: ev.data_assinatura || local.data_assinatura,
+              assinatura_digital: ev.assinatura_digital || local.assinatura_digital,
+              assinatura_biometrica: ev.assinatura_biometrica || local.assinatura_biometrica,
+              responsavel_id: ev.responsavel_id || local.responsavel_id,
+              responsavel_nome: ev.responsavel_nome || local.responsavel_nome,
+              responsavel_parentesco: ev.responsavel_parentesco || local.responsavel_parentesco,
+              sinais_vitais:
+                Array.isArray(ev.sinais_vitais) && ev.sinais_vitais.length > 0
+                  ? ev.sinais_vitais
+                  : local.sinais_vitais,
+            });
+          } else {
+            store.put(ev);
+          }
+        }
+      };
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+    });
+  },
+
   async getEvolucao(id: string): Promise<EvolucaoLocal | null> {
     const { store } = await getStore('evolucoes', 'readonly');
     return new Promise((resolve, reject) => {
@@ -367,8 +460,10 @@ export function gerarSlotsAprazamentoLocal(prescricao: PrescricaoLocal): Aprazam
 
   const inicio = parseData(prescricao.data_inicio);
   let fim = parseData(prescricao.data_fim);
-  if (fim < inicio || Number.isNaN(fim.getTime())) {
-    fim = new Date(inicio.getTime() + 30 * 86400000);
+  if (!prescricao.data_fim || !String(prescricao.data_fim).trim()) {
+    fim = inicio;
+  } else if (fim < inicio || Number.isNaN(fim.getTime())) {
+    fim = inicio;
   }
 
   const slots: AprazamentoLocal[] = [];

@@ -44,10 +44,10 @@ export async function POST(
       frequencia_horas: Number(body.frequencia_horas) || 12,
       horarios_padrao: body.horarios_padrao || ['08:00', '20:00'],
       data_inicio: body.data_inicio || new Date().toISOString(),
-      data_fim: body.data_fim || new Date(Date.now() + 30 * 86400000).toISOString(),
+      data_fim: body.data_fim?.trim() ? body.data_fim.trim() : undefined,
       instrucoes: body.instrucoes || '',
-      medico_nome: body.medico_nome || 'Dr. Médico Assistente',
-      medico_crm: body.medico_crm || 'CRM-SP 00000',
+      medico_nome: body.medico_nome?.trim() || undefined,
+      medico_crm: body.medico_crm?.trim() || undefined,
       status: 'Ativa',
     });
 

@@ -8,7 +8,20 @@ export async function obterSessaoCooperado(
   req?: Request | { headers: Headers | { get(name: string): string | null } }
 ): Promise<SessaoCooperado | null> {
   const sessao = await obterSessao('cooperado', req);
-  return sessao?.cooperadoId ? { ...sessao, cooperadoId: sessao.cooperadoId } : null;
+  if (sessao?.cooperadoId) {
+    return { ...sessao, cooperadoId: sessao.cooperadoId };
+  }
+  const sessaoGestor = await obterSessao('gestor', req);
+  if (sessaoGestor) {
+    return {
+      userId: sessaoGestor.userId,
+      cooperadoId: sessaoGestor.cooperadoId || sessaoGestor.userId,
+      nome: sessaoGestor.nome || 'Profissional Cooperado',
+      cargo: sessaoGestor.cargo,
+      cpf: sessaoGestor.cpf,
+    };
+  }
+  return null;
 }
 export async function exigirSessaoCooperado(
   req?: Request | { headers: Headers | { get(name: string): string | null } }

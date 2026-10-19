@@ -9,6 +9,15 @@ export type EspecialidadeProfissional =
   | 'Psicologo'
   | 'Terapeuta_Ocupacional';
 
+export interface ResponsavelPaciente {
+  id: string;
+  nome: string;
+  parentesco: string;
+  telefone?: string;
+  cpf?: string;
+  principal?: boolean;
+}
+
 export interface ProfissionalDesignado {
   id: string;
   nome: string;

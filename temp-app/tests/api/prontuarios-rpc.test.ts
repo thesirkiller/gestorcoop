@@ -26,8 +26,9 @@ import {
   listarAprazamentosParaAuditoria,
   calcularDesvioAprazamento,
   inMemoryPacientes,
+  salvarPacienteClinico,
 } from '../../src/lib/db/prontuarios';
-import { memoizarComTtl, invalidarCacheMemoria, invalidarSessaoMemoria, TTL_SESSAO_MS } from '../../src/lib/cache-memoria';
+import { memoizarComTtl, invalidarCacheMemoria, invalidarSessaoMemoria } from '../../src/lib/cache-memoria';
 import { validarSessaoAtiva } from '../../src/lib/sessao';
 import {
   lerCacheNavegacao,
@@ -41,7 +42,7 @@ import { sincronizarPacientesBubbleParaD1 } from '../../src/lib/sync-pacientes';
 import { POST as cronSyncPost } from '../../src/app/api/cron/sync-pacientes-bubble/route';
 import { GET as gestorPacientesGet } from '../../src/app/api/gestor/prontuarios/pacientes/route';
 import { GET as cooperadoAgendaGet } from '../../src/app/api/cooperado/agenda/route';
-import { GET as cooperadoSyncGet } from '../../src/app/api/cooperado/sync/route';
+import { GET as cooperadoSyncGet, POST as cooperadoSyncPost } from '../../src/app/api/cooperado/sync/route';
 import {
   normalizarNome,
   cooperadoCorresponde,
@@ -51,6 +52,11 @@ import {
   gerarSlotsAprazamento,
 } from '../../src/lib/db/prontuarios';
 import { gerarSlotsAprazamentoLocal } from '../../src/lib/indexeddb';
+import {
+  obterJanelaTurno,
+  gerarSlotsParaTurno,
+  filtrarSlotsPorJanela,
+} from '../../src/lib/aprazamento-engine';
 import { emitirTokenSessao } from '../../src/lib/sessao-token';
 import { NextRequest } from 'next/server';
 
@@ -1732,7 +1738,516 @@ test('rota /api/cooperado/agenda: suporta paciente_id com codificação de URL e
   assert.ok(json.prescricoes.some((p: any) => p.paciente_id === pacId));
 });
 
+test('obterJanelaTurno: calcula janelas exatas de 12 horas para plantão Diurno e Noturno', () => {
+  // 1. Plantão Diurno (12h): 07:00 às 19:00 do mesmo dia
+  const refDiurno = new Date('2026-10-09T10:30:00');
+  const janelaDiurno = obterJanelaTurno(refDiurno, 'Diurno');
+  assert.equal(janelaDiurno.inicio.getHours(), 7, 'Início do diurno deve ser às 07h');
+  assert.equal(janelaDiurno.fim.getHours(), 19, 'Fim do diurno deve ser às 19h');
+  const diffDiurnoHoras = (janelaDiurno.fim.getTime() - janelaDiurno.inicio.getTime()) / 3600000;
+  assert.equal(diffDiurnoHoras, 12, 'Plantão diurno deve ter exatamente 12 horas');
 
+  // 2. Plantão Noturno (12h): 19:00 às 07:00 do dia seguinte
+  const refNoturnoInicio = new Date('2026-10-09T20:00:00');
+  const janelaNoturno1 = obterJanelaTurno(refNoturnoInicio, 'Noturno');
+  assert.equal(janelaNoturno1.inicio.getHours(), 19);
+  assert.equal(janelaNoturno1.fim.getHours(), 7);
+  const diffNoturnoHoras = (janelaNoturno1.fim.getTime() - janelaNoturno1.inicio.getTime()) / 3600000;
+  assert.equal(diffNoturnoHoras, 12, 'Plantão noturno deve ter exatamente 12 horas');
 
+  // 3. Plantão Noturno de madrugada (ex: 02h da manhã): janela iniciou ontem às 19h e termina hoje às 07h
+  const refNoturnoMadrugada = new Date('2026-10-10T02:15:00');
+  const janelaNoturno2 = obterJanelaTurno(refNoturnoMadrugada, 'Noturno');
+  assert.equal(janelaNoturno2.inicio.getHours(), 19);
+  assert.equal(janelaNoturno2.inicio.getDate(), 9, 'Início foi no dia anterior às 19h');
+  assert.equal(janelaNoturno2.fim.getHours(), 7);
+  assert.equal(janelaNoturno2.fim.getDate(), 10, 'Fim é no dia atual às 07h');
+});
 
+test('gerarSlotsParaTurno: prescrição com 4 horários em plantão de 12 horas gera exatamente 4 slots (não 50)', () => {
+  const presc = {
+    id: 'pr_marcos_gabriel_4x',
+    paciente_id: 'pac_marcos_leito',
+    medicamento: 'Dipirona 500mg',
+    dosagem: '1 comprimido',
+    via_administracao: 'Oral',
+    horarios_padrao: ['08:00', '11:00', '14:00', '17:00'], // 4 horários no turno diurno
+  };
 
+  const janelaDiurno = {
+    inicio: new Date('2026-10-09T07:00:00'),
+    fim: new Date('2026-10-09T19:00:00'),
+  };
+
+  const slots = gerarSlotsParaTurno(presc, janelaDiurno);
+  assert.equal(slots.length, 4, 'Deve gerar exatamente 4 slots para o plantão de 12 horas, nunca 50');
+  assert.equal(slots[0].medicamento, 'Dipirona 500mg');
+  assert.equal(slots[0].status, 'Pendente');
+  assert.ok(slots[0].id.includes('0800'));
+  assert.ok(slots[1].id.includes('1100'));
+  assert.ok(slots[2].id.includes('1400'));
+  assert.ok(slots[3].id.includes('1700'));
+});
+
+test('filtrarSlotsPorJanela: quando banco possui 50+ slots acumulados, recorta estritamente os 4 horários do plantão ativo', () => {
+  const janelaAtiva = {
+    inicio: new Date('2026-10-09T07:00:00'),
+    fim: new Date('2026-10-09T19:00:00'),
+  };
+
+  // Simula 50 slots gerados por múltiplos dias no banco local
+  const slotsAcumulados: Array<{ id: string; horario_previsto: string; status: string }> = [];
+  for (let d = 1; d <= 25; d++) {
+    const diaStr = String(d).padStart(2, '0');
+    slotsAcumulados.push({ id: `s_${d}_08`, horario_previsto: `2026-10-${diaStr}T08:00:00`, status: 'Pendente' });
+    slotsAcumulados.push({ id: `s_${d}_14`, horario_previsto: `2026-10-${diaStr}T14:00:00`, status: 'Pendente' });
+  }
+  assert.equal(slotsAcumulados.length, 50, 'Total de 50 slots acumulados no banco');
+
+  // Adiciona 4 horários específicos no dia 09 dentro do plantão
+  const slotsFiltrados = filtrarSlotsPorJanela(slotsAcumulados, janelaAtiva);
+  assert.equal(slotsFiltrados.length, 2, 'Apenas os slots estritamente contidos nas 12h do plantão devem ser retornados');
+});
+
+test('gerarSlotsAprazamento e gerarSlotsAprazamentoLocal: sem data_fim não estende 30 dias arbitrariamente', () => {
+  const prescSemFim = {
+    id: 'pr_sem_fim',
+    paciente_id: 'pac_sem_fim',
+    medicamento: 'Paracetamol',
+    dosagem: '500mg',
+    via_administracao: 'Oral',
+    data_inicio: '2026-10-09',
+    horarios_padrao: ['08:00', '12:00', '16:00', '20:00'],
+  };
+
+  const slotsServer = gerarSlotsAprazamento(prescSemFim as any);
+  const slotsLocal = gerarSlotsAprazamentoLocal(prescSemFim as any);
+
+  assert.equal(slotsServer.length, 4, 'Sem data_fim, servidor gera apenas os 4 horários da data de início');
+  assert.equal(slotsLocal.length, 4, 'Sem data_fim, cliente local gera apenas os 4 horários da data de início');
+});
+
+test('gerarSlotsParaTurno: preserva corretamente dose de meia-noite (00:00) no plantão noturno sem converter para 08:00', () => {
+  const prescMeiaNoite = {
+    id: 'pr_meia_noite',
+    paciente_id: 'pac_mn',
+    medicamento: 'Ceftriaxona',
+    dosagem: '1g',
+    via_administracao: 'Intravenosa',
+    horarios_padrao: ['00:00', '08:00', '16:00'], // 8 em 8 horas
+  };
+
+  // Plantão Noturno: 19:00 do dia 09 às 07:00 do dia 10
+  const janelaNoturno = {
+    inicio: new Date('2026-10-09T19:00:00'),
+    fim: new Date('2026-10-10T07:00:00'),
+  };
+
+  const slots = gerarSlotsParaTurno(prescMeiaNoite, janelaNoturno);
+  assert.equal(slots.length, 1, 'Deve capturar apenas a dose de 00:00 dentro da janela 19h-07h');
+  assert.ok(slots[0].id.includes('0000'), 'ID deve indicar horário 0000');
+  const dPrevista = new Date(slots[0].horario_previsto);
+  assert.equal(dPrevista.getHours(), 0, 'Hora prevista deve ser exatamente meia-noite (0h)');
+});
+
+test('gerarSlotsParaTurno: respeita vigência (data_fim) e status inativo da prescrição', () => {
+  const janela = {
+    inicio: new Date('2026-10-09T07:00:00'),
+    fim: new Date('2026-10-09T19:00:00'),
+  };
+
+  // Prescrição que já expirou ontem
+  const prescExpirada = {
+    id: 'pr_expirada',
+    paciente_id: 'pac_exp',
+    medicamento: 'Antibiótico Expirado',
+    dosagem: '500mg',
+    via_administracao: 'Oral',
+    data_inicio: '2026-10-01',
+    data_fim: '2026-10-08',
+    status: 'Ativa',
+    horarios_padrao: ['08:00', '14:00'],
+  };
+  const slotsExp = gerarSlotsParaTurno(prescExpirada, janela);
+  assert.equal(slotsExp.length, 0, 'Prescrição com data_fim passada não deve gerar slots para o plantão');
+
+  // Prescrição suspensa
+  const prescSuspensa = {
+    id: 'pr_suspensa',
+    paciente_id: 'pac_susp',
+    medicamento: 'Sedativo Suspenso',
+    dosagem: '10mg',
+    via_administracao: 'Oral',
+    status: 'Suspensa',
+    horarios_padrao: ['08:00', '14:00'],
+  };
+  const slotsSusp = gerarSlotsParaTurno(prescSuspensa, janela);
+  assert.equal(slotsSusp.length, 0, 'Prescrição suspensa não deve gerar slots');
+});
+
+test('rota POST /api/cooperado/sync + GET /api/cooperado/agenda: persiste evolução finalizada, sinais vitais e retorna no histórico do app e no Prontuário 360', async () => {
+  const pacId = 'pac_evolucao_app_sync_1';
+  const evolucaoId = 'ev_app_sync_101';
+
+  const sessionId = 'session_test_sync_post_1';
+  const token = await emitirTokenSessao(
+    {
+      userId: 'usr_coop_sync_post',
+      area: 'cooperado',
+      cooperadoId: 'coop_enf_camila',
+      nome: 'Enf. Camila Andrade',
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '52998224725',
+    },
+    sessionId
+  );
+
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_coop_sync_post',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const checkInIso = new Date(Date.now() - 1800000).toISOString();
+  const checkOutIso = new Date().toISOString();
+  const hashBio = 'a'.repeat(64);
+
+  // 1. Envia lote com CHECK_IN + REGISTRAR_SINAIS_VITAIS + SIGN_EVOLUCAO (mesmo para paciente novo auto-provisionado)
+  const reqSync = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'CHECK_IN',
+          payload: {
+            evolucaoId,
+            pacienteId: pacId,
+            pacienteNome: 'Dona Helena Albuquerque',
+            checkIn: checkInIso,
+            tipoProfissional: 'Tecnico_Enfermagem',
+            turno: 'Diurno',
+          },
+        },
+        {
+          type: 'REGISTRAR_SINAIS_VITAIS',
+          payload: {
+            id: 'sv_app_sync_101',
+            pacienteId: pacId,
+            evolucaoId,
+            data_hora: checkOutIso,
+            pa_sistolica: 122,
+            pa_diastolica: 78,
+            fc_bpm: 74,
+            spo2_percent: 98,
+            temp_celsius: 36.5,
+            glicemia_mg_dl: 96,
+          },
+        },
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId,
+            pacienteId: pacId,
+            pacienteNome: 'Dona Helena Albuquerque',
+            checkIn: checkInIso,
+            checkOut: checkOutIso,
+            transcricao_revisada: '[S] Paciente calma e sem queixas álgicas.\n[O] PA 122/78 mmHg, SpO2 98%.\n[A] Estável.\n[P] Mantidos cuidados domiciliares.',
+            biometria_hash: hashBio,
+            metodo_assinatura: 'FACIAL',
+            biometria_timestamp: checkOutIso,
+          },
+        },
+        // Duplicata no mesmo lote: não deve acionar o trigger evolucao_finalizada_imutavel
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId,
+            pacienteId: pacId,
+            pacienteNome: 'Dona Helena Albuquerque',
+            checkIn: checkInIso,
+            checkOut: checkOutIso,
+            transcricao_revisada: '[S] Paciente calma e sem queixas álgicas.\n[O] PA 122/78 mmHg, SpO2 98%.\n[A] Estável.\n[P] Mantidos cuidados domiciliares.',
+            biometria_hash: hashBio,
+            metodo_assinatura: 'FACIAL',
+            biometria_timestamp: checkOutIso,
+          },
+        },
+      ],
+    }),
+  });
+
+  const resSync = await cooperadoSyncPost(reqSync);
+  assert.equal(resSync.status, 200, 'POST /api/cooperado/sync deve responder 200 mesmo com SIGN_EVOLUCAO duplicado no mesmo lote');
+  const jsonSync = (await resSync.json()) as any;
+  assert.equal(jsonSync.success, true);
+  assert.equal(jsonSync.syncedCount, 4);
+  assert.ok(Array.isArray(jsonSync.evolucoes) && jsonSync.evolucoes.length === 1, 'Deve retornar a evolução sincronizada sem duplicidade');
+  assert.equal(jsonSync.evolucoes[0].status, 'Finalizado');
+  assert.equal(jsonSync.evolucoes[0].profissional_nome, 'Enf. Camila Andrade');
+  assert.ok(jsonSync.evolucoes[0].assinatura_digital.includes(`sha256=${hashBio}`));
+
+  // 2. Reenvio idempotente de SIGN_EVOLUCAO já Finalizado não deve falhar no trigger evolucao_finalizada_imutavel
+  const reqReenvio = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId,
+            pacienteId: pacId,
+            checkOut: checkOutIso,
+            transcricao_revisada: 'Tentativa de reenvio idempotente',
+            biometria_hash: hashBio,
+            metodo_assinatura: 'FACIAL',
+          },
+        },
+      ],
+    }),
+  });
+  const resReenvio = await cooperadoSyncPost(reqReenvio);
+  assert.equal(resReenvio.status, 200, 'Reenvio idempotente de SIGN_EVOLUCAO já finalizado deve retornar 200 sem erro de trigger');
+
+  // 3. Consulta GET /api/cooperado/agenda?paciente_id=... (incluindo fallback para cookie quando Authorization: Bearer está obsoleto)
+  const reqAgenda = new NextRequest(`http://localhost/api/cooperado/agenda?paciente_id=${pacId}`, {
+    headers: {
+      cookie: `cooperado_session=${token}`,
+      Authorization: 'Bearer token-obsoleto-no-localstorage',
+    },
+  });
+  const resAgenda = await cooperadoAgendaGet(reqAgenda);
+  assert.equal(resAgenda.status, 200, 'Cookie cooperado_session válido deve autenticar mesmo quando Bearer token está obsoleto');
+  const jsonAgenda = (await resAgenda.json()) as any;
+  assert.equal(jsonAgenda.success, true);
+  assert.ok(Array.isArray(jsonAgenda.evolucoes), 'agenda deve incluir array evolucoes');
+  const evRetornada = jsonAgenda.evolucoes.find((e: any) => e.id === evolucaoId);
+  assert.ok(evRetornada, 'evolução finalizada deve ser retornada pela rota /api/cooperado/agenda');
+  assert.equal(evRetornada.status, 'Finalizado');
+  assert.equal(evRetornada.profissional_nome, 'Enf. Camila Andrade');
+  assert.ok(Array.isArray(evRetornada.sinais_vitais) && evRetornada.sinais_vitais.length === 1, 'evolução deve trazer sinais vitais vinculados');
+  assert.equal(evRetornada.sinais_vitais[0].pa_sistolica, 122);
+
+  // 4. Consulta Prontuário 360 (visão do Gestor) e verifica que a evolução e os campos SOAP aparecem imediatamente
+  const prontuario360 = await carregarProntuario360(pacId);
+  assert.ok(prontuario360, 'Prontuário 360 do paciente deve carregar no painel do gestor');
+  const evGestor = prontuario360.evolucoes.find((e) => e.id === evolucaoId);
+  assert.ok(evGestor, 'Evolução sincronizada deve constar no Prontuário 360 do gestor');
+  assert.equal(evGestor.status, 'Finalizado');
+  assert.equal(evGestor.profissional_nome, 'Enf. Camila Andrade');
+  assert.equal(evGestor.soap_subjetivo, 'Paciente calma e sem queixas álgicas.');
+  assert.equal(evGestor.soap_objetivo, 'PA 122/78 mmHg, SpO2 98%.');
+  assert.equal(evGestor.soap_avaliacao, 'Estável.');
+  assert.equal(evGestor.soap_plano, 'Mantidos cuidados domiciliares.');
+});
+
+test('familiares/responsáveis pela finalização do plantão: cadastro no paciente, listagem na agenda e vínculo na evolução (SIGN_EVOLUCAO)', async () => {
+  const pacId = 'pac_resp_plantao_01';
+  const salvo = await salvarPacienteClinico({
+    id: pacId,
+    nome: 'Dona Helena Albuquerque Prado',
+    cpf: '295.841.370-04',
+    endereco: 'Alameda das Rosas, 850',
+    responsaveis: [
+      {
+        id: 'resp_maria',
+        nome: 'Maria Helena Albuquerque',
+        parentesco: 'Filha',
+        telefone: '(85) 99981-4420',
+        principal: true,
+      },
+      {
+        id: 'resp_carlos',
+        nome: 'Carlos Eduardo Prado',
+        parentesco: 'Neto',
+        telefone: '(85) 98812-3310',
+        principal: false,
+      },
+    ],
+  });
+
+  assert.equal(salvo.responsavel_nome, 'Maria Helena Albuquerque (Filha)', 'Deve sincronizar o responsável principal no campo legado');
+  assert.equal(salvo.responsaveis?.length, 2, 'Deve persistir os 2 familiares/responsáveis');
+
+  const pacCarregado = await obterPacienteClinico(pacId);
+  assert.ok(pacCarregado);
+  assert.equal(pacCarregado.responsaveis?.length, 2);
+  assert.equal(pacCarregado.responsaveis?.[1].nome, 'Carlos Eduardo Prado');
+  assert.equal(pacCarregado.responsaveis?.[1].parentesco, 'Neto');
+
+  const sessionId = 'sess_coop_resp_01';
+  const coopId = 'coop_resp_01';
+  const token = await emitirTokenSessao(
+    {
+      area: 'cooperado',
+      userId: 'usr_coop_resp_01',
+      nome: 'Enf. Camila Andrade',
+      cooperadoId: coopId,
+      cargo: 'Tecnico_Enfermagem',
+      cpf: '52998224725',
+    },
+    sessionId
+  );
+  inserir('auth_sessions', {
+    id: sessionId,
+    user_id: 'usr_coop_resp_01',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  const evId = 'ev_resp_plantao_01';
+  const tsIso = new Date().toISOString();
+  const reqSync = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: evId,
+            pacienteId: pacId,
+            pacienteNome: 'Dona Helena Albuquerque Prado',
+            checkIn: tsIso,
+            checkOut: tsIso,
+            transcricao_revisada: '[S] Plantão diurno sem intercorrências.\n[O] PA 120/80 mmHg.\n[A] Estável.\n[P] Passagem de plantão ao familiar.',
+            biometria_hash: 'b'.repeat(64),
+            metodo_assinatura: 'FACIAL',
+            biometria_timestamp: tsIso,
+            responsavel_id: 'resp_carlos',
+            responsavel_nome: 'Carlos Eduardo Prado',
+            responsavel_parentesco: 'Neto',
+          },
+        },
+      ],
+    }),
+  });
+
+  const resSync = await cooperadoSyncPost(reqSync);
+  assert.equal(resSync.status, 200);
+  const jsonSync = (await resSync.json()) as any;
+  assert.equal(jsonSync.evolucoes[0].responsavel_id, 'resp_carlos');
+  assert.equal(jsonSync.evolucoes[0].responsavel_nome, 'Carlos Eduardo Prado');
+  assert.equal(jsonSync.evolucoes[0].responsavel_parentesco, 'Neto');
+
+  const p360 = await carregarProntuario360(pacId);
+  assert.ok(p360);
+  assert.equal(p360.paciente.responsaveis?.length, 2);
+  const evNo360 = p360.evolucoes.find((e) => e.id === evId);
+  assert.ok(evNo360);
+  assert.equal(evNo360.responsavel_id, 'resp_carlos');
+  assert.equal(evNo360.responsavel_nome, 'Carlos Eduardo Prado');
+  assert.equal(evNo360.responsavel_parentesco, 'Neto');
+
+  // Reenvio idempotente do SIGN_EVOLUCAO já finalizado deve continuar retornando responsavel_id/nome/parentesco do D1
+  const reqRetry = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: evId,
+            pacienteId: pacId,
+            checkOut: tsIso,
+          },
+        },
+      ],
+    }),
+  });
+  const resRetry = await cooperadoSyncPost(reqRetry);
+  assert.equal(resRetry.status, 200);
+  const jsonRetry = (await resRetry.json()) as any;
+  assert.equal(jsonRetry.evolucoes[0].responsavel_id, 'resp_carlos');
+  assert.equal(jsonRetry.evolucoes[0].responsavel_nome, 'Carlos Eduardo Prado');
+  assert.equal(jsonRetry.evolucoes[0].responsavel_parentesco, 'Neto');
+
+  // Lote offline com 2 plantões seguidos assinados por familiares distintos + atualização parcial do paciente preservando responsáveis
+  const evTurno1 = 'ev_resp_lote_turno_diurno';
+  const evTurno2 = 'ev_resp_lote_turno_noturno';
+  const reqLoteDuplo = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: evTurno1,
+            pacienteId: pacId,
+            pacienteNome: 'Dona Helena Albuquerque Prado',
+            turno: 'Diurno',
+            checkIn: tsIso,
+            checkOut: tsIso,
+            transcricao_revisada: '[S] Plantão diurno.\n[O] Estável.\n[A] Sem queixas.\n[P] Passagem para filha.',
+            biometria_hash: 'c'.repeat(64),
+            metodo_assinatura: 'FACIAL',
+            biometria_timestamp: tsIso,
+            responsavel_id: 'resp_maria',
+            responsavel_nome: 'Maria Helena Albuquerque',
+            responsavel_parentesco: 'Filha',
+          },
+        },
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: evTurno2,
+            pacienteId: pacId,
+            pacienteNome: 'Dona Helena Albuquerque Prado',
+            turno: 'Noturno',
+            checkIn: tsIso,
+            checkOut: tsIso,
+            transcricao_revisada: '[S] Plantão noturno.\n[O] Estável.\n[A] Sono fisiológico.\n[P] Passagem para neto.',
+            biometria_hash: 'd'.repeat(64),
+            metodo_assinatura: 'FACIAL',
+            biometria_timestamp: tsIso,
+            responsavel_id: 'resp_carlos',
+            responsavel_nome: 'Carlos Eduardo Prado',
+            responsavel_parentesco: 'Neto',
+          },
+        },
+      ],
+    }),
+  });
+  const resLoteDuplo = await cooperadoSyncPost(reqLoteDuplo);
+  assert.equal(resLoteDuplo.status, 200);
+  const jsonLoteDuplo = (await resLoteDuplo.json()) as any;
+  assert.equal(jsonLoteDuplo.evolucoes.length, 2);
+  const ev1Out = jsonLoteDuplo.evolucoes.find((e: any) => e.id === evTurno1);
+  const ev2Out = jsonLoteDuplo.evolucoes.find((e: any) => e.id === evTurno2);
+  assert.equal(ev1Out.responsavel_id, 'resp_maria');
+  assert.equal(ev1Out.responsavel_nome, 'Maria Helena Albuquerque');
+  assert.equal(ev2Out.responsavel_id, 'resp_carlos');
+  assert.equal(ev2Out.responsavel_nome, 'Carlos Eduardo Prado');
+
+  // Atualização parcial de paciente sem informar responsaveis deve preservar a lista existente no D1
+  await salvarPacienteClinico({
+    id: pacId,
+    nome: 'Dona Helena Albuquerque Prado',
+    cpf: '295.841.370-04',
+    diagnostico_principal: 'Reabilitação Motora Pós-AVC',
+  });
+  const pacAposUpdateParcial = await obterPacienteClinico(pacId);
+  assert.ok(pacAposUpdateParcial);
+  assert.equal(pacAposUpdateParcial.responsaveis?.length, 2, 'Update parcial não deve sobrescrever responsaveis_json com array vazio');
+  assert.equal(pacAposUpdateParcial.responsaveis?.[0].nome, 'Maria Helena Albuquerque');
+  assert.equal(pacAposUpdateParcial.responsaveis?.[1].nome, 'Carlos Eduardo Prado');
+});

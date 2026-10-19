@@ -40,7 +40,7 @@ export async function POST(
       paciente_id: pacienteId,
       evolucao_id: body.evolucao_id,
       auditor_id: body.auditor_id || 'gestor_admin',
-      auditor_nome: body.auditor_nome || 'Dr. Médico Auditor',
+      auditor_nome: body.auditor_nome?.trim() || 'Auditor Clínico',
       tipo_parecer: body.tipo_parecer,
       descricao: body.descricao,
       data_registro: new Date().toISOString(),

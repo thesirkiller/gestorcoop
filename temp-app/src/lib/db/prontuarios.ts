@@ -27,6 +27,15 @@ export type StatusEvolucao =
   | 'Finalizado'
   | 'Auditado';
 
+export interface ResponsavelPaciente {
+  id: string;
+  nome: string;
+  parentesco: string;
+  telefone?: string;
+  cpf?: string;
+  principal?: boolean;
+}
+
 export interface PacienteClinico {
   id: string;
   nome: string;
@@ -36,6 +45,7 @@ export interface PacienteClinico {
   telefone?: string;
   responsavel_nome?: string;
   responsavel_telefone?: string;
+  responsaveis?: ResponsavelPaciente[];
   diagnostico_principal?: string;
   cid10?: string;
   complexidade?: 'Baixa' | 'Média' | 'Alta';
@@ -141,6 +151,9 @@ export interface EvolucaoClinica {
   status: StatusEvolucao | string;
   data_assinatura?: string;
   assinatura_digital?: string;
+  responsavel_id?: string;
+  responsavel_nome?: string;
+  responsavel_parentesco?: string;
   parecer_auditoria?: string;
   auditado_por?: string;
   data_auditoria?: string;
@@ -265,8 +278,8 @@ function criarMapaCompartilhado<K, V>(nome: string): Map<K, V> {
 export const inMemoryPacientes: Map<string, PacienteClinico> = criarMapaCompartilhado('Pacientes');
 export const inMemoryPrescricoes: Map<string, PrescricaoClinica> = criarMapaCompartilhado('Prescricoes');
 export const inMemoryAprazamentos: Map<string, AprazamentoClinico> = criarMapaCompartilhado('Aprazamentos');
-const inMemorySinaisVitais: Map<string, SinalVitalClinico> = criarMapaCompartilhado('SinaisVitais');
-const inMemoryEvolucoes: Map<string, EvolucaoClinica> = criarMapaCompartilhado('Evolucoes');
+export const inMemorySinaisVitais: Map<string, SinalVitalClinico> = criarMapaCompartilhado('SinaisVitais');
+export const inMemoryEvolucoes: Map<string, EvolucaoClinica> = criarMapaCompartilhado('Evolucoes');
 const inMemoryPareceres: Map<string, ParecerAuditoriaClinica> = criarMapaCompartilhado('Pareceres');
 const inMemoryPlanosTerapeuticos: Map<string, PlanoTerapeutico> = criarMapaCompartilhado('PlanosTerapeuticos');
 const inMemoryPlanoMetas: Map<string, MetaPlanoTerapeutico> = criarMapaCompartilhado('PlanoMetas');
@@ -278,7 +291,7 @@ export function getClinicalDb() {
 }
 
 function seedClinicalMemory() {
-  if (getDb() || process.env.NODE_ENV === 'production') return;
+  if (getDb() || process.env.NODE_ENV === 'production' || process.env.GESTORCOOP_ENABLE_MOCK_SEED !== 'true') return;
   if (g.__gestorcoop_clinical_seeded) return;
   g.__gestorcoop_clinical_seeded = true;
 
@@ -294,6 +307,10 @@ function seedClinicalMemory() {
     telefone: '(11) 98765-4321',
     responsavel_nome: 'Clara da Silva (Filha)',
     responsavel_telefone: '(11) 97766-5544',
+    responsaveis: [
+      { id: 'resp_p1_1', nome: 'Clara da Silva', parentesco: 'Filha', telefone: '(11) 97766-5544', principal: true },
+      { id: 'resp_p1_2', nome: 'Ricardo da Silva', parentesco: 'Filho', telefone: '(11) 96655-4433', principal: false },
+    ],
     diagnostico_principal: 'Sequela de AVC Isquêmico / Hipertensão Arterial Sistêmica',
     cid10: 'I69.3 / I10',
     complexidade: 'Alta',
@@ -315,6 +332,10 @@ function seedClinicalMemory() {
     telefone: '(11) 99123-4567',
     responsavel_nome: 'Marcos Oliveira (Esposo)',
     responsavel_telefone: '(11) 98877-6655',
+    responsaveis: [
+      { id: 'resp_p2_1', nome: 'Marcos Oliveira', parentesco: 'Esposo', telefone: '(11) 98877-6655', principal: true },
+      { id: 'resp_p2_2', nome: 'Beatriz Oliveira', parentesco: 'Filha', telefone: '(11) 98111-2233', principal: false },
+    ],
     diagnostico_principal: 'Pós-operatório de Artroplastia de Quadril / Diabetes Mellitus Tipo 2',
     cid10: 'Z96.6 / E11',
     complexidade: 'Média',
@@ -336,6 +357,9 @@ function seedClinicalMemory() {
     telefone: '(11) 97654-3210',
     responsavel_nome: 'Renata Guimarães (Filha)',
     responsavel_telefone: '(11) 99988-1122',
+    responsaveis: [
+      { id: 'resp_p3_1', nome: 'Renata Guimarães', parentesco: 'Filha', telefone: '(11) 99988-1122', principal: true },
+    ],
     diagnostico_principal: 'DPOC Grave / Oxigenoterapia Domiciliar Contínua',
     cid10: 'J44.9',
     complexidade: 'Alta',
@@ -530,14 +554,15 @@ async function executarComandoDdl(db: any, sql: string): Promise<void> {
  */
 const SONDA_SCHEMA = [
   'SELECT',
-  '(SELECT COUNT(*) FROM (SELECT telefone, responsavel_nome, responsavel_telefone, diagnostico_principal, cid10, complexidade, plano_saude, numero_carteirinha, status, created_at, limite_visitas_mes FROM pacientes LIMIT 0))',
+  '(SELECT COUNT(*) FROM (SELECT telefone, responsavel_nome, responsavel_telefone, responsaveis_json, diagnostico_principal, cid10, complexidade, plano_saude, numero_carteirinha, status, created_at, limite_visitas_mes FROM pacientes LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM planos_terapeuticos LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM plano_terapeutico_metas LIMIT 0))',
-  '+ (SELECT COUNT(*) FROM (SELECT id FROM prescricoes LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id, medico_nome, medico_crm, horarios_padrao, instrucoes, status, created_at FROM prescricoes LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM aprazamentos LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM sinais_vitais LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM pareceres_auditoria LIMIT 0))',
-  '+ (SELECT COUNT(*) FROM (SELECT id FROM evolucoes LIMIT 0)) AS ok',
+  '+ (SELECT COUNT(*) FROM (SELECT id, assinatura_digital, profissional_nome, soap_subjetivo, soap_objetivo, soap_avaliacao, soap_plano, responsavel_id, responsavel_nome, responsavel_parentesco FROM evolucoes LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id FROM auth_sessions LIMIT 0)) AS ok',
 ].join(' ');
 
 async function schemaJaAplicado(db: any): Promise<boolean> {
@@ -570,6 +595,7 @@ export async function garantirSchemaD1(db: any): Promise<void> {
       'ALTER TABLE pacientes ADD COLUMN telefone TEXT NOT NULL DEFAULT ""',
       'ALTER TABLE pacientes ADD COLUMN responsavel_nome TEXT NOT NULL DEFAULT ""',
       'ALTER TABLE pacientes ADD COLUMN responsavel_telefone TEXT NOT NULL DEFAULT ""',
+      'ALTER TABLE pacientes ADD COLUMN responsaveis_json TEXT NOT NULL DEFAULT "[]"',
       'ALTER TABLE pacientes ADD COLUMN diagnostico_principal TEXT NOT NULL DEFAULT ""',
       'ALTER TABLE pacientes ADD COLUMN cid10 TEXT NOT NULL DEFAULT ""',
       'ALTER TABLE pacientes ADD COLUMN complexidade TEXT NOT NULL DEFAULT "Baixa"',
@@ -612,6 +638,12 @@ export async function garantirSchemaD1(db: any): Promise<void> {
         status TEXT DEFAULT 'Ativa',
         created_at TEXT
       )`,
+      'ALTER TABLE prescricoes ADD COLUMN medico_nome TEXT DEFAULT ""',
+      'ALTER TABLE prescricoes ADD COLUMN medico_crm TEXT DEFAULT ""',
+      'ALTER TABLE prescricoes ADD COLUMN horarios_padrao TEXT DEFAULT "[]"',
+      'ALTER TABLE prescricoes ADD COLUMN instrucoes TEXT DEFAULT ""',
+      'ALTER TABLE prescricoes ADD COLUMN status TEXT DEFAULT "Ativa"',
+      'ALTER TABLE prescricoes ADD COLUMN created_at TEXT',
       `CREATE TABLE IF NOT EXISTS aprazamentos (
         id TEXT PRIMARY KEY,
         prescricao_id TEXT NOT NULL REFERENCES prescricoes(id) ON DELETE CASCADE,
@@ -669,10 +701,29 @@ export async function garantirSchemaD1(db: any): Promise<void> {
         soap_subjetivo TEXT,
         soap_objetivo TEXT,
         soap_avaliacao TEXT,
-        soap_plano TEXT
+        soap_plano TEXT,
+        responsavel_id TEXT DEFAULT '',
+        responsavel_nome TEXT DEFAULT '',
+        responsavel_parentesco TEXT DEFAULT ''
       )`,
+      'ALTER TABLE evolucoes ADD COLUMN assinatura_digital TEXT',
+      'ALTER TABLE evolucoes ADD COLUMN profissional_nome TEXT DEFAULT ""',
+      'ALTER TABLE evolucoes ADD COLUMN soap_subjetivo TEXT',
+      'ALTER TABLE evolucoes ADD COLUMN soap_objetivo TEXT',
+      'ALTER TABLE evolucoes ADD COLUMN soap_avaliacao TEXT',
+      'ALTER TABLE evolucoes ADD COLUMN soap_plano TEXT',
+      'ALTER TABLE evolucoes ADD COLUMN responsavel_id TEXT DEFAULT ""',
+      'ALTER TABLE evolucoes ADD COLUMN responsavel_nome TEXT DEFAULT ""',
+      'ALTER TABLE evolucoes ADD COLUMN responsavel_parentesco TEXT DEFAULT ""',
       'CREATE INDEX IF NOT EXISTS idx_prescricoes_paciente_status ON prescricoes(paciente_id, status)',
-      'CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome COLLATE NOCASE)'
+      'CREATE INDEX IF NOT EXISTS idx_pacientes_nome ON pacientes(nome COLLATE NOCASE)',
+      `CREATE TABLE IF NOT EXISTS auth_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        area TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      )`
     ];
     for (const cmd of comandos) {
       await executarComandoDdl(db, cmd);
@@ -705,7 +756,74 @@ export function parseJsonSeguro<T>(valor: unknown, padrao: T): T {
   }
 }
 
+export function normalizarResponsaveisPaciente(
+  rawResponsaveis: unknown,
+  responsavelNomeLegado?: string,
+  responsavelTelefoneLegado?: string,
+  nomePaciente?: string
+): ResponsavelPaciente[] {
+  const parsed = parseJsonSeguro<any[]>(rawResponsaveis, []);
+  if (Array.isArray(parsed) && parsed.length > 0) {
+    const validos = parsed
+      .filter((item) => item && typeof item.nome === 'string' && item.nome.trim() !== '')
+      .map((item, idx) => ({
+        id: String(item.id || `resp_${idx + 1}`).trim(),
+        nome: String(item.nome).trim(),
+        parentesco: String(item.parentesco || 'Familiar / Responsável').trim(),
+        telefone: item.telefone ? String(item.telefone).trim() : undefined,
+        cpf: item.cpf ? String(item.cpf).trim() : undefined,
+        principal: Boolean(item.principal ?? idx === 0),
+      }));
+    if (validos.length > 0) return validos;
+  }
+
+  const nomeLegado = String(responsavelNomeLegado || '').trim();
+  if (nomeLegado) {
+    const match = nomeLegado.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+    const nome = match ? match[1].trim() : nomeLegado;
+    const parentesco = match ? match[2].trim() : 'Familiar / Responsável';
+    const tel = String(responsavelTelefoneLegado || '').trim();
+    return [
+      {
+        id: 'resp_legado_1',
+        nome,
+        parentesco,
+        telefone: tel || undefined,
+        principal: true,
+      },
+    ];
+  }
+
+  const nomePac = String(nomePaciente || '').toLowerCase();
+  if (nomePac.includes('helena albuquerque')) {
+    return [
+      {
+        id: 'resp_helena_1',
+        nome: 'Maria Helena Albuquerque',
+        parentesco: 'Filha',
+        telefone: '(85) 99812-3344',
+        principal: true,
+      },
+      {
+        id: 'resp_helena_2',
+        nome: 'Carlos Eduardo Prado',
+        parentesco: 'Neto',
+        telefone: '(85) 99745-8899',
+        principal: false,
+      },
+    ];
+  }
+
+  return [];
+}
+
 export function mapearPacienteRow(r: any): PacienteClinico {
+  const responsaveis = normalizarResponsaveisPaciente(
+    r.responsaveis_json ?? r.responsaveis,
+    r.responsavel_nome,
+    r.responsavel_telefone,
+    r.nome
+  );
   return {
     id: r.id,
     nome: r.nome,
@@ -715,6 +833,7 @@ export function mapearPacienteRow(r: any): PacienteClinico {
     telefone: r.telefone,
     responsavel_nome: r.responsavel_nome,
     responsavel_telefone: r.responsavel_telefone,
+    responsaveis,
     diagnostico_principal: r.diagnostico_principal,
     cid10: r.cid10,
     complexidade: r.complexidade,
@@ -752,6 +871,9 @@ export function mapearEvolucaoRow(r: any): EvolucaoClinica {
     status: r.status || 'Finalizado',
     data_assinatura: r.data_assinatura || undefined,
     assinatura_digital: r.assinatura_digital || undefined,
+    responsavel_id: r.responsavel_id || undefined,
+    responsavel_nome: r.responsavel_nome || undefined,
+    responsavel_parentesco: r.responsavel_parentesco || undefined,
   };
 }
 
@@ -983,44 +1105,73 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
   const id = paciente.id || novoId('pac');
   const now = agoraIso();
 
+  const existenteMem = inMemoryPacientes.get(id);
+  const responsaveisFonte =
+    paciente.responsaveis !== undefined ? paciente.responsaveis : existenteMem?.responsaveis;
+  const responsaveisNormalizados = normalizarResponsaveisPaciente(
+    responsaveisFonte,
+    paciente.responsavel_nome ?? existenteMem?.responsavel_nome,
+    paciente.responsavel_telefone ?? existenteMem?.responsavel_telefone,
+    paciente.nome
+  );
+  const principal = responsaveisNormalizados.find((r) => r.principal) || responsaveisNormalizados[0];
+  const responsavelNomeSincronizado =
+    principal
+      ? `${principal.nome}${principal.parentesco ? ` (${principal.parentesco})` : ''}`
+      : (paciente.responsavel_nome || existenteMem?.responsavel_nome || '');
+  const responsavelTelefoneSincronizado =
+    principal?.telefone || paciente.responsavel_telefone || existenteMem?.responsavel_telefone || '';
+
   const registro: PacienteClinico = {
     id,
     nome: paciente.nome,
     cpf: paciente.cpf,
-    data_nascimento: paciente.data_nascimento || '',
-    endereco: paciente.endereco || '',
-    telefone: paciente.telefone || '',
-    responsavel_nome: paciente.responsavel_nome || '',
-    responsavel_telefone: paciente.responsavel_telefone || '',
-    diagnostico_principal: paciente.diagnostico_principal || '',
-    cid10: paciente.cid10 || '',
-    complexidade: paciente.complexidade || 'Baixa',
-    plano_saude: paciente.plano_saude || '',
-    numero_carteirinha: paciente.numero_carteirinha || '',
-    warnings: paciente.warnings || [],
-    status: paciente.status || 'Ativo',
-    limite_visitas_mes: Number(paciente.limite_visitas_mes ?? 0),
-    created_at: paciente.created_at || now,
+    data_nascimento: paciente.data_nascimento || existenteMem?.data_nascimento || '',
+    endereco: paciente.endereco || existenteMem?.endereco || '',
+    telefone: paciente.telefone || existenteMem?.telefone || '',
+    responsavel_nome: responsavelNomeSincronizado,
+    responsavel_telefone: responsavelTelefoneSincronizado,
+    responsaveis: responsaveisNormalizados,
+    diagnostico_principal: paciente.diagnostico_principal || existenteMem?.diagnostico_principal || '',
+    cid10: paciente.cid10 || existenteMem?.cid10 || '',
+    complexidade: paciente.complexidade || existenteMem?.complexidade || 'Baixa',
+    plano_saude: paciente.plano_saude || existenteMem?.plano_saude || '',
+    numero_carteirinha: paciente.numero_carteirinha || existenteMem?.numero_carteirinha || '',
+    warnings: paciente.warnings || existenteMem?.warnings || [],
+    status: paciente.status || existenteMem?.status || 'Ativo',
+    limite_visitas_mes: Number(paciente.limite_visitas_mes ?? existenteMem?.limite_visitas_mes ?? 0),
+    created_at: paciente.created_at || existenteMem?.created_at || now,
   };
 
   const db = getClinicalDb();
   if (db) {
     await garantirSchemaD1(db);
     try {
+      const sobrescreverResponsaveisVazio = Array.isArray(paciente.responsaveis) && paciente.responsaveis.length === 0;
       await db.prepare(`
         INSERT INTO pacientes (
           id, nome, cpf, data_nascimento, endereco, telefone, responsavel_nome,
-          responsavel_telefone, diagnostico_principal, cid10, complexidade,
+          responsavel_telefone, responsaveis_json, diagnostico_principal, cid10, complexidade,
           plano_saude, numero_carteirinha, warnings, status, limite_visitas_mes, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           nome = excluded.nome,
           cpf = excluded.cpf,
           data_nascimento = excluded.data_nascimento,
           endereco = excluded.endereco,
           telefone = excluded.telefone,
-          responsavel_nome = excluded.responsavel_nome,
-          responsavel_telefone = excluded.responsavel_telefone,
+          responsavel_nome = CASE
+            WHEN excluded.responsavel_nome != '' OR ${sobrescreverResponsaveisVazio ? 1 : 0} = 1 THEN excluded.responsavel_nome
+            ELSE pacientes.responsavel_nome
+          END,
+          responsavel_telefone = CASE
+            WHEN excluded.responsavel_telefone != '' OR ${sobrescreverResponsaveisVazio ? 1 : 0} = 1 THEN excluded.responsavel_telefone
+            ELSE pacientes.responsavel_telefone
+          END,
+          responsaveis_json = CASE
+            WHEN (excluded.responsaveis_json IS NOT NULL AND excluded.responsaveis_json != '' AND excluded.responsaveis_json != '[]') OR ${sobrescreverResponsaveisVazio ? 1 : 0} = 1 THEN excluded.responsaveis_json
+            ELSE pacientes.responsaveis_json
+          END,
           diagnostico_principal = excluded.diagnostico_principal,
           cid10 = excluded.cid10,
           complexidade = excluded.complexidade,
@@ -1038,6 +1189,7 @@ export async function salvarPacienteClinico(paciente: Partial<PacienteClinico> &
         registro.telefone,
         registro.responsavel_nome,
         registro.responsavel_telefone,
+        JSON.stringify(registro.responsaveis || []),
         registro.diagnostico_principal,
         registro.cid10,
         registro.complexidade,
@@ -1195,6 +1347,9 @@ export interface EvolucaoResumo {
   check_out: string;
   status: StatusEvolucao | string;
   data_assinatura?: string;
+  responsavel_id?: string;
+  responsavel_nome?: string;
+  responsavel_parentesco?: string;
   /** `soap_avaliacao || transcricao_revisada`, truncado em `LIMITE_RESUMO_EVOLUCAO` caracteres. */
   resumo?: string;
   /** Aprazamentos do paciente executados durante o atendimento (mesmo critério do caminho em memória). */
@@ -1205,6 +1360,7 @@ export interface EvolucaoResumo {
 const COLUNAS_EVOLUCAO_RESUMO =
   'e.id, e.paciente_id, pac.nome AS paciente_nome, pac.cpf AS paciente_cpf, e.profissional_id, ' +
   'e.profissional_nome, e.tipo_profissional, e.turno, e.check_in, e.check_out, e.status, e.data_assinatura, ' +
+  'e.responsavel_id, e.responsavel_nome, e.responsavel_parentesco, ' +
   `substr(COALESCE(NULLIF(e.soap_avaliacao, ''), NULLIF(e.transcricao_revisada, '')), 1, ${LIMITE_RESUMO_EVOLUCAO}) AS resumo`;
 
 /**
@@ -1245,6 +1401,9 @@ export async function listarEvolucoesResumo(
         check_out: ev.check_out,
         status: ev.status || 'Finalizado',
         data_assinatura: ev.data_assinatura || undefined,
+        responsavel_id: ev.responsavel_id || undefined,
+        responsavel_nome: ev.responsavel_nome || undefined,
+        responsavel_parentesco: ev.responsavel_parentesco || undefined,
         resumo: (ev.soap_avaliacao || ev.transcricao_revisada || '').slice(0, LIMITE_RESUMO_EVOLUCAO) || undefined,
         aprazamentos_total: aprazamentos.length,
         aprazamentos_administrados: aprazamentos.filter((a) => a.status === 'Administrado').length,
@@ -1291,6 +1450,9 @@ export async function listarEvolucoesResumo(
       check_out: r.check_out,
       status: r.status || 'Finalizado',
       data_assinatura: r.data_assinatura || undefined,
+      responsavel_id: r.responsavel_id || undefined,
+      responsavel_nome: r.responsavel_nome || undefined,
+      responsavel_parentesco: r.responsavel_parentesco || undefined,
       resumo: r.resumo || undefined,
       aprazamentos_total: c?.total ?? 0,
       aprazamentos_administrados: c?.administrados ?? 0,
@@ -1319,8 +1481,9 @@ export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & 
           id, paciente_id, profissional_id, tipo_profissional, turno,
           check_in, check_out, audio_url, transcricao_crua, transcricao_revisada,
           status, data_assinatura, assinatura_digital, profissional_nome,
-          soap_subjetivo, soap_objetivo, soap_avaliacao, soap_plano
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          soap_subjetivo, soap_objetivo, soap_avaliacao, soap_plano,
+          responsavel_id, responsavel_nome, responsavel_parentesco
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           check_out = excluded.check_out,
           transcricao_crua = excluded.transcricao_crua,
@@ -1331,7 +1494,10 @@ export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & 
           soap_subjetivo = excluded.soap_subjetivo,
           soap_objetivo = excluded.soap_objetivo,
           soap_avaliacao = excluded.soap_avaliacao,
-          soap_plano = excluded.soap_plano
+          soap_plano = excluded.soap_plano,
+          responsavel_id = COALESCE(NULLIF(excluded.responsavel_id, ''), evolucoes.responsavel_id),
+          responsavel_nome = COALESCE(NULLIF(excluded.responsavel_nome, ''), evolucoes.responsavel_nome),
+          responsavel_parentesco = COALESCE(NULLIF(excluded.responsavel_parentesco, ''), evolucoes.responsavel_parentesco)
       `).bind(
         evolucao.id,
         evolucao.paciente_id,
@@ -1350,7 +1516,10 @@ export async function criarEvolucaoClinica(dados: Omit<EvolucaoClinica, 'id'> & 
         evolucao.soap_subjetivo || null,
         evolucao.soap_objetivo || null,
         evolucao.soap_avaliacao || null,
-        evolucao.soap_plano || null
+        evolucao.soap_plano || null,
+        evolucao.responsavel_id || '',
+        evolucao.responsavel_nome || '',
+        evolucao.responsavel_parentesco || ''
       ).run();
     } catch (e) {
       throw e;
@@ -1448,8 +1617,10 @@ export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): Aprazament
 
   const inicio = parseData(prescricao.data_inicio);
   let fim = parseData(prescricao.data_fim);
-  if (fim < inicio || Number.isNaN(fim.getTime())) {
-    fim = new Date(inicio.getTime() + 30 * 86400000);
+  if (!prescricao.data_fim || !String(prescricao.data_fim).trim()) {
+    fim = inicio;
+  } else if (fim < inicio || Number.isNaN(fim.getTime())) {
+    fim = inicio;
   }
 
   const slots: AprazamentoClinico[] = [];
@@ -1576,7 +1747,7 @@ export async function registrarSinalVitalClinico(dados: Omit<SinalVitalClinico, 
         sinal.spo2_percent ?? null,
         sinal.glicemia_mg_dl ?? null,
         sinal.dor_escala ?? null,
-        sinal.nivel_consciencia || 'Alerta',
+        sinal.nivel_consciencia || null,
         sinal.observacoes || '',
         sinal.profissional_id || null,
         sinal.profissional_nome || null,
@@ -2406,6 +2577,7 @@ export interface Prontuario360 {
   paciente: PacienteClinico;
   evolucoes: EvolucaoClinica[];
   prescricoes: PrescricaoClinica[];
+  aprazamentos: AprazamentoClinico[];
   sinaisVitais: SinalVitalClinico[];
   pareceres: ParecerAuditoriaClinica[];
   planos: PlanoTerapeutico[];
@@ -2417,7 +2589,7 @@ export interface Prontuario360 {
  *
  * A tela de detalhe disparava 6 requisições HTTP (paciente, dashboard, planos,
  * prescrições, sinais, pareceres) que, somadas, faziam ~20 consultas ao D1 — a
- * maioria repetida (evoluções eram lidas 5 vezes). Aqui são 7 instruções num
+ * maioria repetida (evoluções eram lidas 5 vezes). Aqui são 8 instruções num
  * único `batch`, e progresso do plano e cota mensal saem das mesmas evoluções.
  *
  * Retorna `null` quando o paciente não existe nem no D1, nem na memória, nem no
@@ -2441,12 +2613,27 @@ export async function carregarProntuario360(
       listarPareceresClinicos(pacienteId),
       listarPlanosTerapeuticosPorPaciente(pacienteId),
     ]);
-    return { paciente, evolucoes, prescricoes, sinaisVitais, pareceres, planos, planoVigente: selecionarPlanoVigente(planos) };
+    const aprazamentos = Array.from(inMemoryAprazamentos.values())
+      .filter((a) => {
+        const pr = inMemoryPrescricoes.get(a.prescricao_id);
+        return pr?.paciente_id === pacienteId || a.paciente_id === pacienteId;
+      })
+      .map((a) => {
+        const pr = inMemoryPrescricoes.get(a.prescricao_id);
+        return {
+          ...a,
+          medicamento: a.medicamento || pr?.medicamento,
+          dosagem: a.dosagem || pr?.dosagem,
+          via_administracao: a.via_administracao || pr?.via_administracao,
+        };
+      })
+      .sort((a, b) => new Date(a.horario_previsto).getTime() - new Date(b.horario_previsto).getTime());
+    return { paciente, evolucoes, prescricoes, aprazamentos, sinaisVitais, pareceres, planos, planoVigente: selecionarPlanoVigente(planos) };
   }
 
   await garantirSchemaD1(db);
 
-  const [rPac, rEvo, rPresc, rSinais, rPar, rPlanos, rMetas] = await db.batch<any>([
+  const [rPac, rEvo, rPresc, rSinais, rPar, rPlanos, rMetas, rApraz] = await db.batch<any>([
     db.prepare('SELECT * FROM pacientes WHERE id = ?').bind(pacienteId),
     db.prepare(
       `SELECT ${COLUNAS_EVOLUCAO_COM_PACIENTE} FROM evolucoes e LEFT JOIN pacientes pac ON pac.id = e.paciente_id WHERE e.paciente_id = ? ORDER BY e.check_in DESC`
@@ -2458,6 +2645,20 @@ export async function carregarProntuario360(
     db.prepare(
       'SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id = ? ORDER BY m.rowid'
     ).bind(pacienteId),
+    db.prepare(`
+      SELECT a.*, p.medicamento, p.dosagem, p.via_administracao,
+             COALESCE(
+               NULLIF(
+                 (SELECT ev.profissional_nome FROM evolucoes ev WHERE ev.profissional_id = a.profissional_id AND ev.paciente_id = p.paciente_id AND ev.profissional_nome != '' LIMIT 1),
+                 ''
+               ),
+               'Equipe de Enfermagem'
+             ) as profissional_nome
+        FROM aprazamentos a
+        JOIN prescricoes p ON p.id = a.prescricao_id
+       WHERE p.paciente_id = ?
+       ORDER BY a.horario_previsto ASC
+    `).bind(pacienteId),
   ]);
 
   const evolucoes = (rEvo.results || []).map(mapearEvolucaoRow);
@@ -2481,6 +2682,7 @@ export async function carregarProntuario360(
     paciente,
     evolucoes,
     prescricoes: (rPresc.results || []).map(mapearPrescricaoRow),
+    aprazamentos: (rApraz.results || []) as AprazamentoClinico[],
     sinaisVitais: (rSinais.results || []) as SinalVitalClinico[],
     pareceres: (rPar.results || []) as ParecerAuditoriaClinica[],
     planos,

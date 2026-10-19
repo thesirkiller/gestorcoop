@@ -137,6 +137,7 @@ export async function POST(request: NextRequest) {
       telefone: body.telefone || '',
       responsavel_nome: body.responsavel_nome || '',
       responsavel_telefone: body.responsavel_telefone || '',
+      responsaveis: Array.isArray(body.responsaveis) ? body.responsaveis : undefined,
       diagnostico_principal: body.diagnostico_principal || 'Acompanhamento Multiprofissional',
       cid10: body.cid10 || '',
       complexidade: body.complexidade || 'Média',

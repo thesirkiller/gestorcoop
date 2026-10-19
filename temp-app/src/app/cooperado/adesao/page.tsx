@@ -25,14 +25,34 @@ import {
   MessageCircle,
   Mail,
   Shield,
+  ExternalLink,
+  AlertCircle,
 } from 'lucide-react';
 import { isValidCPF } from '@/lib/cpf';
 import { PROFISSOES_FORM } from '@/lib/profissoes';
-import { DocumentoAdesao, TIPOS_DOCUMENTO, MAX_DOCUMENTO_BYTES, documentosObrigatoriosPendentes, normalizarUrlDocumento } from '@/lib/documentos';
+import {
+  DocumentoAdesao,
+  TIPOS_DOCUMENTO,
+  TIPOS_DOCUMENTO_OBRIGATORIOS,
+  TIPOS_DOCUMENTO_OPCIONAIS,
+  MAX_DOCUMENTO_BYTES,
+  documentosObrigatoriosPendentes,
+  normalizarUrlDocumento,
+} from '@/lib/documentos';
+import {
+  isValidPIS,
+  validarRegistroConselho,
+  conselhoPorProfissao,
+  UFS_BRASIL,
+  LINKS_CONSULTA_CONSELHO,
+  ConselhoProfissional,
+} from '@/lib/validacao-conselho';
 // Form interfaces
 interface Profession {
   name: string;
   council: string;
+  uf?: string;
+  consultaUrl?: string;
   registration: string;
   emissionDate: string;
   isPrincipal: boolean;
@@ -89,8 +109,8 @@ const HELP_BY_STEP: Record<number, { title: string; items: string[] }> = {
   5: {
     title: 'Documentos',
     items: [
-      'Envie foto nítida (ou PDF) do seu RG ou CNH e de um comprovante de residência recente.',
-      'Se tiver, envie também o comprovante de registro no conselho de classe.',
+      'Envie os 5 documentos obrigatórios: RG ou CNH, Carteira Profissional (COREN/Conselho), Certidão de Regularidade, Comprovante de Endereço e Cartão de Vacinação.',
+      'Se desejar, anexe também o Cartão do SUS/PIS ou outro documento de identificação social (opcionais).',
       'Formatos aceitos: PDF, JPEG e PNG, com até 10MB por arquivo.',
     ],
   },
@@ -154,6 +174,7 @@ export default function AdesaoPage() {
   const [currentProf, setCurrentProf] = useState<Profession>({
     name: 'Enfermeiro (a)',
     council: 'COREN',
+    uf: 'GO',
     registration: '',
     emissionDate: '',
     isPrincipal: true,
@@ -338,13 +359,38 @@ export default function AdesaoPage() {
     if (currentProf.isPrincipal) {
       updatedProfs = updatedProfs.map(p => ({ ...p, isPrincipal: false }));
     }
-    setProfessions([...updatedProfs, currentProf]);
+    const validacao = validarRegistroConselho({
+      conselho: currentProf.council,
+      uf: currentProf.uf || 'GO',
+      numero: currentProf.registration,
+      profissao: currentProf.name,
+    });
+    if (!validacao.valid) {
+      setErrorMsg(validacao.error || 'Número de registro do conselho inválido.');
+      return;
+    }
+    setErrorMsg('');
+    axios.post('/api/cooperado/validar-conselho', {
+      conselho: validacao.conselho,
+      uf: validacao.uf,
+      numero: validacao.numero,
+      profissao: currentProf.name,
+    }).catch(() => {});
+    const profValidada: Profession = {
+      ...currentProf,
+      council: validacao.conselho,
+      uf: validacao.uf,
+      registration: validacao.registroFormatado,
+      consultaUrl: validacao.consultaUrl,
+    };
+    setProfessions([...updatedProfs, profValidada]);
     setCurrentProf({
       name: 'Enfermeiro (a)',
       council: 'COREN',
+      uf: currentProf.uf || 'GO',
       registration: '',
       emissionDate: '',
-      isPrincipal: professions.length === 0, // default principal if first
+      isPrincipal: false,
     });
   };
 
@@ -425,6 +471,10 @@ export default function AdesaoPage() {
       }
       if (!isValidCPF(personalData.cpf)) {
         setErrorMsg('CPF inválido. Confira os números digitados.');
+        return;
+      }
+      if (personalData.pis.trim() && !isValidPIS(personalData.pis)) {
+        setErrorMsg('PIS/PASEP inválido. Confira os números digitados.');
         return;
       }
       // Verifica cadastro existente logo na primeira etapa
@@ -895,16 +945,27 @@ export default function AdesaoPage() {
                         </select>
                       </div>
                       <div>
-                        <label htmlFor="pis" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">PIS (Com Máscara) *</label>
+                        <label htmlFor="pis" className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">PIS / NIS (Com Máscara)</label>
                         <input
                           id="pis"
                           type="text"
                           name="pis"
                           value={personalData.pis}
                           onChange={handlePersonalChange}
-                          className="w-full bg-slate-50 border border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20 rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm"
+                          className={`w-full bg-slate-50 border rounded-lg px-4 py-3 text-slate-800 placeholder-slate-400 focus:outline-none transition-all font-mono shadow-sm ${
+                            personalData.pis.replace(/\D/g, '').length === 11 && !isValidPIS(personalData.pis)
+                              ? 'border-red-400 focus:border-red-600 focus:ring-2 focus:ring-red-500/20'
+                              : 'border-slate-300 focus:border-indigo-600 focus:bg-white focus:ring-2 focus:ring-indigo-500/20'
+                          }`}
                           placeholder="000.00000.00-0"
                         />
+                        {personalData.pis.trim() !== '' && (
+                          <p className={`text-[11px] mt-1 font-medium ${isValidPIS(personalData.pis) ? 'text-emerald-600' : 'text-red-600'}`}>
+                            {isValidPIS(personalData.pis)
+                              ? 'PIS/PASEP válido (dígito verificador confirmado).'
+                              : 'PIS/PASEP inválido (confira os 11 dígitos).'}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1020,22 +1081,28 @@ export default function AdesaoPage() {
                   <div>
                     <h2 className="text-xl font-bold text-slate-800 mb-4 flex items-center gap-2">
                       <Briefcase className="w-6 h-6 text-indigo-600" />
-                      Atuação Profissional
+                      Atuação Profissional & Registro no Conselho
                     </h2>
-                    <p className="text-sm text-slate-600 mb-6">Cadastre uma ou mais profissões pelas quais atuará na cooperativa. Indique qual é a principal.</p>
+                    <p className="text-sm text-slate-600 mb-6">
+                      Cadastre uma ou mais profissões pelas quais atuará na cooperativa, informando o conselho regional (COREN, CRM, CREFITO etc.), a UF e o número de inscrição válido.
+                    </p>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
 
                       {/* Left: Input Form */}
-                      <div className="bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
-                        <h3 className="font-bold text-slate-800 text-sm mb-2">+ Adicionar Profissão</h3>
+                      <div className="lg:col-span-5 bg-slate-50 p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4">
+                        <h3 className="font-bold text-slate-800 text-sm mb-1">+ Adicionar Profissão</h3>
 
                         <div>
                           <label htmlFor="prof_name" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Profissão</label>
                           <select
                             id="prof_name"
                             value={currentProf.name}
-                            onChange={(e) => setCurrentProf(prev => ({ ...prev, name: e.target.value }))}
+                            onChange={(e) => {
+                              const newName = e.target.value;
+                              const suggestedCouncil = conselhoPorProfissao(newName);
+                              setCurrentProf(prev => ({ ...prev, name: newName, council: suggestedCouncil }));
+                            }}
                             className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2.5 text-slate-800 text-sm focus:outline-none shadow-sm"
                           >
                             {PROFISSOES_FORM.map((p) => (
@@ -1044,28 +1111,44 @@ export default function AdesaoPage() {
                           </select>
                         </div>
 
-                        <div>
-                          <label htmlFor="prof_council" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Conselho de Classe (Ex: COREN, CRM)</label>
-                          <input
-                            id="prof_council"
-                            type="text"
-                            value={currentProf.council}
-                            onChange={(e) => setCurrentProf(prev => ({ ...prev, council: e.target.value.toUpperCase() }))}
-                            className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                            placeholder="Ex: COREN"
-                          />
+                        <div className="grid grid-cols-3 gap-2.5">
+                          <div className="col-span-2">
+                            <label htmlFor="prof_council" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Conselho (Ex: COREN, CRM)</label>
+                            <input
+                              id="prof_council"
+                              type="text"
+                              value={currentProf.council}
+                              onChange={(e) => setCurrentProf(prev => ({ ...prev, council: e.target.value.toUpperCase() }))}
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
+                              placeholder="Ex: COREN"
+                            />
+                          </div>
+                          <div>
+                            <label htmlFor="prof_uf" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">UF *</label>
+                            <select
+                              id="prof_uf"
+                              aria-label="UF do conselho"
+                              value={currentProf.uf || 'GO'}
+                              onChange={(e) => setCurrentProf(prev => ({ ...prev, uf: e.target.value }))}
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-2 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
+                            >
+                              {UFS_BRASIL.map((uf) => (
+                                <option key={uf} value={uf}>{uf}</option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label htmlFor="prof_registration" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Nº Registro</label>
+                            <label htmlFor="prof_registration" className="block text-[10px] font-bold text-slate-700 uppercase tracking-wider mb-1">Nº Registro *</label>
                             <input
                               id="prof_registration"
                               type="text"
                               value={currentProf.registration}
                               onChange={(e) => setCurrentProf(prev => ({ ...prev, registration: e.target.value }))}
                               className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none shadow-sm"
-                              placeholder="123456"
+                              placeholder="Ex: 482917-ENF"
                             />
                           </div>
                           <div>
@@ -1075,12 +1158,29 @@ export default function AdesaoPage() {
                               type="date"
                               value={currentProf.emissionDate}
                               onChange={(e) => setCurrentProf(prev => ({ ...prev, emissionDate: e.target.value }))}
-                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-3 py-2 text-slate-800 text-sm focus:outline-none font-mono shadow-sm"
+                              className="w-full bg-white border border-slate-300 focus:border-indigo-600 rounded-lg px-2.5 py-2 text-slate-800 text-xs focus:outline-none font-mono shadow-sm"
                             />
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 my-2">
+                        {(() => {
+                          const linkInfo = LINKS_CONSULTA_CONSELHO[(currentProf.council as ConselhoProfissional) || 'COREN'] || LINKS_CONSULTA_CONSELHO.COREN;
+                          return (
+                            <div className="bg-indigo-50/70 border border-indigo-100 rounded-lg p-2.5 text-[11px] text-slate-700 flex items-center justify-between gap-2">
+                              <span className="font-medium">Consulta pública ({linkInfo.orgao}):</span>
+                              <a
+                                href={linkInfo.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-indigo-700 hover:text-indigo-900 font-bold inline-flex items-center gap-1 underline shrink-0"
+                              >
+                                Consultar inscrição <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          );
+                        })()}
+
+                        <div className="flex items-center gap-2 my-1">
                           <input
                             type="checkbox"
                             id="prof_principal"
@@ -1101,7 +1201,7 @@ export default function AdesaoPage() {
                       </div>
 
                       {/* Right: Added Professions list */}
-                      <div className="lg:col-span-2 flex flex-col gap-4">
+                      <div className="lg:col-span-7 flex flex-col gap-4">
                         <h3 className="font-bold text-slate-800 text-sm">Profissões Cadastradas ({professions.length})</h3>
 
                         {professions.length === 0 ? (
@@ -1111,25 +1211,44 @@ export default function AdesaoPage() {
                           </div>
                         ) : (
                           <div className="flex flex-col gap-3">
-                            {professions.map((prof, idx) => (
+                            {professions.map((prof, idx) => {
+                              const emissaoBr = prof.emissionDate
+                                ? /^\d{4}-\d{2}-\d{2}$/.test(prof.emissionDate)
+                                  ? prof.emissionDate.split('-').reverse().join('/')
+                                  : new Date(prof.emissionDate).toLocaleDateString('pt-BR')
+                                : '';
+                              return (
                               <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
                                 <div className="flex items-start gap-3">
                                   <div className="mt-1 bg-white p-2 rounded-lg border border-slate-200">
                                     <Briefcase className="w-5 h-5 text-indigo-600" />
                                   </div>
                                   <div>
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                       <h4 className="font-bold text-slate-800 text-sm">{prof.name}</h4>
                                       {prof.isPrincipal && (
                                         <span className="bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-full">
                                           Principal
                                         </span>
                                       )}
+                                      <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-bold px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                                        <Check className="w-2.5 h-2.5" /> Formato Validado
+                                      </span>
                                     </div>
                                     <p className="text-xs text-slate-600 mt-1">
-                                      Conselho: {prof.council} • Registro: {prof.registration}
-                                      {prof.emissionDate && ` • Emissão: ${new Date(prof.emissionDate).toLocaleDateString('pt-BR')}`}
+                                      Conselho: {prof.council}{prof.uf ? `-${prof.uf}` : ''} • Registro: {prof.registration}
+                                      {emissaoBr && ` • Emissão: ${emissaoBr}`}
                                     </p>
+                                    {prof.consultaUrl && (
+                                      <a
+                                        href={prof.consultaUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 underline"
+                                      >
+                                        Verificar regularidade no portal oficial <ExternalLink className="w-3 h-3" />
+                                      </a>
+                                    )}
                                   </div>
                                 </div>
                                 <button
@@ -1141,7 +1260,8 @@ export default function AdesaoPage() {
                                   <Trash2 className="w-4 h-4" />
                                 </button>
                               </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -1279,10 +1399,82 @@ export default function AdesaoPage() {
                       <FileText className="w-6 h-6 text-indigo-600" />
                       Upload de Documentos
                     </h2>
-                    <p className="text-sm text-slate-600 mb-3">Envie a identificação (RG ou CNH) e um comprovante de residência recente, em arquivos separados. Escolha o tipo de cada arquivo abaixo.</p>
-                    <p className="text-sm font-semibold text-slate-700 mb-6" role="status">
+                    <p className="text-sm text-slate-600 mb-3">
+                      Para garantir sua regularidade profissional na cooperativa, envie os documentos obrigatórios abaixo em arquivos separados e selecione o tipo correspondente de cada arquivo anexado.
+                    </p>
+                    <p className="text-sm font-semibold text-slate-700 mb-4" role="status">
                       {pendingDocuments.length ? `Obrigatórios pendentes: ${pendingDocuments.join(', ')}.` : 'Documentos obrigatórios enviados. Você pode finalizar e assinar.'}
                     </p>
+
+                    {/* Checklist de Documentos Obrigatórios e Opcionais */}
+                    <div className="mb-6 bg-slate-50 border border-slate-200 rounded-xl p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Checklist de Documentação Obrigatória ({TIPOS_DOCUMENTO_OBRIGATORIOS.length - pendingDocuments.length}/{TIPOS_DOCUMENTO_OBRIGATORIOS.length})
+                        </span>
+                        {(() => {
+                          const principalProf = professions.find((p) => p.isPrincipal) || professions[0];
+                          const conselhoAtivo = ((principalProf?.council as ConselhoProfissional) || 'COREN');
+                          const linkConselho = LINKS_CONSULTA_CONSELHO[conselhoAtivo] || LINKS_CONSULTA_CONSELHO.COREN;
+                          return (
+                            <a
+                              href={linkConselho.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 inline-flex items-center gap-1 underline"
+                            >
+                              Consultar / Emitir Certidão de Regularidade ({conselhoAtivo}) <ExternalLink className="w-3 h-3" />
+                            </a>
+                          );
+                        })()}
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                        {TIPOS_DOCUMENTO_OBRIGATORIOS.map((tipo) => {
+                          const enviado = uploadedFiles.some(
+                            (f) => f.tipo === tipo && normalizarUrlDocumento(f.url) && f.comprovante
+                          );
+                          return (
+                            <div
+                              key={tipo}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium ${
+                                enviado
+                                  ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800'
+                                  : 'bg-white border-slate-200 text-slate-700'
+                              }`}
+                            >
+                              {enviado ? (
+                                <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+                              ) : (
+                                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                              )}
+                              <span className="leading-snug">{TIPOS_DOCUMENTO[tipo]} *</span>
+                            </div>
+                          );
+                        })}
+                        {TIPOS_DOCUMENTO_OPCIONAIS.map((tipo) => {
+                          const enviado = uploadedFiles.some(
+                            (f) => f.tipo === tipo && normalizarUrlDocumento(f.url) && f.comprovante
+                          );
+                          return (
+                            <div
+                              key={tipo}
+                              className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-xs ${
+                                enviado
+                                  ? 'bg-indigo-50/80 border-indigo-200 text-indigo-800 font-medium'
+                                  : 'bg-slate-100/70 border-slate-200 text-slate-500'
+                              }`}
+                            >
+                              {enviado ? (
+                                <CheckCircle className="w-4 h-4 text-indigo-600 shrink-0" />
+                              ) : (
+                                <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                              )}
+                              <span className="leading-snug">{TIPOS_DOCUMENTO[tipo]}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
 
@@ -1322,19 +1514,19 @@ export default function AdesaoPage() {
                         ) : (
                           <div className="flex flex-col gap-3">
                             {uploadedFiles.map((file, idx) => (
-                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-4 shadow-sm flex items-center justify-between gap-4">
-                                <div className="flex items-center gap-3 overflow-hidden">
+                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-3 overflow-hidden flex-1">
                                   <div className="bg-white border border-slate-200 p-2 rounded-lg shrink-0">
                                     <FileText className="w-5 h-5 text-indigo-600" />
                                   </div>
-                                  <div className="min-w-0">
+                                  <div className="min-w-0 flex-1">
                                     <a href={file.url} target="_blank" rel="noopener noreferrer" className="block text-xs text-indigo-700 hover:text-indigo-900 font-semibold underline truncate" title={`Visualizar ${file.name}`}>{file.name}</a>
                                     <select
                                       aria-label={`Tipo de ${file.name}`}
                                       value={file.tipo || 'outro'}
                                       disabled={uploading || submitting}
                                       onChange={event => setUploadedFiles(prev => prev.map((item, index) => index === idx ? { ...item, tipo: event.target.value as DocumentoAdesao['tipo'] } : item))}
-                                      className="mt-2 w-full min-w-0 rounded border border-slate-300 bg-white p-2 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
+                                      className="mt-1.5 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs text-slate-800 focus:outline-none focus:border-indigo-500"
                                     >
                                       {Object.entries(TIPOS_DOCUMENTO).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </select>

@@ -5,12 +5,17 @@ import { memoizarComTtl, CHAVE_CACHE_PACIENTES_BUBBLE, TTL_PACIENTES_BUBBLE_MS }
 import { obterSessaoCooperado } from '@/lib/sessao-cooperado';
 import { getDb } from '@/lib/db/client';
 import {
+  garantirSchemaD1,
   listarIdsPacientesVinculadosAoCooperado,
   inMemoryPacientes,
   inMemoryAprazamentos,
+  inMemoryEvolucoes,
+  inMemorySinaisVitais,
+  mapearEvolucaoRow,
   obterPacienteClinico,
   listarPrescricoesClinicas,
   gerarSlotsAprazamento,
+  normalizarResponsaveisPaciente,
 } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
@@ -19,6 +24,9 @@ export const runtime = 'edge';
 export async function GET(request: NextRequest) {
   try {
     const db = getDb();
+    if (db) {
+      await garantirSchemaD1(db);
+    }
 
     // 1. O cooperado vem da SESSÃO, nunca da query string
     const sessao = await obterSessaoCooperado(request);
@@ -67,15 +75,36 @@ export async function GET(request: NextRequest) {
     let idsServicos: string[] = [];
     try {
       if (cooperadoId) {
-        const servicos = (await bubbleApi.getServicosByCooperado(cooperadoId)) as any[];
+        const servicos = (await bubbleApi.getServicosByCooperado(sessao.cooperadoId)) as any[];
         idsServicos = (servicos || []).map((s: any) => s.fk_paciente).filter(Boolean);
       }
     } catch (errBubble) {
       console.warn('Aviso: busca de serviços no Bubble falhou ou indisponível:', errBubble);
     }
 
+    // 3b. Inclui pacientes que já possuem evoluções registradas por este cooperado (ex: atendidos via link direto)
+    const idsEvoluidos: string[] = [];
+    if (cooperadoId) {
+      if (db) {
+        try {
+          const evPacRes = await db
+            .prepare('SELECT DISTINCT paciente_id FROM evolucoes WHERE profissional_id = ?')
+            .bind(cooperadoId)
+            .all<any>();
+          for (const row of evPacRes.results || []) {
+            if (row?.paciente_id) idsEvoluidos.push(row.paciente_id);
+          }
+        } catch {}
+      }
+      for (const ev of Array.from(inMemoryEvolucoes.values())) {
+        if (ev.profissional_id === cooperadoId && ev.paciente_id) {
+          idsEvoluidos.push(ev.paciente_id);
+        }
+      }
+    }
+
     // 4. União de todos os IDs de pacientes autorizados
-    const idsPermitidos = Array.from(new Set([...idsPlanos, ...idsServicos]));
+    const idsPermitidos = Array.from(new Set([...idsPlanos, ...idsServicos, ...idsEvoluidos]));
 
     // Se o cliente pediu um paciente específico (ex: ao abrir diretamente /cooperado/prontuario/[id])
     const { searchParams } = new URL(request.url);
@@ -90,12 +119,21 @@ export async function GET(request: NextRequest) {
     }
 
     if (idsAlvo.length === 0) {
-      return NextResponse.json({ success: true, pacientes: [], prescricoes: [], aprazamentos: [] });
+      return NextResponse.json({
+        success: true,
+        pacientes: [],
+        prescricoes: [],
+        aprazamentos: [],
+        evolucoes: [],
+        sinaisVitais: [],
+      });
     }
 
     let dbPacientes: any[] = [];
     let dbPrescricoes: any[] = [];
     let dbAprazamentos: any[] = [];
+    let dbEvolucoes: any[] = [];
+    let dbSinaisVitais: any[] = [];
 
     // Busca cache de pacientes do Bubble
     let bubblePacientes: any[] = [];
@@ -182,6 +220,7 @@ export async function GET(request: NextRequest) {
         return {
           ...p,
           warnings: parsedWarnings,
+          responsaveis: normalizarResponsaveisPaciente(p.responsaveis_json ?? p.responsaveis, p.responsavel_nome, p.responsavel_telefone, p.nome),
           limite_visitas_mes: limite,
           visitas_realizadas_mes: realizadas,
           visitas_restantes_mes: restantes,
@@ -195,13 +234,15 @@ export async function GET(request: NextRequest) {
         if (!idsRetornados.has(id)) {
           const bp = bubblePacientes.find((p) => p._id === id);
           if (bp) {
+            const nomeBp = bp.txt_nome || 'Paciente Sem Nome';
             dbPacientes.push({
               id: bp._id,
-              nome: bp.txt_nome || 'Paciente Sem Nome',
+              nome: nomeBp,
               cpf: bp.txt_cpf || '',
               data_nascimento: '',
               endereco: bp.txt_endereco || 'Sem endereço cadastrado',
               warnings: bp.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : [],
+              responsaveis: normalizarResponsaveisPaciente(undefined, undefined, undefined, nomeBp),
               limite_visitas_mes: 0,
               visitas_realizadas_mes: 0,
               visitas_restantes_mes: undefined,
@@ -209,13 +250,15 @@ export async function GET(request: NextRequest) {
             });
           } else {
             const pClinico = await obterPacienteClinico(id).catch(() => null);
+            const nomeClinico = pClinico?.nome || 'Paciente Vinculado';
             dbPacientes.push({
               id,
-              nome: pClinico?.nome || 'Paciente Vinculado',
+              nome: nomeClinico,
               cpf: pClinico?.cpf || '',
               data_nascimento: pClinico?.data_nascimento || '',
               endereco: pClinico?.endereco || 'Domicílio cadastrado',
               warnings: pClinico?.warnings || [],
+              responsaveis: normalizarResponsaveisPaciente(pClinico?.responsaveis, pClinico?.responsavel_nome, pClinico?.responsavel_telefone, nomeClinico),
               limite_visitas_mes: pClinico?.limite_visitas_mes || 0,
               visitas_realizadas_mes: pClinico?.visitas_realizadas_mes || 0,
               visitas_restantes_mes: pClinico?.visitas_restantes_mes,
@@ -321,30 +364,83 @@ export async function GET(request: NextRequest) {
 
         dbAprazamentos.push(...novosSlots);
       }
+
+      // Evoluções e sinais vitais dos pacientes alvo
+      try {
+        const evoRows = (
+          await db
+            .prepare(
+              `SELECT e.*, pac.nome AS paciente_nome, pac.cpf AS paciente_cpf
+                 FROM evolucoes e
+                 LEFT JOIN pacientes pac ON pac.id = e.paciente_id
+                WHERE e.paciente_id IN (${marcadores})
+                ORDER BY e.check_in DESC`
+            )
+            .bind(...idsAlvo)
+            .all<any>()
+        ).results || [];
+
+        const svRows = (
+          await db
+            .prepare(
+              `SELECT * FROM sinais_vitais
+                WHERE paciente_id IN (${marcadores})
+                ORDER BY data_hora DESC LIMIT 100`
+            )
+            .bind(...idsAlvo)
+            .all<any>()
+        ).results || [];
+
+        dbSinaisVitais = svRows;
+        dbEvolucoes = evoRows.map((r: any) => {
+          const ev = mapearEvolucaoRow(r);
+          const svVinculados = svRows.filter(
+            (sv: any) =>
+              sv.evolucao_id === ev.id ||
+              (!sv.evolucao_id &&
+                sv.paciente_id === ev.paciente_id &&
+                sv.data_hora >= ev.check_in &&
+                sv.data_hora <= (ev.check_out || new Date().toISOString()))
+          );
+          return {
+            ...ev,
+            sinais_vitais: svVinculados,
+          };
+        });
+      } catch (errEvo) {
+        console.warn('Aviso ao consultar evoluções na agenda:', errEvo);
+      }
     } else {
       // Fallback em memória (para testes / dev sem D1)
+      const mesAtualIso = new Date().toISOString().slice(0, 7);
       for (const id of idsAlvo) {
         const pac = inMemoryPacientes.get(id);
+        const evolsPac = Array.from(inMemoryEvolucoes.values()).filter((e) => e.paciente_id === id);
+        const realizadasMes = evolsPac.filter((e) => e.check_in && e.check_in.startsWith(mesAtualIso)).length;
         if (pac) {
+          const limite = pac.limite_visitas_mes || 0;
           dbPacientes.push({
             ...pac,
             warnings: pac.warnings || [],
-            limite_visitas_mes: pac.limite_visitas_mes || 0,
-            visitas_realizadas_mes: 0,
-            visitas_restantes_mes: pac.limite_visitas_mes,
-            limite_atingido: false,
+            responsaveis: normalizarResponsaveisPaciente(pac.responsaveis, pac.responsavel_nome, pac.responsavel_telefone, pac.nome),
+            limite_visitas_mes: limite,
+            visitas_realizadas_mes: realizadasMes,
+            visitas_restantes_mes: limite > 0 ? Math.max(0, limite - realizadasMes) : undefined,
+            limite_atingido: limite > 0 ? realizadasMes >= limite : false,
           });
         } else {
           const bp = bubblePacientes.find((p) => p._id === id);
+          const nomeBp = bp?.txt_nome || 'Paciente Vinculado';
           dbPacientes.push({
             id,
-            nome: bp?.txt_nome || 'Paciente Vinculado',
+            nome: nomeBp,
             cpf: bp?.txt_cpf || '',
             data_nascimento: '',
             endereco: bp?.txt_endereco || 'Sem endereço cadastrado',
             warnings: bp?.fks_equipamentos?.length > 0 ? ['Possui equipamentos em casa'] : [],
+            responsaveis: normalizarResponsaveisPaciente(undefined, undefined, undefined, nomeBp),
             limite_visitas_mes: 0,
-            visitas_realizadas_mes: 0,
+            visitas_realizadas_mes: realizadasMes,
             visitas_restantes_mes: undefined,
             limite_atingido: false,
           });
@@ -376,6 +472,32 @@ export async function GET(request: NextRequest) {
           })));
         }
       }
+
+      const alvoSet = new Set(idsAlvo);
+      dbSinaisVitais = Array.from(inMemorySinaisVitais.values())
+        .filter((sv) => alvoSet.has(sv.paciente_id))
+        .sort((a, b) => new Date(b.data_hora).getTime() - new Date(a.data_hora).getTime());
+
+      dbEvolucoes = Array.from(inMemoryEvolucoes.values())
+        .filter((ev) => alvoSet.has(ev.paciente_id))
+        .sort((a, b) => new Date(b.check_in).getTime() - new Date(a.check_in).getTime())
+        .map((ev) => {
+          const pac = dbPacientes.find((p) => p.id === ev.paciente_id);
+          const svVinculados = dbSinaisVitais.filter(
+            (sv) =>
+              sv.evolucao_id === ev.id ||
+              (!sv.evolucao_id &&
+                sv.paciente_id === ev.paciente_id &&
+                sv.data_hora >= ev.check_in &&
+                sv.data_hora <= (ev.check_out || new Date().toISOString()))
+          );
+          return {
+            ...ev,
+            paciente_nome: ev.paciente_nome || pac?.nome,
+            paciente_cpf: ev.paciente_cpf || pac?.cpf,
+            sinais_vitais: svVinculados,
+          };
+        });
     }
 
     return NextResponse.json({
@@ -383,6 +505,8 @@ export async function GET(request: NextRequest) {
       pacientes: dbPacientes,
       prescricoes: dbPrescricoes,
       aprazamentos: dbAprazamentos,
+      evolucoes: dbEvolucoes,
+      sinaisVitais: dbSinaisVitais,
     });
   } catch (error: any) {
     console.error('Erro na rota de API de Agenda:', error);

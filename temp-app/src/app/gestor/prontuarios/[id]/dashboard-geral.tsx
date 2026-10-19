@@ -368,9 +368,17 @@ export default function DashboardGeral({
 
                       {/* Selo Digital Criptográfico de Assinatura */}
                       <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-[11px]">
-                        <div className="flex items-center gap-1.5">
-                          <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <span className="font-bold text-emerald-950">Assinado Digitalmente pelo Profissional</span>
+                        <div className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span className="font-bold text-emerald-950">Assinado Digitalmente pelo Profissional</span>
+                          </div>
+                          {ev.responsavel_nome && (
+                            <span className="text-[10px] font-semibold text-indigo-800 pl-5">
+                              Familiar / Responsável no Plantão: {ev.responsavel_nome}
+                              {ev.responsavel_parentesco ? ` (${ev.responsavel_parentesco})` : ''}
+                            </span>
+                          )}
                         </div>
                         {ev.assinatura_digital && (
                           <span className="font-mono text-[10px] text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-200 truncate max-w-xs">

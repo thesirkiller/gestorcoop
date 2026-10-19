@@ -93,14 +93,26 @@ export async function POST(request: NextRequest) {
     // 4. Registra sessão no banco local D1 (se disponível)
     const db = getDb();
     if (db) {
+      const now = Math.floor(Date.now() / 1000);
       try {
-        const now = Math.floor(Date.now() / 1000);
         await db
           .prepare('INSERT INTO auth_sessions (id, user_id, area, expires_at) VALUES (?, ?, ?, ?)')
           .bind(sessionId, userId, 'cooperado', now + VALIDADE_COOPERADO_SEGUNDOS)
           .run();
-      } catch (e) {
-        console.warn('Aviso ao salvar auth_session no D1:', e);
+      } catch {
+        try {
+          await db
+            .prepare(
+              'CREATE TABLE IF NOT EXISTS auth_sessions (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, area TEXT NOT NULL, expires_at INTEGER NOT NULL, revoked_at INTEGER)'
+            )
+            .run();
+          await db
+            .prepare('INSERT INTO auth_sessions (id, user_id, area, expires_at) VALUES (?, ?, ?, ?)')
+            .bind(sessionId, userId, 'cooperado', now + VALIDADE_COOPERADO_SEGUNDOS)
+            .run();
+        } catch (e2) {
+          console.warn('Aviso ao salvar auth_session no D1:', e2);
+        }
       }
     }
 

@@ -57,6 +57,7 @@ type TabType = 'proximos' | 'de_hoje' | 'finalizados';
 export default function CooperadoDashboard() {
   const { user, isAutenticado, carregandoSessao, setIsUserModalOpen, logout } = useCooperado();
   const [items, setItems] = useState<ProntuarioItem[]>([]);
+  const [finalizadosItems, setFinalizadosItems] = useState<ProntuarioItem[]>([]);
   const [activeTab, setActiveTab] = useState<TabType>('de_hoje');
   const [isOnline, setIsOnline] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -64,11 +65,12 @@ export default function CooperadoDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [imgError, setImgError] = useState(false);
 
-  // Monitorar rede
+  // Monitorar rede e atualizações da fila de sincronização
   useEffect(() => {
     setIsOnline(navigator.onLine);
     const unsubscribe = subscribeToSync((status) => {
       setIsOnline(status.isOnline);
+      loadLocalData();
     });
     return () => unsubscribe();
   }, []);
@@ -86,22 +88,45 @@ export default function CooperadoDashboard() {
         localDB.getAprazamentos(),
       ]);
 
-      if (pacientes.length > 0) {
+      // Garante que pacientes evoluídos via link direto também apareçam na listagem do cooperado
+      const mapaPacientes = new Map<string, any>();
+      for (const p of pacientes) {
+        if (p?.id) mapaPacientes.set(String(p.id).trim(), p);
+      }
+      for (const ev of evolucoes) {
+        const pacId = String(ev?.paciente_id || '').trim();
+        if (pacId && !mapaPacientes.has(pacId)) {
+          mapaPacientes.set(pacId, {
+            id: pacId,
+            nome: ev.paciente_nome || `Paciente #${pacId.slice(0, 8)}`,
+            cpf: ev.paciente_cpf || '',
+            data_nascimento: '',
+            endereco: 'Domicílio cadastrado',
+            warnings: [],
+          });
+        }
+      }
+
+      const listaPacientesUnificada = Array.from(mapaPacientes.values());
+
+      if (listaPacientesUnificada.length > 0) {
         const horas = ['08:00', '13:00', '16:00', '20:00'];
 
-        const mapped: ProntuarioItem[] = pacientes.map((p: any, idx) => {
-          // Busca a evolução mais recente deste paciente
+        const mapped: ProntuarioItem[] = listaPacientesUnificada.map((p: any, idx) => {
+          const pacId = String(p.id).trim();
+          // Ordena evoluções deste paciente da mais recente para a mais antiga
           const pacEvolucoes = evolucoes
-            .filter((e) => e.paciente_id === p.id)
+            .filter((e) => String(e.paciente_id).trim() === pacId)
             .sort((a, b) => {
               const tA = new Date(a.data_assinatura || a.check_out || a.check_in || 0).getTime();
               const tB = new Date(b.data_assinatura || b.check_out || b.check_in || 0).getTime();
-              return tB - tA;
+              return (Number.isNaN(tB) ? 0 : tB) - (Number.isNaN(tA) ? 0 : tA);
             });
-          const ev = pacEvolucoes[0];
+          // Prioriza atendimento ativo em andamento na escala; caso contrário usa a evolução mais recente
+          const ev = pacEvolucoes.find((e) => e.status === 'Em_Andamento') || pacEvolucoes[0];
 
           const pacAprazamentos = aprazamentos.filter(
-            (a) => a.prescricao_id || (a as any).paciente_id === p.id
+            (a) => (a as any).paciente_id === pacId || (!((a as any).paciente_id) && a.prescricao_id)
           );
           const administrados = pacAprazamentos.filter(
             (a) => a.status === 'Administrado'
@@ -109,23 +134,39 @@ export default function CooperadoDashboard() {
 
           let status: ProntuarioItem['status'] = 'Pendente';
           if (ev) {
+            const st = String(ev.status || '');
             status =
-              ev.status === 'Finalizado' || ev.status === 'Assinado_Pendente_Sync'
+              st === 'Finalizado' ||
+              st === 'Assinado_Pendente_Sync' ||
+              st === 'Auditado' ||
+              st === 'Concluído'
                 ? 'Concluído'
                 : 'Em_Andamento';
           }
 
           const horario = horas[idx % horas.length];
-          const dataLabel = idx >= 2 ? 'Hoje mais tarde' : 'Hoje';
+          const dataLabel =
+            ev && status === 'Concluído'
+              ? 'Hoje'
+              : idx >= 2
+              ? 'Hoje mais tarde'
+              : 'Hoje';
+
+          const resumoTexto =
+            ev?.transcricao_revisada ||
+            ev?.transcricao_crua ||
+            [ev?.soap_subjetivo, ev?.soap_objetivo, ev?.soap_avaliacao, ev?.soap_plano]
+              .filter(Boolean)
+              .join(' • ');
 
           return {
-            pacienteId: p.id,
-            pacienteNome: p.nome,
+            pacienteId: pacId,
+            pacienteNome: p.nome || ev?.paciente_nome || 'Paciente em Atendimento',
             horario,
             dataLabel,
             status,
             endereco: p.endereco || 'Domicílio cadastrado',
-            cpf: p.cpf || '***.***.***-**',
+            cpf: p.cpf || ev?.paciente_cpf || '***.***.***-**',
             dataNascimento: p.data_nascimento || '01/01/1970',
             limite_visitas_mes: p.limite_visitas_mes,
             visitas_realizadas_mes: p.visitas_realizadas_mes,
@@ -136,14 +177,70 @@ export default function CooperadoDashboard() {
             checkIn: ev?.check_in,
             checkOut: ev?.check_out,
             dataAssinatura: ev?.data_assinatura,
-            transcricaoPreview: ev?.transcricao_revisada || ev?.transcricao_crua,
+            transcricaoPreview: resumoTexto,
             medicamentosAdministrados: administrados,
             totalMedicamentos: pacAprazamentos.length,
             syncPendente: ev?.status === 'Assinado_Pendente_Sync',
           };
         });
 
+        // Constrói lista dedicada de evoluções finalizadas (preserva múltiplos atendimentos e histórico mesmo com novo check-in)
+        const evolsFinalizadas = evolucoes
+          .filter((e) => {
+            const st = String(e.status || '');
+            return (
+              st === 'Finalizado' ||
+              st === 'Assinado_Pendente_Sync' ||
+              st === 'Auditado' ||
+              st === 'Concluído'
+            );
+          })
+          .sort((a, b) => {
+            const tA = new Date(a.data_assinatura || a.check_out || a.check_in || 0).getTime();
+            const tB = new Date(b.data_assinatura || b.check_out || b.check_in || 0).getTime();
+            return (Number.isNaN(tB) ? 0 : tB) - (Number.isNaN(tA) ? 0 : tA);
+          })
+          .map((ev, idx): ProntuarioItem => {
+            const pacId = String(ev.paciente_id || '').trim();
+            const p = mapaPacientes.get(pacId) || {};
+            const pacAprazamentos = aprazamentos.filter(
+              (a) => (a as any).paciente_id === pacId || (!((a as any).paciente_id) && a.prescricao_id)
+            );
+            const administrados = pacAprazamentos.filter((a) => a.status === 'Administrado').length;
+            const resumoTexto =
+              ev.transcricao_revisada ||
+              ev.transcricao_crua ||
+              [ev.soap_subjetivo, ev.soap_objetivo, ev.soap_avaliacao, ev.soap_plano]
+                .filter(Boolean)
+                .join(' • ');
+
+            return {
+              pacienteId: pacId,
+              pacienteNome: p.nome || ev.paciente_nome || 'Paciente em Atendimento',
+              horario: horas[idx % horas.length],
+              dataLabel: 'Hoje',
+              status: 'Concluído',
+              endereco: p.endereco || 'Domicílio cadastrado',
+              cpf: p.cpf || ev.paciente_cpf || '***.***.***-**',
+              dataNascimento: p.data_nascimento || '01/01/1970',
+              limite_visitas_mes: p.limite_visitas_mes,
+              visitas_realizadas_mes: p.visitas_realizadas_mes,
+              visitas_restantes_mes: p.visitas_restantes_mes,
+              limite_atingido: p.limite_atingido,
+              warnings: Array.isArray(p.warnings) ? p.warnings : [],
+              evolucaoId: ev.id,
+              checkIn: ev.check_in,
+              checkOut: ev.check_out,
+              dataAssinatura: ev.data_assinatura || ev.check_out,
+              transcricaoPreview: resumoTexto,
+              medicamentosAdministrados: administrados,
+              totalMedicamentos: pacAprazamentos.length,
+              syncPendente: ev.status === 'Assinado_Pendente_Sync',
+            };
+          });
+
         setItems(mapped);
+        setFinalizadosItems(evolsFinalizadas);
 
         const lastPrefetch = window.localStorage.getItem('gc_last_prefetch');
         if (lastPrefetch) {
@@ -156,8 +253,8 @@ export default function CooperadoDashboard() {
         }
       } else {
         setItems([]);
+        setFinalizadosItems([]);
         if (isAutenticado && isOnline) {
-          // Banco vazio e autenticado: busca da nuvem automaticamente se online
           handlePrefetch();
         }
       }
@@ -184,11 +281,14 @@ export default function CooperadoDashboard() {
     setError(null);
     try {
       const response = await axios.get('/api/cooperado/agenda');
-      const { pacientes, prescricoes, aprazamentos } = response.data;
+      const { pacientes, prescricoes, aprazamentos, evolucoes } = response.data;
 
       await localDB.savePacientes(pacientes || []);
       await localDB.savePrescricoes(prescricoes || []);
       await localDB.saveAprazamentos(aprazamentos || []);
+      if (Array.isArray(evolucoes) && evolucoes.length > 0) {
+        await localDB.saveEvolucoes(evolucoes);
+      }
 
       const now = new Date().toISOString();
       window.localStorage.setItem('gc_last_prefetch', now);
@@ -218,11 +318,14 @@ export default function CooperadoDashboard() {
 
   // Separação dos dados para as 3 abas solicitadas
   // 1. Finalizados: atendimentos já concluídos e assinados
-  const itensFinalizados = items.filter((item) => item.status === 'Concluído');
+  const itensFinalizados = finalizadosItems;
 
   // 2. De hoje: escala do dia (atendimentos em andamento, pendentes ou concluídos hoje)
   const itensDeHoje = items.filter(
-    (item) => item.dataLabel.toLowerCase().includes('hoje') || item.status === 'Em_Andamento'
+    (item) =>
+      item.dataLabel.toLowerCase().includes('hoje') ||
+      item.status === 'Em_Andamento' ||
+      item.status === 'Concluído'
   );
 
   // 3. Próximos: atendimentos pendentes / a serem iniciados
@@ -761,7 +864,7 @@ export default function CooperadoDashboard() {
             ) : (
               itensFinalizados.map((item) => (
                 <Link
-                  key={item.pacienteId}
+                  key={item.evolucaoId || item.pacienteId}
                   href={`/cooperado/prontuario/${item.pacienteId}`}
                   className="bg-surface border border-line rounded-xl p-4 flex flex-col gap-2.5 hover:border-line-strong transition-all shadow-card active:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-focus group"
                 >

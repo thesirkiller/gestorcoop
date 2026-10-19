@@ -71,6 +71,7 @@ export async function sincronizarPacientesBubbleParaD1(
           telefone,
           responsavel_nome: existente?.responsavel_nome || '',
           responsavel_telefone: existente?.responsavel_telefone || '',
+          responsaveis: existente?.responsaveis,
           diagnostico_principal: existente?.diagnostico_principal || 'Acompanhamento Domiciliar',
           cid10: existente?.cid10 || '',
           complexidade: existente?.complexidade || 'Baixa',

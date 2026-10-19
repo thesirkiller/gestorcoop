@@ -37,11 +37,23 @@ import {
   Link2,
   MessageCircle,
   Check,
+  Building2,
+  Layers,
 } from 'lucide-react';
 import Link from 'next/link';
-import type { PlanoTerapeutico } from '@/lib/tipos-clinicos';
+import type { PlanoTerapeutico, ResponsavelPaciente } from '@/lib/tipos-clinicos';
 import DashboardGeral from './dashboard-geral';
 import PlanoTerapeuticoTab from './plano-terapeutico-tab';
+import ImpressaoProntuarioModal, {
+  CategoriaImpressaoId,
+  CATEGORIAS_IMPRESSAO,
+} from './impressao-prontuario';
+import {
+  EMPRESAS_CONTRATANTES,
+  EmpresaContratante,
+  resolverEmpresaDoPaciente,
+  salvarEmpresaContratanteLocal,
+} from '@/lib/empresas-contratantes';
 import { obterUrlCooperado } from '@/lib/subdominios';
 import { invalidarCacheNavegacao, CHAVE_CACHE_LISTAGEM_PACIENTES } from '@/lib/cache-navegacao';
 
@@ -50,14 +62,17 @@ interface PacienteData {
   nome: string;
   cpf: string;
   data_nascimento?: string;
+  sexo?: string;
   endereco?: string;
   telefone?: string;
   responsavel_nome?: string;
   responsavel_telefone?: string;
+  responsaveis?: ResponsavelPaciente[];
   diagnostico_principal?: string;
   cid10?: string;
   complexidade?: 'Baixa' | 'Média' | 'Alta';
   plano_saude?: string;
+  empresa_contratante?: string;
   numero_carteirinha?: string;
   warnings?: string[];
   status?: string;
@@ -88,6 +103,9 @@ interface EvolucaoData {
   status: string;
   data_assinatura?: string;
   assinatura_digital?: string;
+  responsavel_id?: string;
+  responsavel_nome?: string;
+  responsavel_parentesco?: string;
   parecer_auditoria?: string;
   auditado_por?: string;
   data_auditoria?: string;
@@ -134,6 +152,23 @@ interface ParecerData {
   data_registro: string;
 }
 
+interface AprazamentoData {
+  id: string;
+  prescricao_id: string;
+  paciente_id?: string;
+  medicamento?: string;
+  dosagem?: string;
+  via_administracao?: string;
+  horario_previsto: string;
+  horario_executado?: string;
+  status: 'Pendente' | 'Administrado' | 'Nao_Administrado';
+  justificativa?: string;
+  profissional_id?: string;
+  profissional_nome?: string;
+  profissional_cargo?: string;
+  assinatura_digital?: string;
+}
+
 export default function Prontuario360Detalhe() {
   const params = useParams();
   const router = useRouter();
@@ -146,6 +181,7 @@ export default function Prontuario360Detalhe() {
   const [paciente, setPaciente] = useState<PacienteData | null>(null);
   const [evolucoes, setEvolucoes] = useState<EvolucaoData[]>([]);
   const [prescricoes, setPrescricoes] = useState<PrescricaoData[]>([]);
+  const [aprazamentos, setAprazamentos] = useState<AprazamentoData[]>([]);
   const [sinaisVitais, setSinaisVitais] = useState<SinalVitalData[]>([]);
   const [pareceres, setPareceres] = useState<ParecerData[]>([]);
 
@@ -161,7 +197,149 @@ export default function Prontuario360Detalhe() {
   const [isNovaPrescricaoOpen, setIsNovaPrescricaoOpen] = useState(false);
   const [isNovoSinalOpen, setIsNovoSinalOpen] = useState(false);
   const [isNovoParecerOpen, setIsNovoParecerOpen] = useState(false);
+  const [isResponsaveisModalOpen, setIsResponsaveisModalOpen] = useState(false);
+  const [responsaveisEdicao, setResponsaveisEdicao] = useState<ResponsavelPaciente[]>([]);
+  const [novoResponsavelForm, setNovoResponsavelForm] = useState({
+    nome: '',
+    parentesco: 'Filho(a)',
+    telefone: '',
+  });
+  const [salvandoResponsaveis, setSalvandoResponsaveis] = useState(false);
   const [salvando, setSalvando] = useState(false);
+
+  const obterListaResponsaveisAtuais = (pac: PacienteData | null): ResponsavelPaciente[] => {
+    if (!pac) return [];
+    if (Array.isArray(pac.responsaveis) && pac.responsaveis.length > 0) {
+      return pac.responsaveis;
+    }
+    if (pac.responsavel_nome) {
+      return [
+        {
+          id: 'resp_principal',
+          nome: pac.responsavel_nome,
+          parentesco: 'Familiar / Responsável',
+          telefone: pac.responsavel_telefone || '',
+          principal: true,
+        },
+      ];
+    }
+    return [];
+  };
+
+  const abrirModalResponsaveis = () => {
+    setResponsaveisEdicao(obterListaResponsaveisAtuais(paciente));
+    setNovoResponsavelForm({ nome: '', parentesco: 'Filho(a)', telefone: '' });
+    setIsResponsaveisModalOpen(true);
+  };
+
+  const adicionarResponsavelNaLista = () => {
+    const nomeLimpo = novoResponsavelForm.nome.trim();
+    if (!nomeLimpo) return;
+    const novoItem: ResponsavelPaciente = {
+      id: `resp_${Date.now()}_${responsaveisEdicao.length + 1}`,
+      nome: nomeLimpo,
+      parentesco: novoResponsavelForm.parentesco || 'Familiar / Responsável',
+      telefone: novoResponsavelForm.telefone.trim() || undefined,
+      principal: responsaveisEdicao.length === 0,
+    };
+    setResponsaveisEdicao([...responsaveisEdicao, novoItem]);
+    setNovoResponsavelForm({ nome: '', parentesco: 'Filho(a)', telefone: '' });
+  };
+
+  const definirResponsavelPrincipal = (respId: string) => {
+    setResponsaveisEdicao(
+      responsaveisEdicao.map((r) => ({
+        ...r,
+        principal: r.id === respId,
+      }))
+    );
+  };
+
+  const removerResponsavelDaLista = (respId: string) => {
+    const filtrados = responsaveisEdicao.filter((r) => r.id !== respId);
+    if (filtrados.length > 0 && !filtrados.some((r) => r.principal)) {
+      filtrados[0] = { ...filtrados[0], principal: true };
+    }
+    setResponsaveisEdicao(filtrados);
+  };
+
+  const handleSalvarResponsaveisPaciente = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paciente) return;
+    let listaFinal = [...responsaveisEdicao];
+    if (novoResponsavelForm.nome.trim()) {
+      listaFinal.push({
+        id: `resp_${Date.now()}_${listaFinal.length + 1}`,
+        nome: novoResponsavelForm.nome.trim(),
+        parentesco: novoResponsavelForm.parentesco || 'Familiar / Responsável',
+        telefone: novoResponsavelForm.telefone.trim() || undefined,
+        principal: listaFinal.length === 0,
+      });
+    }
+    if (listaFinal.length > 0 && !listaFinal.some((r) => r.principal)) {
+      listaFinal[0] = { ...listaFinal[0], principal: true };
+    }
+    const principal = listaFinal.find((r) => r.principal) || listaFinal[0];
+
+    setSalvandoResponsaveis(true);
+    try {
+      const res = await axios.put(`/api/gestor/prontuarios/pacientes/${paciente.id}`, {
+        ...paciente,
+        responsavel_nome: principal?.nome || '',
+        responsavel_telefone: principal?.telefone || '',
+        responsaveis: listaFinal,
+      });
+      if (res.data?.success) {
+        setPaciente({
+          ...paciente,
+          responsavel_nome: principal?.nome || '',
+          responsavel_telefone: principal?.telefone || '',
+          responsaveis: res.data.data?.responsaveis || listaFinal,
+        });
+        invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
+        setIsResponsaveisModalOpen(false);
+        setNovoResponsavelForm({ nome: '', parentesco: 'Filho(a)', telefone: '' });
+        setToastDetalhe('Familiares / Responsáveis pela finalização do plantão atualizados com sucesso!');
+        setTimeout(() => setToastDetalhe(null), 3500);
+      }
+    } catch (err: any) {
+      console.error('Erro ao salvar responsáveis do paciente:', err);
+      alert(err.response?.data?.error || 'Erro ao salvar familiares/responsáveis do paciente.');
+    } finally {
+      setSalvandoResponsaveis(false);
+    }
+  };
+
+  // Impressão por Categoria Profissional / Evolução Individual & Empresa Contratante
+  const [isImpressaoOpen, setIsImpressaoOpen] = useState(false);
+  const [categoriaImpressaoInicial, setCategoriaImpressaoInicial] = useState<CategoriaImpressaoId>('todas');
+  const [evolucaoIndividualImpressaoId, setEvolucaoIndividualImpressaoId] = useState<string | null>(null);
+  const [empresaContratante, setEmpresaContratante] = useState<EmpresaContratante>(EMPRESAS_CONTRATANTES[0]);
+
+  useEffect(() => {
+    if (paciente) {
+      setEmpresaContratante(resolverEmpresaDoPaciente(paciente));
+    }
+  }, [paciente]);
+
+  const handleTrocarEmpresaContratante = (novaEmpresa: EmpresaContratante) => {
+    setEmpresaContratante(novaEmpresa);
+    if (paciente) {
+      salvarEmpresaContratanteLocal(paciente.id, novaEmpresa.id, paciente.nome);
+    }
+  };
+
+  const abrirImpressaoPorCategoria = (categoria: CategoriaImpressaoId = 'todas') => {
+    setEvolucaoIndividualImpressaoId(null);
+    setCategoriaImpressaoInicial(categoria);
+    setIsImpressaoOpen(true);
+  };
+
+  const abrirImpressaoEvolucaoIndividual = (evolucaoId: string) => {
+    setEvolucaoIndividualImpressaoId(evolucaoId);
+    setCategoriaImpressaoInicial('individual');
+    setIsImpressaoOpen(true);
+  };
 
   // Compartilhamento com Cooperado
   const [copiadoLink, setCopiadoLink] = useState(false);
@@ -198,21 +376,21 @@ export default function Prontuario360Detalhe() {
     dosagem: '',
     via_administracao: 'Oral',
     frequencia_horas: 12,
-    horarios_padrao: '08:00, 20:00',
+    horarios_padrao: '',
     instrucoes: '',
-    medico_nome: 'Dr. Roberto Cardozo',
-    medico_crm: 'CRM-SP 114520',
+    medico_nome: '',
+    medico_crm: '',
   });
 
   const [novoSinalForm, setNovoSinalForm] = useState({
-    pa_sistolica: '120',
-    pa_diastolica: '80',
-    fc_bpm: '78',
-    fr_rpm: '18',
-    temp_celsius: '36.5',
-    spo2_percent: '98',
+    pa_sistolica: '',
+    pa_diastolica: '',
+    fc_bpm: '',
+    fr_rpm: '',
+    temp_celsius: '',
+    spo2_percent: '',
     glicemia_mg_dl: '',
-    dor_escala: '0',
+    dor_escala: '',
     nivel_consciencia: 'Alerta',
     observacoes: '',
   });
@@ -220,7 +398,7 @@ export default function Prontuario360Detalhe() {
   const [novoParecerForm, setNovoParecerForm] = useState({
     tipo_parecer: 'Conforme',
     descricao: '',
-    auditor_nome: 'Dr. Marcos Gestor',
+    auditor_nome: '',
   });
 
   // Paciente atualmente exibido e requisição de equipamentos em voo: respostas
@@ -276,6 +454,7 @@ export default function Prontuario360Detalhe() {
         setPaciente(d.paciente);
         setEvolucoes(d.evolucoes || []);
         setPrescricoes(d.prescricoes || []);
+        setAprazamentos(d.aprazamentos || []);
         setSinaisVitais(d.sinaisVitais || []);
         setPareceres(d.pareceres || []);
         if (d.evolucoes && d.evolucoes.length > 0) {
@@ -297,12 +476,13 @@ export default function Prontuario360Detalhe() {
 
         // Buscar dados unificados da dashboard do paciente, planos, prescrições, sinais e pareceres em paralelo
         try {
-          const [resDash, resPlanos, resPresc, resSinais, resPareceres] = await Promise.allSettled([
+          const [resDash, resPlanos, resPresc, resSinais, resPareceres, resApraz] = await Promise.allSettled([
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/dashboard`),
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/planos`),
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/prescricoes`),
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/sinais-vitais`),
             axios.get(`/api/gestor/prontuarios/pacientes/${id}/parecer`),
+            axios.get(`/api/gestor/prontuarios/pacientes/${id}/aprazamentos`),
           ]);
           if (obsoleta()) return;
           if ([resDash, resPlanos, resPresc, resSinais, resPareceres].some((result) => result.status === 'rejected' ||
@@ -345,6 +525,10 @@ export default function Prontuario360Detalhe() {
 
           if (resPareceres.status === 'fulfilled' && resPareceres.value.data?.success && Array.isArray(resPareceres.value.data?.data) && resPareceres.value.data.data.length > 0) {
             setPareceres(resPareceres.value.data.data);
+          }
+
+          if (resApraz.status === 'fulfilled' && resApraz.value.data?.success && Array.isArray(resApraz.value.data?.data)) {
+            setAprazamentos(resApraz.value.data.data);
           }
 
           setPlanos(planosCarregados);
@@ -413,10 +597,10 @@ export default function Prontuario360Detalhe() {
         dosagem: '',
         via_administracao: 'Oral',
         frequencia_horas: 12,
-        horarios_padrao: '08:00, 20:00',
+        horarios_padrao: '',
         instrucoes: '',
-        medico_nome: 'Dr. Roberto Cardozo',
-        medico_crm: 'CRM-SP 114520',
+        medico_nome: '',
+        medico_crm: '',
       });
       await carregarProntuarioCompleto(true);
     } catch (err: any) {
@@ -439,14 +623,14 @@ export default function Prontuario360Detalhe() {
 
       setIsNovoSinalOpen(false);
       setNovoSinalForm({
-        pa_sistolica: '120',
-        pa_diastolica: '80',
-        fc_bpm: '78',
-        fr_rpm: '18',
-        temp_celsius: '36.5',
-        spo2_percent: '98',
+        pa_sistolica: '',
+        pa_diastolica: '',
+        fc_bpm: '',
+        fr_rpm: '',
+        temp_celsius: '',
+        spo2_percent: '',
         glicemia_mg_dl: '',
-        dor_escala: '0',
+        dor_escala: '',
         nivel_consciencia: 'Alerta',
         observacoes: '',
       });
@@ -472,7 +656,7 @@ export default function Prontuario360Detalhe() {
       setNovoParecerForm({
         tipo_parecer: 'Conforme',
         descricao: '',
-        auditor_nome: 'Dr. Marcos Gestor',
+        auditor_nome: '',
       });
       await carregarProntuarioCompleto(true);
     } catch (err: any) {
@@ -628,7 +812,8 @@ export default function Prontuario360Detalhe() {
           </a>
 
           <button
-            onClick={() => window.print()}
+            type="button"
+            onClick={() => abrirImpressaoPorCategoria('todas')}
             className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-3.5 py-2 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-2 shadow-sm"
           >
             <Printer className="w-4 h-4 text-indigo-600" />
@@ -639,6 +824,53 @@ export default function Prontuario360Detalhe() {
 
       {/* Patient Header 360 Card */}
       <div className="max-w-7xl mx-auto bg-white rounded-2xl border border-slate-200 p-6 lg:p-8 shadow-sm mb-6">
+        {/* Faixa Institucional da Empresa Contratante com Logomarca */}
+        <div className="mb-5 pb-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/70 p-3.5 rounded-2xl border">
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={empresaContratante.logoUrl}
+              alt={`Logo ${empresaContratante.nome}`}
+              className="h-11 w-auto object-contain rounded-lg bg-white p-1 border border-slate-200 shrink-0"
+            />
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                  Empresa Contratante
+                </span>
+                <span className="text-xs font-black text-slate-900">{empresaContratante.nome}</span>
+              </div>
+              <p className="text-[10px] font-bold text-slate-500 uppercase mt-0.5">
+                {empresaContratante.cabecalhoTexto}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 print:hidden">
+            <span className="text-[10px] font-bold text-slate-500 mr-1 flex items-center gap-1">
+              <Building2 className="w-3.5 h-3.5 text-slate-400" />
+              Prestadora:
+            </span>
+            {EMPRESAS_CONTRATANTES.map((emp) => {
+              const ativa = empresaContratante.id === emp.id;
+              return (
+                <button
+                  key={emp.id}
+                  type="button"
+                  onClick={() => handleTrocarEmpresaContratante(emp)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
+                    ativa
+                      ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {emp.nomeCurto}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 text-indigo-600 flex items-center justify-center shrink-0">
@@ -692,20 +924,62 @@ export default function Prontuario360Detalhe() {
             </div>
           </div>
 
-          {/* Domicílio & Responsável */}
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-xs space-y-1.5 min-w-[280px]">
+          {/* Domicílio & Familiares / Responsáveis pela Finalização do Plantão */}
+          <div
+            data-testid="card-responsaveis-paciente"
+            className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs space-y-2.5 min-w-[310px] max-w-md"
+          >
             {paciente.endereco && (
-              <p className="flex items-start gap-1.5 text-slate-700">
+              <p className="flex items-start gap-1.5 text-slate-700 pb-2 border-b border-slate-200/70">
                 <MapPin className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
                 <span className="line-clamp-2">{paciente.endereco}</span>
               </p>
             )}
-            {paciente.responsavel_nome && (
-              <p className="text-slate-600">
-                Responsável: <strong className="text-slate-800">{paciente.responsavel_nome}</strong>
-                {paciente.responsavel_telefone ? ` (${paciente.responsavel_telefone})` : ''}
-              </p>
-            )}
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
+                  Familiares / Responsáveis (Plantão)
+                </span>
+                <button
+                  type="button"
+                  data-testid="btn-gerenciar-responsaveis"
+                  onClick={abrirModalResponsaveis}
+                  className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 transition-colors flex items-center gap-1"
+                >
+                  <Plus className="w-3 h-3" />
+                  Gerenciar Responsáveis
+                </button>
+              </div>
+
+              {obterListaResponsaveisAtuais(paciente).length > 0 ? (
+                <div className="flex flex-wrap gap-1.5" data-testid="lista-responsaveis-cadastrados">
+                  {obterListaResponsaveisAtuais(paciente).map((r) => (
+                    <div
+                      key={r.id}
+                      data-testid={`badge-responsavel-${r.id}`}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white border border-slate-200 shadow-2xs text-slate-800"
+                    >
+                      <span className="font-bold text-slate-900">{r.nome}</span>
+                      {r.parentesco && (
+                        <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100">
+                          {r.parentesco}
+                        </span>
+                      )}
+                      {r.principal && (
+                        <span className="text-[9px] font-extrabold uppercase bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded">
+                          Principal
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-slate-500 italic text-[11px]">
+                  Nenhum familiar cadastrado para finalização do plantão.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 
@@ -909,13 +1183,23 @@ export default function Prontuario360Detalhe() {
 
         {/* Tab-specific Actions */}
         {activeTab === 'prescricoes' && (
-          <button
-            onClick={() => setIsNovaPrescricaoOpen(true)}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            Nova Prescrição
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => abrirImpressaoPorCategoria('prescricao_enfermagem')}
+              className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs"
+            >
+              <Printer className="w-3.5 h-3.5 text-indigo-600" />
+              Imprimir Prescrição
+            </button>
+            <button
+              onClick={() => setIsNovaPrescricaoOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Nova Prescrição
+            </button>
+          </div>
         )}
         {activeTab === 'sinais' && (
           <button
@@ -979,6 +1263,37 @@ export default function Prontuario360Detalhe() {
         {/* ABA 1: EVOLUÇÕES CLÍNICAS (SOAP) */}
         {activeTab === 'evolucoes' && (
           <div className="space-y-4">
+            {/* Barra de Impressão de Prontuário por Categoria Profissional */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 print:hidden">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-indigo-50 text-indigo-600">
+                  <Layers className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                    Impressão de Prontuário por Categoria Profissional ({empresaContratante.nomeCurto})
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Selecione uma categoria para gerar a folha oficial com logomarca, SSVV e rodapé de assinatura.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {CATEGORIAS_IMPRESSAO.filter((c) => c.id !== 'individual').map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => abrirImpressaoPorCategoria(cat.id)}
+                    className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 border border-slate-200 hover:border-indigo-200 transition-all inline-flex items-center gap-1"
+                  >
+                    <Printer className="w-3 h-3 text-indigo-600" />
+                    <span>{cat.rotulo}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {evolucoes.length === 0 ? (
               <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
                 <FileText className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -1024,10 +1339,33 @@ export default function Prontuario360Detalhe() {
                             {new Date(ev.check_out).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
                             {ev.turno ? ` • Turno ${ev.turno}` : ''}
                           </p>
+                          {ev.responsavel_nome && (
+                            <p
+                              data-testid={`evolucao-responsavel-${ev.id}`}
+                              className="text-[11px] font-semibold text-indigo-700 mt-1 flex items-center gap-1"
+                            >
+                              <User className="w-3 h-3 text-indigo-600" />
+                              Familiar / Responsável no Plantão: <strong>{ev.responsavel_nome}</strong>
+                              {ev.responsavel_parentesco ? ` (${ev.responsavel_parentesco})` : ''}
+                            </p>
+                          )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-2.5 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            abrirImpressaoEvolucaoIndividual(ev.id);
+                          }}
+                          className="bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-2xs print:hidden"
+                          title="Imprimir esta evolução individual no formato oficial"
+                        >
+                          <Printer className="w-3.5 h-3.5 text-indigo-600" />
+                          Imprimir Evolução
+                        </button>
+
                         {ev.audio_url && (
                           <span className="bg-slate-100 text-slate-700 text-xs font-semibold px-2.5 py-1 rounded-lg flex items-center gap-1">
                             <Headphones className="w-3.5 h-3.5 text-indigo-600" />
@@ -1080,7 +1418,11 @@ export default function Prontuario360Detalhe() {
                               S — Subjetivo (Queixas & Relato)
                             </span>
                             <p className="text-xs text-slate-800 leading-relaxed">
-                              {ev.soap_subjetivo || 'Paciente calmo e colaborativo durante a visita, sem queixas álgicas agudas.'}
+                              {ev.soap_subjetivo ? (
+                                ev.soap_subjetivo
+                              ) : (
+                                <span className="italic text-slate-400">Não informado</span>
+                              )}
                             </p>
                           </div>
 
@@ -1090,7 +1432,11 @@ export default function Prontuario360Detalhe() {
                               O — Objetivo (Exame Físico & Sinais)
                             </span>
                             <p className="text-xs text-slate-800 leading-relaxed">
-                              {ev.soap_objetivo || ev.transcricao_revisada || 'Sinais vitais estáveis, dispositivos e curativos íntegros.'}
+                              {ev.soap_objetivo || ev.transcricao_revisada ? (
+                                ev.soap_objetivo || ev.transcricao_revisada
+                              ) : (
+                                <span className="italic text-slate-400">Não informado</span>
+                              )}
                             </p>
                           </div>
 
@@ -1100,7 +1446,11 @@ export default function Prontuario360Detalhe() {
                               A — Avaliação (Juízo Clínico)
                             </span>
                             <p className="text-xs text-slate-800 leading-relaxed">
-                              {ev.soap_avaliacao || 'Evolução clínica dentro do esperado para o plano de assistência domiciliar.'}
+                              {ev.soap_avaliacao ? (
+                                ev.soap_avaliacao
+                              ) : (
+                                <span className="italic text-slate-400">Não informado</span>
+                              )}
                             </p>
                           </div>
 
@@ -1110,29 +1460,49 @@ export default function Prontuario360Detalhe() {
                               P — Plano (Condutas & Medicações)
                             </span>
                             <p className="text-xs text-slate-800 leading-relaxed">
-                              {ev.soap_plano || 'Administradas medicações do horário e mantidos cuidados preventivos.'}
+                              {ev.soap_plano ? (
+                                ev.soap_plano
+                              ) : (
+                                <span className="italic text-slate-400">Não informado</span>
+                              )}
                             </p>
                           </div>
                         </div>
 
-                        {/* Selo Digital Criptográfico de Assinatura */}
+                        {/* Selo Digital Criptográfico de Assinatura + Ação de Impressão Individual */}
                         <div className="bg-emerald-50/70 border border-emerald-200 p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                          <div className="flex items-center gap-2">
-                            <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                          <div className="flex items-start gap-2">
+                            <ShieldCheck className="w-5 h-5 text-emerald-600 mt-0.5 shrink-0" />
                             <div>
                               <p className="font-bold text-emerald-950">Assinado Digitalmente pelo Profissional</p>
                               <p className="text-[11px] text-emerald-800">
                                 {ev.profissional_nome} ({ev.profissional_registro || 'Registro Válido'}) em{' '}
                                 {ev.data_assinatura ? new Date(ev.data_assinatura).toLocaleString('pt-BR') : 'Data registrada'}
                               </p>
+                              {ev.responsavel_nome && (
+                                <p className="text-[11px] font-bold text-indigo-900 mt-1">
+                                  Familiar / Responsável pela Finalização do Plantão: {ev.responsavel_nome}
+                                  {ev.responsavel_parentesco ? ` (${ev.responsavel_parentesco})` : ''}
+                                </p>
+                              )}
                             </div>
                           </div>
 
-                          {ev.assinatura_digital && (
-                            <div className="font-mono text-[10px] text-emerald-700 bg-white/80 px-3 py-1 rounded-lg border border-emerald-200 truncate max-w-xs">
-                              Selo: {ev.assinatura_digital}
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {ev.assinatura_digital && (
+                              <div className="font-mono text-[10px] text-emerald-700 bg-white/80 px-3 py-1 rounded-lg border border-emerald-200 truncate max-w-xs">
+                                Selo: {ev.assinatura_digital}
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => abrirImpressaoEvolucaoIndividual(ev.id)}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all inline-flex items-center gap-1.5 shadow-xs print:hidden"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                              Imprimir Evolução Individual
+                            </button>
+                          </div>
                         </div>
                       </div>
                     )}
@@ -1145,7 +1515,7 @@ export default function Prontuario360Detalhe() {
 
         {/* ABA 2: PRESCRIÇÕES MÉDICAS */}
         {activeTab === 'prescricoes' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {prescricoes.length === 0 ? (
               <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center">
                 <Pill className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -1162,56 +1532,206 @@ export default function Prontuario360Detalhe() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {prescricoes.map((pr) => (
-                  <div
-                    key={pr.id}
-                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-3 mb-2">
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {prescricoes.map((pr) => {
+                    const checagens = aprazamentos.filter((a) => String(a.prescricao_id) === String(pr.id));
+                    const administradas = checagens.filter((c) => c.status === 'Administrado').length;
+                    return (
+                      <div
+                        key={pr.id}
+                        className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm flex flex-col justify-between"
+                      >
                         <div>
-                          <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">
-                            Via {pr.via_administracao}
-                          </span>
-                          <h3 className="text-base font-bold text-slate-900 mt-1">{pr.medicamento}</h3>
-                          <p className="text-xs text-slate-600 font-semibold">{pr.dosagem}</p>
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div>
+                              <span className="bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold px-2 py-0.5 rounded-md">
+                                Via {pr.via_administracao}
+                              </span>
+                              <h3 className="text-base font-bold text-slate-900 mt-1">{pr.medicamento}</h3>
+                              <p className="text-xs text-slate-600 font-semibold">{pr.dosagem}</p>
+                            </div>
+
+                            <span
+                              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                                pr.status === 'Ativa'
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                  : 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {pr.status}
+                            </span>
+                          </div>
+
+                          <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1 my-3">
+                            <p className="text-slate-600">
+                              Frequência:{' '}
+                              <strong className="text-slate-800">A cada {pr.frequencia_horas}h</strong>
+                            </p>
+                            {pr.horarios_padrao && pr.horarios_padrao.length > 0 && (
+                              <p className="text-slate-600">
+                                Horários:{' '}
+                                <strong className="text-indigo-600 font-mono">
+                                  {pr.horarios_padrao.join(' • ')}
+                                </strong>
+                              </p>
+                            )}
+                            {pr.instrucoes && (
+                              <p className="text-slate-600">
+                                Instruções: <span className="text-slate-800 italic">{pr.instrucoes}</span>
+                              </p>
+                            )}
+                            {pr.medico_nome && (
+                              <p className="text-slate-500 pt-1 border-t border-slate-200/60 text-[11px]">
+                                Prescrito por: <strong className="text-slate-700">{pr.medico_nome}</strong>
+                                {pr.medico_crm ? ` (${pr.medico_crm})` : ''}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Checagens da Prescrição */}
+                          {checagens.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-slate-100">
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[11px] font-bold text-slate-700">
+                                  Checagens ({administradas}/{checagens.length} administradas)
+                                </span>
+                              </div>
+                              <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                {checagens.map((ch) => (
+                                  <div
+                                    key={ch.id}
+                                    className={`p-2 rounded-lg text-xs border flex flex-col gap-0.5 ${
+                                      ch.status === 'Administrado'
+                                        ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                                        : ch.status === 'Nao_Administrado'
+                                        ? 'bg-rose-50/70 border-rose-200 text-rose-950'
+                                        : 'bg-slate-50 border-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between font-semibold">
+                                      <span className="font-mono text-[11px]">
+                                        {new Date(ch.horario_previsto).toLocaleDateString('pt-BR')} às{' '}
+                                        {new Date(ch.horario_previsto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                      <span
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                          ch.status === 'Administrado'
+                                            ? 'bg-emerald-100 text-emerald-800'
+                                            : ch.status === 'Nao_Administrado'
+                                            ? 'bg-rose-100 text-rose-800'
+                                            : 'bg-slate-200 text-slate-700'
+                                        }`}
+                                      >
+                                        {ch.status === 'Administrado' ? 'Administrado' : ch.status === 'Nao_Administrado' ? 'Não Administrado' : 'Pendente'}
+                                      </span>
+                                    </div>
+                                    {ch.horario_executado && (
+                                      <p className="text-[11px] text-slate-600">
+                                        Checado às {new Date(ch.horario_executado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                        {ch.profissional_nome ? ` por ${ch.profissional_nome}` : ''}
+                                      </p>
+                                    )}
+                                    {ch.justificativa && (
+                                      <p className="text-[11px] text-rose-700 font-medium">
+                                        Motivo: {ch.justificativa}
+                                      </p>
+                                    )}
+                                    {ch.assinatura_digital && (
+                                      <p className="font-mono text-[9px] text-slate-450 truncate">
+                                        Selo: {ch.assinatura_digital}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-
-                        <span
-                          className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
-                            pr.status === 'Ativa'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-600'
-                          }`}
-                        >
-                          {pr.status}
-                        </span>
                       </div>
+                    );
+                  })}
+                </div>
 
-                      <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1 my-3">
-                        <p className="text-slate-600">
-                          Frequência:{' '}
-                          <strong className="text-slate-800">A cada {pr.frequencia_horas}h</strong>
+                {/* Tabela Geral de Checagens e Aprazamentos do Paciente */}
+                {aprazamentos.length > 0 && (
+                  <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mt-6">
+                    <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+                      <div>
+                        <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                          Registro & Auditoria de Administração de Medicamentos ({aprazamentos.length} horários)
+                        </h3>
+                        <p className="text-xs text-slate-500 mt-0.5">
+                          Dados reais registrados pela equipe de enfermagem à beira do leito.
                         </p>
-                        {pr.horarios_padrao && (
-                          <p className="text-slate-600">
-                            Horários:{' '}
-                            <strong className="text-indigo-600 font-mono">
-                              {pr.horarios_padrao.join(' • ')}
-                            </strong>
-                          </p>
-                        )}
-                        {pr.instrucoes && (
-                          <p className="text-slate-600">
-                            Instruções: <span className="text-slate-800 italic">{pr.instrucoes}</span>
-                          </p>
-                        )}
                       </div>
                     </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs text-slate-700">
+                        <thead className="bg-slate-50 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                          <tr>
+                            <th className="py-3 px-4">Horário Previsto</th>
+                            <th className="py-3 px-4">Medicamento / Dosagem</th>
+                            <th className="py-3 px-4 text-center">Status</th>
+                            <th className="py-3 px-4">Executado Em</th>
+                            <th className="py-3 px-4">Profissional</th>
+                            <th className="py-3 px-4">Justificativa / Observação</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {aprazamentos.map((a) => (
+                            <tr key={a.id} className="hover:bg-slate-50/60 transition-colors">
+                              <td className="py-3 px-4 font-mono font-medium text-slate-900 whitespace-nowrap">
+                                {new Date(a.horario_previsto).toLocaleDateString('pt-BR')} {new Date(a.horario_previsto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className="font-bold text-slate-900">{a.medicamento || 'Medicamento'}</span>
+                                {(a.dosagem || a.via_administracao) && (
+                                  <span className="text-slate-500 block text-[11px]">
+                                    {a.dosagem} • Via {a.via_administracao || 'Oral'}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    a.status === 'Administrado'
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                      : a.status === 'Nao_Administrado'
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                  }`}
+                                >
+                                  {a.status === 'Administrado' ? 'Administrado' : a.status === 'Nao_Administrado' ? 'Não Administrado' : 'Pendente'}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 whitespace-nowrap text-slate-600">
+                                {a.horario_executado
+                                  ? `${new Date(a.horario_executado).toLocaleDateString('pt-BR')} ${new Date(a.horario_executado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                                  : '--'}
+                              </td>
+                              <td className="py-3 px-4 text-slate-800 font-medium">
+                                {a.profissional_nome || '--'}
+                              </td>
+                              <td className="py-3 px-4 text-slate-600">
+                                {a.justificativa ? (
+                                  <span className="text-rose-700 font-medium">{a.justificativa}</span>
+                                ) : a.status === 'Administrado' ? (
+                                  <span className="text-emerald-700">Dose administrada</span>
+                                ) : (
+                                  '--'
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </div>
         )}
@@ -1442,6 +1962,29 @@ export default function Prontuario360Detalhe() {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Médico Prescritor</label>
+                  <input
+                    type="text"
+                    placeholder="Nome do Médico"
+                    value={novaPrescricaoForm.medico_nome}
+                    onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, medico_nome: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">CRM</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: CRM-SP 123456"
+                    value={novaPrescricaoForm.medico_crm}
+                    onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, medico_crm: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+              </div>
+
               <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
                 <button
                   type="button"
@@ -1599,6 +2142,18 @@ export default function Prontuario360Detalhe() {
               </div>
 
               <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Auditor / Responsável Clínico *</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Nome do Auditor ou Responsável"
+                  value={novoParecerForm.auditor_nome}
+                  onChange={(e) => setNovoParecerForm({ ...novoParecerForm, auditor_nome: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                />
+              </div>
+
+              <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Descrição / Justificativa Clínica *</label>
                 <textarea
                   required
@@ -1631,6 +2186,196 @@ export default function Prontuario360Detalhe() {
           </div>
         </div>
       )}
+      {/* Modal: Gerenciar Familiares / Responsáveis pela Finalização do Plantão */}
+      {isResponsaveisModalOpen && (
+        <div
+          data-testid="modal-responsaveis-paciente"
+          className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+        >
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+                  <User className="w-5 h-5 text-indigo-600" />
+                  Familiares / Responsáveis pela Finalização do Plantão
+                </h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Cadastre os familiares ou responsáveis autorizados que o cooperado poderá selecionar ao finalizar o atendimento no domicílio.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResponsaveisModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSalvarResponsaveisPaciente} className="space-y-4">
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-3">
+                <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">
+                  Adicionar Novo Familiar / Responsável
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5">
+                  <div className="sm:col-span-5">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Nome Completo</label>
+                    <input
+                      type="text"
+                      data-testid="input-novo-responsavel-nome"
+                      placeholder="Ex: Roberto Albuquerque"
+                      value={novoResponsavelForm.nome}
+                      onChange={(e) => setNovoResponsavelForm({ ...novoResponsavelForm, nome: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                    />
+                  </div>
+                  <div className="sm:col-span-4">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Parentesco / Vínculo</label>
+                    <select
+                      data-testid="select-novo-responsavel-parentesco"
+                      value={novoResponsavelForm.parentesco}
+                      onChange={(e) => setNovoResponsavelForm({ ...novoResponsavelForm, parentesco: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800"
+                    >
+                      <option value="Filho(a)">Filho(a)</option>
+                      <option value="Cônjuge">Cônjuge</option>
+                      <option value="Neto(a)">Neto(a)</option>
+                      <option value="Irmão(ã)">Irmão(ã)</option>
+                      <option value="Sobrinho(a)">Sobrinho(a)</option>
+                      <option value="Cuidador(a) Familiar">Cuidador(a) Familiar</option>
+                      <option value="Responsável Legal">Responsável Legal</option>
+                    </select>
+                  </div>
+                  <div className="sm:col-span-3">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Telefone / WhatsApp</label>
+                    <input
+                      type="text"
+                      data-testid="input-novo-responsavel-telefone"
+                      placeholder="(85) 99999-0000"
+                      value={novoResponsavelForm.telefone}
+                      onChange={(e) => setNovoResponsavelForm({ ...novoResponsavelForm, telefone: e.target.value })}
+                      className="w-full px-2.5 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    data-testid="btn-adicionar-responsavel-lista"
+                    onClick={adicionarResponsavelNaLista}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-xs"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Incluir na Lista de Responsáveis
+                  </button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700">
+                    Responsáveis Autorizados ({responsaveisEdicao.length})
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    Disponíveis para seleção pelo cooperado no encerramento do plantão
+                  </span>
+                </div>
+
+                {responsaveisEdicao.length === 0 ? (
+                  <div className="p-4 text-center bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-500">
+                    Nenhum responsável cadastrado. Adicione pelo menos um familiar acima.
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1" data-testid="modal-lista-responsaveis">
+                    {responsaveisEdicao.map((r) => (
+                      <div
+                        key={r.id}
+                        className="p-3 rounded-2xl border border-slate-200 bg-white flex items-center justify-between gap-3 shadow-2xs"
+                      >
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900">{r.nome}</span>
+                            <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-200">
+                              {r.parentesco}
+                            </span>
+                            {r.principal && (
+                              <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md">
+                                Principal
+                              </span>
+                            )}
+                          </div>
+                          {r.telefone && (
+                            <p className="text-[11px] text-slate-500 mt-0.5">Tel/WhatsApp: {r.telefone}</p>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          {!r.principal && (
+                            <button
+                              type="button"
+                              onClick={() => definirResponsavelPrincipal(r.id)}
+                              className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 px-2 py-1 rounded-lg hover:bg-indigo-50"
+                            >
+                              Tornar Principal
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removerResponsavelDaLista(r.id)}
+                            className="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50"
+                            title="Remover responsável"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsResponsaveisModalOpen(false)}
+                  className="px-3.5 py-2 bg-slate-100 text-slate-700 rounded-xl text-xs font-semibold"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  data-testid="btn-salvar-responsaveis-paciente"
+                  disabled={salvandoResponsaveis}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md transition-all flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {salvandoResponsaveis ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle className="w-3.5 h-3.5" />
+                  )}
+                  Salvar Responsáveis do Paciente
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Impressão Oficial por Categoria Profissional e Evolução Individual */}
+      <ImpressaoProntuarioModal
+        aberto={isImpressaoOpen}
+        onFechar={() => setIsImpressaoOpen(false)}
+        paciente={paciente}
+        evolucoes={evolucoes}
+        prescricoes={prescricoes}
+        aprazamentos={aprazamentos}
+        sinaisVitais={sinaisVitais}
+        categoriaInicial={categoriaImpressaoInicial}
+        evolucaoIndividualId={evolucaoIndividualImpressaoId}
+        empresaSelecionadaId={empresaContratante.id}
+        onAlterarEmpresa={(novaEmpresa) => handleTrocarEmpresaContratante(novaEmpresa)}
+      />
+
       {/* Toast Flutuante de Confirmação de Cópia */}
       {toastDetalhe && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900/95 backdrop-blur-md text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200 max-w-md">

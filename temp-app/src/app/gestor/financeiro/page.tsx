@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
+import { jsPDF } from 'jspdf';
 import { fetchFullDataset } from '@/lib/client-fetch';
 import {
   Users,
@@ -18,6 +19,7 @@ import {
   Edit2,
   Save,
   Printer,
+  Download,
   ChevronDown,
 } from 'lucide-react';
 
@@ -92,6 +94,8 @@ export default function FinanceiroPage() {
   // Selection & Modal State
   const [selectedServicos, setSelectedServicos] = useState<string[]>([]);
   const [showRpaModal, setShowRpaModal] = useState(false);
+  const [rpaRetencoes, setRpaRetencoes] = useState<string>('0');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Inline editing state
   const [editingServicoId, setEditingServicoId] = useState<string | null>(null);
@@ -126,6 +130,8 @@ export default function FinanceiroPage() {
       setServicos([]);
       setBankAccounts([]);
       setSelectedServicos([]);
+      setShowRpaModal(false);
+      setRpaRetencoes('0');
       return;
     }
 
@@ -137,6 +143,8 @@ export default function FinanceiroPage() {
     const fetchCooperadoData = async () => {
       setLoadingData(true);
       setSelectedServicos([]);
+      setShowRpaModal(false);
+      setRpaRetencoes('0');
       try {
         // Fetch services with date boundaries
         let url = `/api/gestor/financeiro/servicos?cooperadoId=${selectedCooperadoId}`;
@@ -207,9 +215,13 @@ export default function FinanceiroPage() {
     .reduce((sum, s) => sum + (s.num_valor_cooperado || 0), 0);
 
   // Sum of checked services that are pending payment
-  const selectedSum = filteredServicos
-    .filter(s => selectedServicos.includes(s._id) && !s.bool_pago)
-    .reduce((sum, s) => sum + (s.num_valor_cooperado || 0), 0);
+  const selectedUnpaidServicos = filteredServicos.filter(
+    s => selectedServicos.includes(s._id) && !s.bool_pago
+  );
+  const selectedSum = selectedUnpaidServicos.reduce(
+    (sum, s) => sum + (s.num_valor_cooperado || 0),
+    0
+  );
 
   // Handle row selection
   const handleSelectRow = (id: string) => {
@@ -237,14 +249,15 @@ export default function FinanceiroPage() {
 
   // Toggle paid status for selected
   const handleMarkAsPaid = async () => {
-    if (selectedServicos.length === 0) return;
-    if (!confirm(`Deseja marcar os ${selectedServicos.length} serviços selecionados como pagos?`)) return;
+    if (selectedUnpaidServicos.length === 0) return;
+    if (!confirm(`Deseja marcar os ${selectedUnpaidServicos.length} serviços selecionados como pagos?`)) return;
 
+    const targetIds = selectedUnpaidServicos.map(s => s._id);
     setIsSaving(true);
     try {
       // Process updates sequentially or concurrently
       await Promise.all(
-        selectedServicos.map(servicoId =>
+        targetIds.map(servicoId =>
           axios.patch('/api/gestor/financeiro/servicos', {
             servicoId,
             bool_pago: true
@@ -254,7 +267,7 @@ export default function FinanceiroPage() {
 
       // Refresh services local state
       setServicos(prev => prev.map(s =>
-        selectedServicos.includes(s._id) ? { ...s, bool_pago: true } : s
+        targetIds.includes(s._id) ? { ...s, bool_pago: true } : s
       ));
       setSelectedServicos([]);
       alert('Serviços marcados como pagos com sucesso!');
@@ -302,13 +315,324 @@ export default function FinanceiroPage() {
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return '-';
     const date = new Date(dateStr);
+    if (isNaN(date.getTime())) return dateStr;
     return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const formatDateTimeCompact = (dateStr?: string) => {
+    return formatDate(dateStr).replace(',', '');
+  };
+
+  const formatPeriodDate = (dateStr?: string) => {
+    if (!dateStr) return '-';
+    const parts = dateStr.split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return dateStr;
   };
 
   const getScaleLabel = (scaleId?: string) => {
     if (!scaleId) return 'Sem Escala';
     const esc = escalas.find(e => e._id === scaleId);
     return esc?.txt_anotacoes || `Escala #${esc?.num_id || scaleId.substring(0, 6)}`;
+  };
+
+  // RPA Selected Services & Financial Breakdown
+  // Uses checked unpaid services; if all filtered services in the period are already paid, falls back to them so RPA can still be exported.
+  const rpaSelectedServicos =
+    selectedUnpaidServicos.length > 0
+      ? selectedUnpaidServicos
+      : unpaidFilteredIds.length === 0
+        ? filteredServicos
+        : [];
+  const rpaValorBruto = rpaSelectedServicos.reduce((sum, s) => sum + (s.num_valor_cooperado || 0), 0);
+  const rawDescontos = Math.max(0, parseFloat((rpaRetencoes || '0').replace(',', '.')) || 0);
+  const rpaValorDescontos = Math.min(rpaValorBruto, rawDescontos);
+  const rpaValorLiquido = Math.max(0, rpaValorBruto - rpaValorDescontos);
+
+  const sanitizeFilePart = (str: string) =>
+    (str || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9_-]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+
+  const getRpaFileName = () => {
+    const safeNome = sanitizeFilePart(activeCooperado?.txt_nomeCompleto || 'Cooperado') || 'Cooperado';
+    const rawPeriodo =
+      startDate && endDate
+        ? `${startDate}_a_${endDate}`
+        : startDate || endDate || new Date().toISOString().slice(0, 10);
+    const safePeriodo = sanitizeFilePart(rawPeriodo) || 'Periodo';
+    return `RPA_${safeNome}_${safePeriodo}.pdf`;
+  };
+
+  // Direct PDF Generation & Download via jsPDF
+  const handleDownloadRpaPdf = () => {
+    if (!activeCooperado) return;
+    setIsGeneratingPdf(true);
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const marginX = 14;
+      const pageWidth = 210;
+      const contentWidth = pageWidth - marginX * 2;
+      const bottomLimit = 276;
+      let y = 16;
+
+      const drawInstitutionalHeader = (isContinuation = false) => {
+        doc.setFillColor(248, 250, 252);
+        doc.setDrawColor(30, 41, 59);
+        doc.setLineWidth(0.4);
+        doc.rect(marginX, y, contentWidth, isContinuation ? 18 : 28, 'FD');
+
+        doc.setTextColor(15, 23, 42);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.text(
+          isContinuation
+            ? 'RECIBO DE PAGAMENTO DE AUTÔNOMO - RPA (CONTINUAÇÃO)'
+            : 'RECIBO DE PAGAMENTO DE AUTÔNOMO - RPA',
+          pageWidth / 2,
+          y + 7,
+          { align: 'center' }
+        );
+
+        doc.setFontSize(9);
+        doc.text(
+          'MULTCARE - COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DE SAÚDE',
+          pageWidth / 2,
+          y + 13,
+          { align: 'center' }
+        );
+
+        if (!isContinuation) {
+          doc.setFont('Helvetica', 'normal');
+          doc.setFontSize(7.5);
+          doc.setTextColor(51, 65, 85);
+          doc.text(
+            'CNPJ: 11.426.910/0001-57 | Rua 802, Qd. 801, nº 99, Lote 10, Setor Leste Vila Nova - Goiânia/GO - CEP: 74.633-110',
+            pageWidth / 2,
+            y + 18.5,
+            { align: 'center' }
+          );
+          doc.setFont('Helvetica', 'bold');
+          doc.text(
+            `Período de Apuração: ${formatPeriodDate(startDate)} a ${formatPeriodDate(endDate)}   |   Emissão: ${new Date().toLocaleDateString('pt-BR')}`,
+            pageWidth / 2,
+            y + 24,
+            { align: 'center' }
+          );
+          y += 33;
+        } else {
+          y += 23;
+        }
+      };
+
+      const drawTableHeader = () => {
+        doc.setFillColor(30, 41, 59);
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('Helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.rect(marginX, y, contentWidth, 7, 'F');
+        doc.text('Plantão / Serviço', marginX + 2, y + 4.8);
+        doc.text('Escala', marginX + 78, y + 4.8);
+        doc.text('Data Realização', marginX + 125, y + 4.8);
+        doc.text('Valor Bruto', marginX + contentWidth - 2, y + 4.8, { align: 'right' });
+        y += 7;
+      };
+
+      drawInstitutionalHeader(false);
+
+      // Dados da Fonte Pagadora & Favorecido (Cooperado)
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
+      doc.rect(marginX, y, contentWidth, 30);
+      doc.line(marginX + contentWidth / 2, y, marginX + contentWidth / 2, y + 30);
+
+      // Left box: Fonte Pagadora
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text('FONTE PAGADORA (COOPERATIVA)', marginX + 3, y + 5);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text('MULTCARE COOPERATIVA DE TRABALHO', marginX + 3, y + 10.5);
+      doc.text('CNPJ: 11.426.910/0001-57', marginX + 3, y + 15.5);
+      doc.text('Rua 802, Qd. 801, nº 99, Setor Leste Vila Nova', marginX + 3, y + 20.5);
+      doc.text('Goiânia/GO - CEP: 74.633-110', marginX + 3, y + 25.5);
+
+      // Right box: Favorecido (Cooperado)
+      const rightX = marginX + contentWidth / 2 + 3;
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.text('FAVORECIDO (COOPERADO)', rightX, y + 5);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8);
+      const coopNameLines = doc.splitTextToSize(activeCooperado.txt_nomeCompleto || '-', contentWidth / 2 - 6);
+      doc.text(coopNameLines[0] || '-', rightX, y + 10.5);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.text(`CPF: ${activeCooperado.txt_CPF || '-'}`, rightX, y + 15.5);
+      doc.text(doc.splitTextToSize(`E-mail: ${activeCooperado.txt_email || '-'}`, contentWidth / 2 - 6)[0] || '-', rightX, y + 20.5);
+      const bankLine =
+        bankAccounts.length > 0
+          ? `Banco: ${bankAccounts[0].txt_banco || '-'} | Ag: ${bankAccounts[0].txt_agencia || '-'} | CC: ${bankAccounts[0].txt_nConta || '-'}`
+          : 'Dados Bancários: Não vinculados';
+      doc.text(doc.splitTextToSize(bankLine, contentWidth / 2 - 6)[0] || bankLine, rightX, y + 25.5);
+
+      y += 35;
+
+      // Section Title: Services Table
+      doc.setTextColor(15, 23, 42);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.text(`DETALHAMENTO DOS SERVIÇOS / PLANTÕES DO PERÍODO (${rpaSelectedServicos.length} REGISTROS)`, marginX, y);
+      y += 3;
+
+      drawTableHeader();
+
+      if (rpaSelectedServicos.length === 0) {
+        doc.setFont('Helvetica', 'italic');
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.rect(marginX, y, contentWidth, 8);
+        doc.text('Nenhum serviço selecionado para o período.', marginX + 3, y + 5.2);
+        y += 8;
+      } else {
+        rpaSelectedServicos.forEach((serv, idx) => {
+          doc.setFont('Helvetica', 'normal');
+          doc.setFontSize(7.5);
+          const servTitle = `${serv.txt_nome || 'Plantão'} (#${serv.num_id || serv._id.substring(0, 6)})`;
+          const scaleTitle = getScaleLabel(serv.fk_escala);
+          const dateTitle = formatDateTimeCompact(serv.date_fixa_entrada);
+
+          const servLines = doc.splitTextToSize(servTitle, 73).slice(0, 2);
+          const scaleLines = doc.splitTextToSize(scaleTitle, 44).slice(0, 2);
+          const maxRowLines = Math.max(1, servLines.length, scaleLines.length);
+          const rowHeight = maxRowLines > 1 ? 10.5 : 7;
+
+          if (y + rowHeight > bottomLimit) {
+            doc.addPage();
+            y = 16;
+            drawInstitutionalHeader(true);
+            drawTableHeader();
+            doc.setFont('Helvetica', 'normal');
+            doc.setFontSize(7.5);
+          }
+
+          if (idx % 2 === 1) {
+            doc.setFillColor(248, 250, 252);
+            doc.rect(marginX, y, contentWidth, rowHeight, 'F');
+          }
+          doc.setDrawColor(226, 232, 240);
+          doc.rect(marginX, y, contentWidth, rowHeight, 'S');
+
+          doc.setTextColor(15, 23, 42);
+          doc.text(servLines, marginX + 2, y + 4.4);
+          doc.text(scaleLines, marginX + 78, y + 4.4);
+          doc.text(dateTitle, marginX + 125, y + 4.7);
+
+          doc.setFont('Helvetica', 'bold');
+          doc.text(formatCurrency(serv.num_valor_cooperado), marginX + contentWidth - 2, y + 4.7, { align: 'right' });
+          y += rowHeight;
+        });
+      }
+
+      y += 5;
+
+      // Pre-compute declaration lines to know exact height of closing block
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      const declaracaoTexto = `Declaro que recebi da MULTCARE - COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DE SAÚDE (CNPJ 11.426.910/0001-57) a importância líquida de ${formatCurrency(rpaValorLiquido)} (valor bruto de ${formatCurrency(rpaValorBruto)} menos retenções/descontos de ${formatCurrency(rpaValorDescontos)}), referente à produção cooperativa dos plantões e serviços discriminados neste recibo no período de ${formatPeriodDate(startDate)} a ${formatPeriodDate(endDate)}, dando plena, geral e irrevogável quitação.`;
+      const declaracaoLinhas = doc.splitTextToSize(declaracaoTexto, contentWidth);
+      const closingBlockHeight = 30 + declaracaoLinhas.length * 4.2 + 14 + 9;
+
+      // Ensure space for Financial Summary + Disclaimer + Signatures
+      if (y + closingBlockHeight > bottomLimit) {
+        doc.addPage();
+        y = 16;
+        drawInstitutionalHeader(true);
+      }
+
+      // Quadro de Resumo Financeiro (Bruto, Retenções/Descontos, Líquido)
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(30, 41, 59);
+      doc.setLineWidth(0.35);
+      doc.rect(marginX, y, contentWidth, 24, 'FD');
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text('Valor Bruto dos Serviços / Plantões:', marginX + 4, y + 6.5);
+      doc.setFont('Helvetica', 'bold');
+      doc.text(formatCurrency(rpaValorBruto), marginX + contentWidth - 4, y + 6.5, { align: 'right' });
+
+      doc.setFont('Helvetica', 'normal');
+      doc.text('Retenções / Descontos (INSS / IRRF / Taxa Cooperativa):', marginX + 4, y + 13);
+      doc.setFont('Helvetica', 'bold');
+      doc.text(`- ${formatCurrency(rpaValorDescontos)}`, marginX + contentWidth - 4, y + 13, { align: 'right' });
+
+      doc.setDrawColor(148, 163, 184);
+      doc.line(marginX + 2, y + 15.8, marginX + contentWidth - 2, y + 15.8);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('VALOR LÍQUIDO A RECEBER:', marginX + 4, y + 21.5);
+      doc.text(formatCurrency(rpaValorLiquido), marginX + contentWidth - 4, y + 21.5, { align: 'right' });
+
+      y += 30;
+
+      // Declaração de Quitação
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(30, 41, 59);
+      doc.text(declaracaoLinhas, marginX, y);
+      y += declaracaoLinhas.length * 4.2 + 14;
+
+      // Local, Data e Linha de Assinatura
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.text(`Goiânia/GO, ${new Date().toLocaleDateString('pt-BR')}`, marginX, y);
+
+      const sigWidth = 82;
+      const sigLineStartX = marginX + contentWidth - sigWidth;
+      const sigLineEndX = marginX + contentWidth;
+      const sigCenter = (sigLineStartX + sigLineEndX) / 2;
+      doc.setDrawColor(15, 23, 42);
+      doc.setLineWidth(0.4);
+      doc.line(sigLineStartX, y - 2, sigLineEndX, y - 2);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(8.5);
+      const sigName = doc.splitTextToSize(activeCooperado.txt_nomeCompleto || 'Cooperado', sigWidth)[0] || 'Cooperado';
+      doc.text(sigName, sigCenter, y + 3, { align: 'center' });
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      const sigSub = doc.splitTextToSize(`CPF: ${activeCooperado.txt_CPF || '-'} - Assinatura do Cooperado`, sigWidth + 6)[0];
+      doc.text(sigSub, sigCenter, y + 7.2, { align: 'center' });
+
+      // Page numbers in footer
+      const totalPagesCount = doc.getNumberOfPages();
+      for (let p = 1; p <= totalPagesCount; p++) {
+        doc.setPage(p);
+        doc.setFont('Helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(100, 116, 139);
+        doc.line(marginX, 284, marginX + contentWidth, 284);
+        doc.text('Documento emitido eletronicamente pelo Sistema GestorCoop / Multcare', marginX, 288);
+        doc.text(`Página ${p} de ${totalPagesCount}`, marginX + contentWidth, 288, { align: 'right' });
+      }
+
+      doc.save(getRpaFileName());
+    } catch (err) {
+      console.error('Erro ao gerar PDF do RPA:', err);
+      alert('Ocorreu um erro ao gerar o PDF do RPA.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   // Filter cooperados by search input
@@ -323,25 +647,71 @@ export default function FinanceiroPage() {
       {/* Print styles override (only prints print-area when printing) */}
       <style jsx global>{`
         @media print {
-          body * {
-            visibility: hidden;
+          @page {
+            size: A4 portrait;
+            margin: 12mm;
           }
-          #print-area, #print-area * {
-            visibility: visible;
+          html, body {
+            background: white !important;
+            color: black !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+          }
+          aside,
+          header,
+          nav,
+          .rpa-dashboard-content,
+          .rpa-modal-header {
+            display: none !important;
+          }
+          body > div,
+          body > div > div,
+          main,
+          .rpa-modal-backdrop,
+          .rpa-modal-container {
+            position: static !important;
+            display: block !important;
+            overflow: visible !important;
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-width: 100% !important;
+            width: 100% !important;
           }
           #print-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            background: white;
-            color: black;
-            padding: 30px;
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            background: white !important;
+            color: black !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            overflow: visible !important;
+          }
+          #print-area table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+          }
+          #print-area thead {
+            display: table-header-group !important;
+          }
+          #print-area tr,
+          #print-area .rpa-avoid-break {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
           }
         }
       `}</style>
 
-      <div className="max-w-7xl mx-auto">
+      <div className="rpa-dashboard-content max-w-7xl mx-auto print:hidden">
 
         {/* Page Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
@@ -615,7 +985,7 @@ export default function FinanceiroPage() {
                     {/* Emit RPA Action */}
                     <button
                       onClick={() => setShowRpaModal(true)}
-                      disabled={selectedServicos.length === 0}
+                      disabled={rpaSelectedServicos.length === 0}
                       className="bg-sky-500 hover:bg-sky-600 disabled:bg-indigo-850 disabled:text-indigo-400 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition-all"
                     >
                       <FileText className="w-4 h-4" />
@@ -625,7 +995,7 @@ export default function FinanceiroPage() {
                     {/* Bulk Payment Confirmation */}
                     <button
                       onClick={handleMarkAsPaid}
-                      disabled={selectedServicos.length === 0 || isSaving}
+                      disabled={selectedUnpaidServicos.length === 0 || isSaving}
                       className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-indigo-850 disabled:text-indigo-400 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-sm flex items-center justify-center gap-2 transition-all"
                     >
                       {isSaving ? (
@@ -796,101 +1166,168 @@ export default function FinanceiroPage() {
 
       {/* RPA MODAL LAYOUT */}
       {showRpaModal && activeCooperado && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-center items-start overflow-y-auto p-4 md:p-8">
-          <div className="bg-white border border-slate-300 rounded-xl max-w-3xl w-full shadow-2xl relative my-8">
+        <div className="rpa-modal-backdrop fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex justify-center items-start overflow-y-auto p-3 md:p-5">
+          <div className="rpa-modal-container bg-white border border-slate-300 rounded-xl max-w-3xl w-full shadow-2xl relative my-2">
 
             {/* Modal Header Controls (Not Printed) */}
-            <div className="p-4 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-xl print:hidden">
-              <span className="font-bold text-slate-700 text-sm flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-indigo-600" />
-                Visualização do Recibo de RPA
-              </span>
-              <div className="flex items-center gap-3">
+            <div className="rpa-modal-header px-4 py-3 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-slate-50 rounded-t-xl print:hidden">
+              <div>
+                <span className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-indigo-600" />
+                  Contracheque / Recibo de Pagamento de Autônomo (RPA)
+                </span>
+                <p className="text-[11px] text-slate-500 mt-0.5 font-mono">
+                  Arquivo: {getRpaFileName()}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto justify-end">
+                <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-lg px-2.5 py-1">
+                  <label htmlFor="rpa-retencoes-input" className="text-[10px] font-bold text-slate-500 uppercase">
+                    Retenções/Desc. (R$):
+                  </label>
+                  <input
+                    id="rpa-retencoes-input"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={rpaRetencoes}
+                    onChange={(e) => setRpaRetencoes(e.target.value)}
+                    className="w-20 text-xs font-bold text-slate-800 focus:outline-none text-right"
+                    placeholder="0,00"
+                  />
+                </div>
                 <button
-                  onClick={() => window.print()}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-1.5 transition-all"
+                  type="button"
+                  data-testid="btn-download-rpa-pdf"
+                  onClick={handleDownloadRpaPdf}
+                  disabled={isGeneratingPdf}
+                  className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-md flex items-center gap-1.5 transition-all"
                 >
-                  <Printer className="w-3.5 h-3.5" />
-                  Imprimir / Salvar PDF
+                  {isGeneratingPdf ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  Baixar PDF Direto
                 </button>
                 <button
+                  type="button"
+                  data-testid="btn-print-rpa"
+                  onClick={() => window.print()}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold shadow flex items-center gap-1.5 transition-all"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  Imprimir
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowRpaModal(false)}
                   className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg bg-white border border-slate-200 transition-all"
+                  title="Fechar modal"
                 >
-                  <X className="w-4.5 h-4.5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
 
             {/* Printable Document Body */}
-            <div id="print-area" className="p-8 md:p-12 bg-white text-black font-mono text-sm leading-relaxed">
-              <div className="text-center border-b-4 border-double border-black pb-4 mb-6">
+            <div id="print-area" className="p-6 md:p-8 bg-white text-black font-mono text-sm leading-relaxed">
+              <div className="text-center border-b-4 border-double border-black pb-3 mb-4">
                 <h2 className="text-xl font-extrabold m-0 uppercase">RECIBO DE PAGAMENTO DE AUTÔNOMO - RPA</h2>
-                <span className="text-[10px] font-bold block mt-1">EMISSOR: COOPERATIVA DE TRABALHO GESTORCOOP LTDA - CNPJ: 12.345.678/0001-99</span>
+                <span className="text-xs font-bold block mt-1">
+                  MULTCARE - COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DE SAÚDE
+                </span>
+                <span className="text-[10px] block mt-0.5">
+                  CNPJ: 11.426.910/0001-57 | Rua 802, Qd. 801, nº 99, Lote 10, Setor Leste Vila Nova - Goiânia/GO - CEP: 74.633-110
+                </span>
+                <span className="text-[11px] font-bold block mt-1">
+                  Período de Apuração: {formatPeriodDate(startDate)} a {formatPeriodDate(endDate)}
+                </span>
               </div>
 
               {/* Parties */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-dashed border-black pb-4 mb-6 text-xs">
+              <div className="rpa-avoid-break grid grid-cols-1 md:grid-cols-2 gap-6 border-b border-dashed border-black pb-3.5 mb-4 text-xs">
                 <div>
-                  <h4 className="font-bold uppercase mb-1">Fonte Pagadora (Contratante)</h4>
-                  <p className="m-0 font-bold">COOPERATIVA GESTORCOOP</p>
-                  <p className="m-0">Endereço: Avenida Paulista, nº 1000, Bela Vista</p>
-                  <p className="m-0">São Paulo/SP - CEP: 01310-100</p>
+                  <h4 className="font-bold uppercase mb-1">Fonte Pagadora (Cooperativa)</h4>
+                  <p className="m-0 font-bold">MULTCARE COOPERATIVA DE TRABALHO</p>
+                  <p className="m-0">CNPJ: 11.426.910/0001-57</p>
+                  <p className="m-0">Endereço: Rua 802, Qd. 801, nº 99, Setor Leste Vila Nova</p>
+                  <p className="m-0">Goiânia/GO - CEP: 74.633-110</p>
                 </div>
                 <div>
                   <h4 className="font-bold uppercase mb-1">Favorecido (Cooperado)</h4>
                   <p className="m-0 font-bold">{activeCooperado.txt_nomeCompleto}</p>
-                  <p className="m-0">CPF: {activeCooperado.txt_CPF}</p>
-                  {bankAccounts.length > 0 && (
-                    <p className="m-0">Banco: {bankAccounts[0].txt_banco} | Ag: {bankAccounts[0].txt_agencia} | CC: {bankAccounts[0].txt_nConta}</p>
+                  <p className="m-0">CPF: {activeCooperado.txt_CPF || '-'}</p>
+                  <p className="m-0">E-mail: {activeCooperado.txt_email || '-'}</p>
+                  {bankAccounts.length > 0 ? (
+                    <p className="m-0">
+                      Banco: {bankAccounts[0].txt_banco} | Ag: {bankAccounts[0].txt_agencia} | CC: {bankAccounts[0].txt_nConta}
+                    </p>
+                  ) : (
+                    <p className="m-0 text-slate-600">Dados Bancários: Não vinculados</p>
                   )}
                 </div>
               </div>
 
               {/* Service Details */}
-              <div className="mb-6">
-                <h4 className="font-bold text-xs uppercase mb-2">Detalhamento dos Serviços / Plantões</h4>
+              <div className="mb-4">
+                <h4 className="font-bold text-xs uppercase mb-1.5">
+                  Detalhamento dos Serviços / Plantões ({rpaSelectedServicos.length} registros)
+                </h4>
                 <table className="w-full border-collapse text-xs text-left">
                   <thead>
                     <tr className="border-b border-black font-bold">
-                      <th className="py-2">Plantão / Escala</th>
-                      <th className="py-2">Data Realização</th>
-                      <th className="py-2 text-right">Valor Repasse</th>
+                      <th className="py-1.5">Plantão / Serviço</th>
+                      <th className="py-1.5">Escala</th>
+                      <th className="py-1.5">Data Realização</th>
+                      <th className="py-1.5 text-right">Valor Bruto</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {filteredServicos
-                      .filter(s => selectedServicos.includes(s._id))
-                      .map(serv => (
-                        <tr key={serv._id}>
-                          <td className="py-2">{serv.txt_nome} / {getScaleLabel(serv.fk_escala)}</td>
-                          <td className="py-2">{formatDate(serv.date_fixa_entrada).substring(0, 10)}</td>
-                          <td className="py-2 text-right font-bold">{formatCurrency(serv.num_valor_cooperado)}</td>
-                        </tr>
-                      ))
-                    }
-                    <tr className="border-t border-black font-bold text-sm">
-                      <td colSpan={2} className="py-3 text-right">VALOR BRUTO TOTAL DO RECIBO:</td>
-                      <td className="py-3 text-right font-mono font-extrabold">{formatCurrency(selectedSum)}</td>
-                    </tr>
+                    {rpaSelectedServicos.map(serv => (
+                      <tr key={serv._id}>
+                        <td className="py-1.5">{serv.txt_nome || 'Plantão'} (#{serv.num_id || serv._id.substring(0, 6)})</td>
+                        <td className="py-1.5">{getScaleLabel(serv.fk_escala)}</td>
+                        <td className="py-1.5">{formatDateTimeCompact(serv.date_fixa_entrada)}</td>
+                        <td className="py-1.5 text-right font-bold">{formatCurrency(serv.num_valor_cooperado)}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
 
-              {/* Disclaimer */}
-              <div className="text-xs leading-normal border-t border-dashed border-black pt-4 mb-8">
-                Recebi da <strong>COOPERATIVA DE TRABALHO GESTORCOOP LTDA</strong> a importância bruta de <strong>{formatCurrency(selectedSum)}</strong> pelos serviços autônomos descritos acima, livres de deduções extras ou de acordo com disposições do estatuto interno de rateio de sobras e repasses.
+              {/* Financial Summary Box: Bruto, Retenções/Descontos, Líquido */}
+              <div className="rpa-avoid-break border border-black p-3.5 mb-4 bg-slate-50/60 text-xs space-y-1">
+                <div className="flex justify-between items-center">
+                  <span>VALOR BRUTO DOS SERVIÇOS / PLANTÕES:</span>
+                  <span className="font-bold font-mono">{formatCurrency(rpaValorBruto)}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span>RETENÇÕES / DESCONTOS (INSS / IRRF / TAXA COOPERATIVA):</span>
+                  <span className="font-bold font-mono">- {formatCurrency(rpaValorDescontos)}</span>
+                </div>
+                <div className="flex justify-between items-center border-t border-black pt-1.5 text-sm font-extrabold">
+                  <span>VALOR LÍQUIDO A RECEBER:</span>
+                  <span className="font-mono">{formatCurrency(rpaValorLiquido)}</span>
+                </div>
               </div>
 
-              {/* Signatures */}
-              <div className="flex flex-col md:flex-row justify-between items-end gap-10 mt-12 text-xs">
-                <div>
-                  <p className="m-0">Local e Data: ________________________, ____/____/______</p>
+              {/* Disclaimer & Signatures */}
+              <div className="rpa-avoid-break">
+                <div className="text-xs leading-normal border-t border-dashed border-black pt-3 mb-6">
+                  Declaro que recebi da <strong>MULTCARE - COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DE SAÚDE</strong> (CNPJ 11.426.910/0001-57) a importância líquida de <strong>{formatCurrency(rpaValorLiquido)}</strong> (valor bruto de <strong>{formatCurrency(rpaValorBruto)}</strong> menos retenções/descontos de <strong>{formatCurrency(rpaValorDescontos)}</strong>) pelos serviços e plantões discriminados acima no período de <strong>{formatPeriodDate(startDate)} a {formatPeriodDate(endDate)}</strong>, dando plena, geral e irrevogável quitação.
                 </div>
-                <div className="text-center min-w-[280px]">
-                  <div className="border-t border-black pt-2 w-full">
-                    <p className="m-0 font-bold">{activeCooperado.txt_nomeCompleto}</p>
-                    <p className="m-0 text-[10px] text-slate-500">Assinatura do Cooperado</p>
+
+                {/* Signatures */}
+                <div className="flex flex-col md:flex-row justify-between items-end gap-8 mt-8 text-xs">
+                  <div>
+                    <p className="m-0">Local e Data: Goiânia/GO, {new Date().toLocaleDateString('pt-BR')}</p>
+                  </div>
+                  <div className="text-center min-w-[280px]">
+                    <div className="border-t border-black pt-2 w-full">
+                      <p className="m-0 font-bold">{activeCooperado.txt_nomeCompleto}</p>
+                      <p className="m-0 text-[10px] text-slate-600">CPF: {activeCooperado.txt_CPF || '-'} — Assinatura do Cooperado</p>
+                    </div>
                   </div>
                 </div>
               </div>

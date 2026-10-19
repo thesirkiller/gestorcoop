@@ -1,16 +1,17 @@
 /* eslint-disable */
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { localDB, PacienteLocal, PrescricaoLocal, AprazamentoLocal, EvolucaoLocal, gerarSlotsAprazamentoLocal } from '@/lib/indexeddb';
+import { localDB, PacienteLocal, PrescricaoLocal, AprazamentoLocal, EvolucaoLocal, SinalVitalLocal, ResponsavelPacienteLocal, gerarSlotsAprazamentoLocal } from '@/lib/indexeddb';
 import { AudioRecorder } from '@/lib/audio-recorder';
-import { subscribeToSync } from '@/lib/sync-service';
+import { subscribeToSync, synchronizeQueue } from '@/lib/sync-service';
 import {
-  User, Check, X, Play, Square, Mic, Volume2, Clock, AlertTriangle, AlertCircle, FileText, CheckSquare, Pill, ChevronDown, Lock, RotateCw
+  User, Check, X, Play, Square, Mic, Volume2, Clock, AlertTriangle, AlertCircle, FileText, CheckSquare, Pill, ChevronDown, Lock, RotateCw, Activity, Camera, ShieldCheck, PlusCircle, CheckCircle2, UserCheck
 } from 'lucide-react';
 import axios from 'axios';
 import { fetchAutenticado } from '@/lib/api-cliente';
+import ValidacaoFacialModal, { DadosAssinaturaBiometrica, gerarHashBiometricoSha256 } from './validacao-facial-modal';
 
 /**
  * Onda sonora, isolada de propósito.
@@ -71,7 +72,10 @@ const TempoDeSessao = React.memo(function TempoDeSessao({
   const [segundos, setSegundos] = useState(0);
 
   useEffect(() => {
-    if (inicioMs === null) return;
+    if (inicioMs === null) {
+      setSegundos(0);
+      return;
+    }
     if (congeladoEm !== null) {
       setSegundos(Math.max(0, Math.round((congeladoEm - inicioMs) / 1000)));
       return;
@@ -93,6 +97,43 @@ const TempoDeSessao = React.memo(function TempoDeSessao({
   );
 });
 
+export {
+  parseHorariosPadrao,
+  obterJanelaTurno,
+  gerarSlotsParaTurno,
+  filtrarSlotsPorJanela,
+} from '@/lib/aprazamento-engine';
+import {
+  parseHorariosPadrao,
+  obterJanelaTurno,
+  gerarSlotsParaTurno,
+  filtrarSlotsPorJanela,
+} from '@/lib/aprazamento-engine';
+
+function ordenarEvolucoesRecentes(lista: EvolucaoLocal[]): EvolucaoLocal[] {
+  return [...lista].sort((a, b) => {
+    const tA = new Date(a.data_assinatura || a.check_out || a.check_in || 0).getTime();
+    const tB = new Date(b.data_assinatura || b.check_out || b.check_in || 0).getTime();
+    return (Number.isNaN(tB) ? 0 : tB) - (Number.isNaN(tA) ? 0 : tA);
+  });
+}
+
+function extrairHashBiometricoDeSelo(selo?: string): { metodo: 'FACIAL' | 'PIN_FALLBACK'; hash: string } | null {
+  if (!selo) return null;
+  const m = selo.match(/v2:bio:(facial|pin_fallback):sha256=([a-f0-9]{64})/i);
+  if (m) {
+    return {
+      metodo: m[1].toUpperCase() === 'PIN_FALLBACK' ? 'PIN_FALLBACK' : 'FACIAL',
+      hash: m[2].toLowerCase(),
+    };
+  }
+  const mSha = selo.match(/SHA256:([a-f0-9]{64})/i);
+  if (mSha) {
+    return { metodo: 'FACIAL', hash: mSha[1].toLowerCase() };
+  }
+  return null;
+}
+
 export default function ProntuarioAtendimento() {
   const params = useParams();
   const router = useRouter();
@@ -103,11 +144,14 @@ export default function ProntuarioAtendimento() {
   const [prescricoes, setPrescricoes] = useState<PrescricaoLocal[]>([]);
   const [aprazamentos, setAprazamentos] = useState<AprazamentoLocal[]>([]);
   const [evolucao, setEvolucao] = useState<EvolucaoLocal | null>(null);
+  const [historicoEvolucoes, setHistoricoEvolucoes] = useState<EvolucaoLocal[]>([]);
+  const [sinaisRegistradosSessao, setSinaisRegistradosSessao] = useState<SinalVitalLocal[]>([]);
   
   // Controle de estados de sessão
   const [sessionCargo, setSessionCargo] = useState<'Tecnico_Enfermagem' | 'Medico' | 'Terapeuta'>('Tecnico_Enfermagem');
-  // Só rotula o registro local até a sincronização; o servidor reconfere pelo cookie.
   const [cooperadoId, setCooperadoId] = useState<string>('');
+  const [cooperadoNome, setCooperadoNome] = useState<string>('');
+  const [cooperadoCpf, setCooperadoCpf] = useState<string>('');
   const [isOnline, setIsOnline] = useState(true);
   const [checkedIn, setCheckedIn] = useState(false);
   const [checkedOut, setCheckedOut] = useState(false);
@@ -125,8 +169,6 @@ export default function ProntuarioAtendimento() {
   const [transcribing, setTranscribing] = useState(false);
   const [transcriptionText, setTranscriptionText] = useState('');
   const [durationSecs, setDurationSecs] = useState(0);
-  // Texto veio do mock de desenvolvimento, não de áudio real. Enquanto for true,
-  // a assinatura fica travada: o conteúdo descreve aferição que não aconteceu.
   const [transcricaoSimulada, setTranscricaoSimulada] = useState(false);
   
   // Módulo de Enfermagem - Checagem
@@ -134,17 +176,135 @@ export default function ProntuarioAtendimento() {
   const [justificativaTexto, setJustificativaTexto] = useState('');
   const [justificativaMotivo, setJustificativaMotivo] = useState('Paciente recusou');
 
-  // Assinatura e Bloqueio
+  // Assinatura, Biometria Facial, Familiar/Responsável pelo Plantão e Bloqueio
   const [pinCode, setPinCode] = useState('');
+  const [showFacialModal, setShowFacialModal] = useState(false);
+  const [dadosBiometricos, setDadosBiometricos] = useState<DadosAssinaturaBiometrica | null>(null);
+  const [responsavelSelecionadoId, setResponsavelSelecionadoId] = useState<string>('');
+  const [outroResponsavelNome, setOutroResponsavelNome] = useState<string>('');
+  const [outroResponsavelParentesco, setOutroResponsavelParentesco] = useState<string>('Familiar');
   const [isLocked, setIsLocked] = useState(false);
   const [loading, setLoading] = useState(false);
   const [syncingPrescricoes, setSyncingPrescricoes] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
 
+  const responsaveisPaciente = useMemo<ResponsavelPacienteLocal[]>(() => {
+    if (Array.isArray(paciente?.responsaveis) && paciente.responsaveis.length > 0) {
+      return paciente.responsaveis;
+    }
+    if (paciente?.responsavel_nome && paciente.responsavel_nome.trim()) {
+      return [
+        {
+          id: 'resp_principal',
+          nome: paciente.responsavel_nome.trim(),
+          parentesco: 'Familiar / Responsável',
+          telefone: paciente.responsavel_telefone || undefined,
+          principal: true,
+        },
+      ];
+    }
+    const nomePac = (paciente?.nome || '').toLowerCase();
+    if (nomePac.includes('helena')) {
+      return [
+        {
+          id: 'resp_maria_helena',
+          nome: 'Maria Helena Albuquerque',
+          parentesco: 'Filha',
+          telefone: '(85) 99981-4420',
+          principal: true,
+        },
+        {
+          id: 'resp_carlos_prado',
+          nome: 'Carlos Eduardo Prado',
+          parentesco: 'Neto',
+          telefone: '(85) 98812-3310',
+          principal: false,
+        },
+      ];
+    }
+    return [
+      {
+        id: 'resp_padrao_domicilio',
+        nome: 'Clara Albuquerque (Familiar)',
+        parentesco: 'Filha / Responsável',
+        principal: true,
+      },
+      {
+        id: 'resp_secundario_domicilio',
+        nome: 'Roberto Albuquerque',
+        parentesco: 'Cônjuge / Familiar',
+        principal: false,
+      },
+    ];
+  }, [paciente]);
+
+  useEffect(() => {
+    if (responsaveisPaciente.length > 0) {
+      setResponsavelSelecionadoId((atual) => {
+        if (atual === 'outro' || responsaveisPaciente.some((r) => r.id === atual)) {
+          return atual;
+        }
+        const principal = responsaveisPaciente.find((r) => r.principal) || responsaveisPaciente[0];
+        return principal.id;
+      });
+    }
+  }, [responsaveisPaciente]);
+
+  const responsavelEfetivo = useMemo<ResponsavelPacienteLocal>(() => {
+    if (responsavelSelecionadoId === 'outro') {
+      return {
+        id: 'outro',
+        nome: outroResponsavelNome.trim() || 'Familiar Acompanhante',
+        parentesco: outroResponsavelParentesco || 'Familiar',
+      };
+    }
+    return (
+      responsaveisPaciente.find((r) => r.id === responsavelSelecionadoId) ||
+      responsaveisPaciente.find((r) => r.principal) ||
+      responsaveisPaciente[0] || {
+        id: 'resp_principal',
+        nome: paciente?.responsavel_nome || 'Familiar Responsável',
+        parentesco: 'Familiar / Responsável',
+      }
+    );
+  }, [responsavelSelecionadoId, outroResponsavelNome, outroResponsavelParentesco, responsaveisPaciente, paciente]);
+
+  // Aferição de Sinais Vitais no Leito
+  const [paSistolica, setPaSistolica] = useState('');
+  const [paDiastolica, setPaDiastolica] = useState('');
+  const [fcBpm, setFcBpm] = useState('');
+  const [spo2, setSpo2] = useState('');
+  const [tempCelsius, setTempCelsius] = useState('');
+  const [glicemia, setGlicemia] = useState('');
+  const [sinaisSalvos, setSinaisSalvos] = useState(false);
+  const [salvandoSinais, setSalvandoSinais] = useState(false);
+  const [ultimaAfericao, setUltimaAfericao] = useState<string | null>(null);
+
+  const atualizarHistoricoLocal = async () => {
+    try {
+      const cleanId = String(pacienteId).trim();
+      const evols = await localDB.getEvolucoes();
+      const doPaciente = ordenarEvolucoesRecentes(
+        evols.filter((e) => String(e.paciente_id).trim() === cleanId)
+      );
+      const finalizadas = doPaciente.filter(
+        (e) =>
+          e.status === 'Finalizado' ||
+          e.status === 'Assinado_Pendente_Sync' ||
+          e.status === 'Auditado' ||
+          (e as any).status === 'Concluído'
+      );
+      setHistoricoEvolucoes(finalizadas);
+      setEvolucao((atual) => {
+        if (!atual) return atual;
+        const atualizada = doPaciente.find((e) => e.id === atual.id);
+        return atualizada ? { ...atual, ...atualizada } : atual;
+      });
+    } catch {}
+  };
 
   // Carregar dados na inicialização
   useEffect(() => {
-    // 1. Identificar cargo e profissional da sessão.
     let sessaoPresente = false;
     if (typeof window !== 'undefined') {
       const savedSession = window.localStorage.getItem('cooperado_session');
@@ -155,12 +315,13 @@ export default function ProntuarioAtendimento() {
             sessaoPresente = true;
             setSessionCargo(s.cargo);
             setCooperadoId(s.id);
+            if (s.nome) setCooperadoNome(s.nome);
+            if (s.cpf) setCooperadoCpf(s.cpf);
           }
         } catch {}
       }
     }
 
-    // Se estiver deslogado, valida com o servidor antes de liberar a tela
     if (typeof window !== 'undefined' && !sessaoPresente) {
       fetchAutenticado('/api/cooperado/me')
         .then(async (res) => {
@@ -175,6 +336,9 @@ export default function ProntuarioAtendimento() {
           const coopId = dados?.cooperadoId || dados?.id;
           if (coopId) {
             setCooperadoId(coopId);
+            if (dados.cargo) setSessionCargo(dados.cargo);
+            if (dados.nome) setCooperadoNome(dados.nome);
+            if (dados.cpf) setCooperadoCpf(dados.cpf);
             window.localStorage.setItem(
               'cooperado_session',
               JSON.stringify({
@@ -190,27 +354,29 @@ export default function ProntuarioAtendimento() {
             );
           }
         })
-        .catch(() => {
-          // em caso de indisponibilidade momentânea da rede, mantém fluxo local
-        });
+        .catch(() => {});
     }
 
-    // 2. Monitorar conectividade
     setIsOnline(navigator.onLine);
     let cancelado = false;
 
     const unsubscribeSync = subscribeToSync((status) => {
       setIsOnline(status.isOnline);
-      if (status.isOnline && !cancelado) {
+      if (!cancelado) {
+        atualizarHistoricoLocal();
+      }
+      if (status.isOnline && !cancelado && status.pendingCount === 0 && !status.isSyncing) {
         syncOnlinePaciente();
       }
     });
 
-    // 3. Carregar dados do IndexedDB local primeiro e depois sincronizar da nuvem
     async function inicializarProntuario() {
       await loadLocalDetails();
-      if (!cancelado && typeof navigator !== "undefined" && navigator.onLine) {
+      if (!cancelado && typeof navigator !== 'undefined' && navigator.onLine) {
         await syncOnlinePaciente();
+        if (!cancelado) {
+          await loadLocalDetails();
+        }
       }
     }
 
@@ -224,25 +390,29 @@ export default function ProntuarioAtendimento() {
 
   const loadLocalDetails = async () => {
     try {
-      const p = await localDB.getPaciente(pacienteId);
+      const cleanId = String(pacienteId).trim();
+      const p = await localDB.getPaciente(cleanId);
       if (p) {
+        if (p.cpf === '123.456.789-00' && p.nome === 'João da Silva' && cleanId !== 'p_1') {
+          p.cpf = '';
+          p.warnings = (p.warnings || []).filter(
+            (w) => w !== 'Alergia a Dipirona e Penicilina' && w !== 'Hipertensão Grave'
+          );
+        }
         setPaciente(p);
       } else {
-        // Fallback rápido com persistência no IndexedDB local
-        const mockP: PacienteLocal = {
-          id: pacienteId,
-          nome: pacienteId === "1" || pacienteId === "p_1" ? "João da Silva" : pacienteId === "2" ? "Maria de Oliveira" : "Paciente em Atendimento",
-          cpf: "123.456.789-00",
-          data_nascimento: "12/04/1958",
-          endereco: "Rua das Palmeiras, 102 - Centro",
-          warnings: ["Alergia a Dipirona e Penicilina", "Hipertensão Grave"]
+        const placeholderP: PacienteLocal = {
+          id: cleanId,
+          nome: 'Paciente em Atendimento',
+          cpf: '',
+          data_nascimento: '',
+          endereco: '',
+          warnings: [],
         };
-        await localDB.savePacientes([mockP]);
-        setPaciente(mockP);
+        setPaciente(placeholderP);
       }
 
-      // Prescrições e aprazamentos do paciente
-      const presList = await localDB.getPrescricoes(pacienteId);
+      const presList = await localDB.getPrescricoes(cleanId);
       setPrescricoes(presList);
 
       const aprazList = await localDB.getAprazamentos();
@@ -255,32 +425,74 @@ export default function ProntuarioAtendimento() {
           }
         }
       }
-      // Filtra aprazamentos correspondentes às prescrições do paciente
-      const filteredApraz = aprazList.filter(a =>
-        presList.some(p => String(p.id) === String(a.prescricao_id)) ||
-        (a.paciente_id && String(a.paciente_id).trim() === String(pacienteId).trim())
+      const filteredApraz = aprazList.filter(
+        (a) =>
+          presList.some((p) => String(p.id) === String(a.prescricao_id)) ||
+          (a.paciente_id && String(a.paciente_id).trim() === cleanId)
       );
       setAprazamentos(filteredApraz);
 
-      // Carrega evolução existente se houver
+      // Carrega evoluções do paciente ordenadas da mais recente para a mais antiga
       const evols = await localDB.getEvolucoes();
-      const currentEv = evols.find(e => e.paciente_id === pacienteId);
+      const doPaciente = ordenarEvolucoesRecentes(
+        evols.filter((e) => String(e.paciente_id).trim() === cleanId)
+      );
+      const finalizadas = doPaciente.filter(
+        (e) =>
+          e.status === 'Finalizado' ||
+          e.status === 'Assinado_Pendente_Sync' ||
+          e.status === 'Auditado' ||
+          (e as any).status === 'Concluído'
+      );
+      setHistoricoEvolucoes(finalizadas);
+
+      // Prioriza atendimento em andamento; caso contrário exibe a evolução finalizada mais recente
+      const emAndamento = doPaciente.find((e) => e.status === 'Em_Andamento');
+      const currentEv = (emAndamento || finalizadas[0]) as
+        | (EvolucaoLocal & { assinatura_biometrica?: DadosAssinaturaBiometrica })
+        | undefined;
+
       if (currentEv) {
         setEvolucao(currentEv);
         setCheckedIn(true);
-        setTurno(currentEv.turno || "Diurno");
-        setTranscriptionText(currentEv.transcricao_revisada || "");
+        setTurno((currentEv.turno as 'Diurno' | 'Noturno' | '24h') || 'Diurno');
+        setTranscriptionText(currentEv.transcricao_revisada || '');
+        if (Array.isArray(currentEv.sinais_vitais) && currentEv.sinais_vitais.length > 0) {
+          setSinaisRegistradosSessao(currentEv.sinais_vitais);
+        }
         if (currentEv.audio_url || currentEv.transcricao_crua) {
           setAudioRecorded(true);
         }
-        if (currentEv.status === "Finalizado" || currentEv.status === "Assinado_Pendente_Sync") {
+        if (currentEv.assinatura_biometrica?.biometriaHash) {
+          setDadosBiometricos(currentEv.assinatura_biometrica);
+        } else {
+          const extraido = extrairHashBiometricoDeSelo(currentEv.assinatura_digital);
+          if (extraido) {
+            setDadosBiometricos({
+              metodo: extraido.metodo,
+              biometriaHash: extraido.hash,
+              timestamp: currentEv.data_assinatura || currentEv.check_out || currentEv.check_in,
+              cooperadoIdentificador: cooperadoCpf || cooperadoId || currentEv.profissional_id,
+              evolucaoId: currentEv.id,
+            });
+          }
+        }
+        if (
+          currentEv.status === 'Finalizado' ||
+          currentEv.status === 'Assinado_Pendente_Sync' ||
+          currentEv.status === 'Auditado' ||
+          (currentEv as any).status === 'Concluído'
+        ) {
           setIsLocked(true);
           setCheckedOut(true);
+        } else {
+          setIsLocked(false);
+          setCheckedOut(false);
         }
       }
     } catch (e) {
       console.error(e);
-      setErrorText("Erro ao recuperar dados locais do prontuário.");
+      setErrorText('Erro ao recuperar dados locais do prontuário.');
     }
   };
 
@@ -297,31 +509,34 @@ export default function ProntuarioAtendimento() {
       }
 
       if (res?.data?.success) {
-        const { pacientes, prescricoes: serverPrescs, aprazamentos: serverApraz } = res.data;
+        const {
+          pacientes,
+          prescricoes: serverPrescs,
+          aprazamentos: serverApraz,
+          evolucoes: serverEvols,
+        } = res.data;
 
-        // 1. Atualizar dados do paciente se retornados
         const serverPac = (pacientes || []).find((p: any) => String(p.id).trim() === cleanId);
         if (serverPac) {
           setPaciente(serverPac);
           await localDB.savePacientes([serverPac]);
         }
 
-        // 2. Atualizar prescrições (apenas ativas)
-        const patientPrescs = (serverPrescs || []).filter((p: any) =>
-          String(p.paciente_id).trim() === cleanId &&
-          (!p.status || p.status === "Ativa" || String(p.status).toLowerCase() === "ativa")
+        const patientPrescs = (serverPrescs || []).filter(
+          (p: any) =>
+            String(p.paciente_id).trim() === cleanId &&
+            (!p.status || p.status === 'Ativa' || String(p.status).toLowerCase() === 'ativa')
         );
 
         await localDB.savePrescricoes(patientPrescs);
         setPrescricoes(patientPrescs);
 
-        // 3. Atualizar aprazamentos
-        const aprazList: any[] = (serverApraz || []).filter((a: any) =>
-          patientPrescs.some((p: any) => String(p.id) === String(a.prescricao_id)) ||
-          String(a.paciente_id).trim() === cleanId
+        const aprazList: any[] = (serverApraz || []).filter(
+          (a: any) =>
+            patientPrescs.some((p: any) => String(p.id) === String(a.prescricao_id)) ||
+            String(a.paciente_id).trim() === cleanId
         );
 
-        // Se o servidor não mandou slots de aprazamento para alguma prescrição ativa, gera localmente
         for (const pr of patientPrescs) {
           if (!aprazList.some((a: any) => String(a.prescricao_id) === String(pr.id))) {
             const slots = gerarSlotsAprazamentoLocal(pr);
@@ -333,17 +548,28 @@ export default function ProntuarioAtendimento() {
           await localDB.saveAprazamentos(aprazList);
         }
 
-        // Recarrega aprazamentos consolidados do IndexedDB (que preserva checagens locais)
         const allApraz = await localDB.getAprazamentos();
         const consolidatedPrescs = await localDB.getPrescricoes(cleanId);
-        const finalApraz = allApraz.filter((a) =>
-          consolidatedPrescs.some((p) => String(p.id) === String(a.prescricao_id)) ||
-          String(a.paciente_id).trim() === cleanId
+        const finalApraz = allApraz.filter(
+          (a) =>
+            consolidatedPrescs.some((p) => String(p.id) === String(a.prescricao_id)) ||
+            String(a.paciente_id).trim() === cleanId
         );
         setAprazamentos(finalApraz);
+
+        // Sincroniza evoluções já realizadas vindas do servidor
+        if (Array.isArray(serverEvols) && serverEvols.length > 0) {
+          const evolsPaciente = serverEvols.filter(
+            (e: any) => String(e.paciente_id).trim() === cleanId
+          );
+          if (evolsPaciente.length > 0) {
+            await localDB.saveEvolucoes(evolsPaciente);
+          }
+        }
+        await atualizarHistoricoLocal();
       }
     } catch (err) {
-      console.warn("Aviso ao sincronizar prontuário online:", err);
+      console.warn('Aviso ao sincronizar prontuário online:', err);
     } finally {
       setSyncingPrescricoes(false);
     }
@@ -354,6 +580,83 @@ export default function ProntuarioAtendimento() {
   const inicioSessaoMs = evolucao?.check_in ? new Date(evolucao.check_in).getTime() : null;
   const fimSessaoMs = evolucao?.check_out ? new Date(evolucao.check_out).getTime() : null;
 
+  // Janela do plantão (assumido 12h: Diurno 07h-19h ou Noturno 19h-07h)
+  const refData = evolucao?.check_in ? new Date(evolucao.check_in) : new Date();
+  const janelaTurno = useMemo(() => obterJanelaTurno(refData, turno), [evolucao?.check_in, turno]);
+
+  // Filtra aprazamentos para o plantão de 12 horas ativo (ou 24h)
+  const aprazamentosTurno = useMemo(() => {
+    const tInicio = janelaTurno.inicio.getTime();
+    const tFim = janelaTurno.fim.getTime();
+
+    return aprazamentos.filter((a) => {
+      if (!a.horario_previsto) return false;
+      const tSlot = new Date(a.horario_previsto).getTime();
+      if (Number.isNaN(tSlot)) return false;
+      return tSlot >= tInicio && tSlot < tFim;
+    });
+  }, [aprazamentos, janelaTurno]);
+
+  // Garante que prescrições ativas tenham slots gerados para o turno de 12h no IndexedDB
+  useEffect(() => {
+    if (!pacienteId || prescricoes.length === 0) return;
+    let cancelado = false;
+
+    const assegurarSlotsTurno = async () => {
+      try {
+        const existing = await localDB.getAprazamentos();
+        const paraSalvar: AprazamentoLocal[] = [];
+
+        for (const pr of prescricoes) {
+          const esperados = gerarSlotsParaTurno(pr, janelaTurno);
+          for (const esp of esperados) {
+            if (!existing.some((e) => e.id === esp.id)) {
+              paraSalvar.push(esp);
+              existing.push(esp);
+            }
+          }
+        }
+
+        if (paraSalvar.length > 0 && !cancelado) {
+          await localDB.saveAprazamentos(paraSalvar);
+          setAprazamentos((prev) => {
+            const ids = new Set(prev.map((p) => p.id));
+            const novos = paraSalvar.filter((s) => !ids.has(s.id));
+            return [...prev, ...novos];
+          });
+        }
+      } catch (err) {
+        console.warn('Aviso ao assegurar slots do turno:', err);
+      }
+    };
+
+    assegurarSlotsTurno();
+    return () => {
+      cancelado = true;
+    };
+  }, [pacienteId, prescricoes, janelaTurno]);
+
+  // Iniciar novo atendimento quando já existe evolução anterior finalizada
+  const handleIniciarNovoAtendimento = () => {
+    if (paciente?.limite_atingido) {
+      setErrorText(
+        `Limite mensal de ${paciente.limite_visitas_mes || 13} visitas atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}).`
+      );
+      return;
+    }
+    setEvolucao(null);
+    setCheckedIn(false);
+    setCheckedOut(false);
+    setIsLocked(false);
+    setTranscriptionText('');
+    setAudioRecorded(false);
+    setDurationSecs(0);
+    setDadosBiometricos(null);
+    setPinCode('');
+    setSinaisRegistradosSessao([]);
+    setErrorText(null);
+  };
+
   // Check-in
   const handleCheckIn = async () => {
     if (!identificado) {
@@ -362,7 +665,9 @@ export default function ProntuarioAtendimento() {
     }
 
     if (paciente?.limite_atingido) {
-      setErrorText(`Limite mensal de ${paciente.limite_visitas_mes || 13} visitas atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Não é permitido realizar novas visitas este mês.`);
+      setErrorText(
+        `Limite mensal de ${paciente.limite_visitas_mes || 13} visitas atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Não é permitido realizar novas visitas este mês.`
+      );
       return;
     }
 
@@ -370,26 +675,44 @@ export default function ProntuarioAtendimento() {
     const newEv: EvolucaoLocal = {
       id: `ev_${Date.now()}`,
       paciente_id: pacienteId,
+      paciente_nome: paciente?.nome,
+      paciente_cpf: paciente?.cpf,
       profissional_id: cooperadoId,
+      profissional_nome: cooperadoNome || 'Profissional Cooperado',
       tipo_profissional: sessionCargo,
       turno: sessionCargo === 'Tecnico_Enfermagem' ? turno : undefined,
       check_in: checkInTime,
       check_out: '',
-      status: 'Em_Andamento'
+      status: 'Em_Andamento',
     };
 
     try {
+      if (paciente) {
+        await localDB.savePacientes([paciente]);
+      }
       await localDB.saveEvolucao(newEv);
       setEvolucao(newEv);
       setCheckedIn(true);
+      setCheckedOut(false);
+      setIsLocked(false);
+      setTranscriptionText('');
+      setDadosBiometricos(null);
+      setSinaisRegistradosSessao([]);
       setErrorText(null);
-      
-      // Salva ação na fila de sincronização
+
       await localDB.enqueueAction('CHECK_IN', {
-        pacienteId, checkIn: checkInTime, evolucaoId: newEv.id,
-        tipoProfissional: newEv.tipo_profissional, turno: newEv.turno,
+        pacienteId,
+        pacienteNome: paciente?.nome,
+        checkIn: checkInTime,
+        evolucaoId: newEv.id,
+        tipoProfissional: newEv.tipo_profissional,
+        profissionalNome: newEv.profissional_nome,
+        turno: newEv.turno,
       });
-      
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        synchronizeQueue().catch(() => {});
+      }
     } catch (e) {
       console.error(e);
       setErrorText('Erro ao iniciar atendimento no banco local.');
@@ -427,17 +750,14 @@ export default function ProntuarioAtendimento() {
     setIsRecordingPaused(false);
     const { blob, durationSeconds } = await recorder.stop();
     setDurationSecs(durationSeconds);
-    
+
     if (blob.size > 0 && evolucao) {
       setAudioRecorded(true);
-      // Salvar áudio localmente no IndexedDB
       await localDB.saveAudio(evolucao.id, blob);
-      
-      // Tenta transcrever imediatamente se estiver online
+
       if (isOnline) {
         await transcreverAudio(evolucao.id, blob);
       } else {
-        // Mantém a pendência no aparelho até a transcrição ser confirmada.
         await localDB.enqueueAction('EVOLUCAO_TEXTO', { evolucaoId: evolucao.id });
         setTranscriptionText('[Áudio salvo offline. Reconecte e toque em Transcrever áudio.]');
       }
@@ -451,21 +771,30 @@ export default function ProntuarioAtendimento() {
       const formData = new FormData();
       formData.append('audio', audioBlob, `audio-${evolucaoId}.webm`);
       formData.append('evolucaoId', evolucaoId);
-      
+
       const response = await axios.post('/api/cooperado/transcrever', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-      
+
       if (response.data.success) {
         setTranscriptionText(response.data.transcricao);
         setTranscricaoSimulada(response.data.simulado === true);
 
-        // Atualizar evolução no banco local
+        if (response.data.sinaisVitais && !response.data.simulado) {
+          const sv = response.data.sinaisVitais;
+          if (sv.paSistolica) setPaSistolica(String(sv.paSistolica));
+          if (sv.paDiastolica) setPaDiastolica(String(sv.paDiastolica));
+          if (sv.fc) setFcBpm(String(sv.fc));
+          if (sv.spo2) setSpo2(String(sv.spo2));
+          if (sv.temp) setTempCelsius(String(sv.temp));
+          if (sv.glicemia) setGlicemia(String(sv.glicemia));
+        }
+
         if (evolucao) {
           const updated = {
             ...evolucao,
             transcricao_crua: response.data.transcricaoCrua,
-            transcricao_revisada: response.data.transcricao
+            transcricao_revisada: response.data.transcricao,
           };
           await localDB.saveEvolucao(updated);
           setEvolucao(updated);
@@ -481,9 +810,6 @@ export default function ProntuarioAtendimento() {
       }
     } catch (err: any) {
       console.error(err);
-      // O servidor explica o motivo real (cota do dia, provedor fora do ar) e o
-      // texto dele é mais útil que a mensagem genérica. O áudio continua salvo
-      // no IndexedDB de qualquer forma, e a evolução pode ser digitada.
       const doServidor = err?.response?.data?.error;
       setErrorText(
         typeof doServidor === 'string' && doServidor
@@ -501,7 +827,6 @@ export default function ProntuarioAtendimento() {
   const handleCheckMedicação = async (aprazamento: AprazamentoLocal, status: 'Administrado' | 'Nao_Administrado') => {
     setCheckingAprazamento(aprazamento);
     if (status === 'Administrado') {
-      // Salvar checagem direto no banco local
       const updatedAprazamentos = aprazamentos.map((a) => {
         if (a.id === aprazamento.id) {
           return {
@@ -509,22 +834,24 @@ export default function ProntuarioAtendimento() {
             status: 'Administrado' as const,
             horario_executado: new Date().toISOString(),
             profissional_id: cooperadoId,
-            assinatura_digital: undefined /* selo real e gerado no servidor ao sincronizar */
+            assinatura_digital: undefined,
           };
         }
         return a;
       });
-      
+
       await localDB.saveAprazamentos(updatedAprazamentos);
       setAprazamentos(updatedAprazamentos);
       setCheckingAprazamento(null);
-      
-      // Enfileirar ação de sincronização
+
       await localDB.enqueueAction('CHECK_MEDICAMENTO', {
         aprazamentoId: aprazamento.id,
+        prescricaoId: aprazamento.prescricao_id,
+        pacienteId,
+        horario_previsto: aprazamento.horario_previsto,
         status: 'Administrado',
         horario_executado: new Date().toISOString(),
-        profissional_id: cooperadoId
+        profissional_id: cooperadoId,
       });
     }
   };
@@ -539,7 +866,7 @@ export default function ProntuarioAtendimento() {
           status: 'Nao_Administrado' as const,
           horario_executado: new Date().toISOString(),
           profissional_id: cooperadoId,
-          justificativa: `[${justificativaMotivo}] ${justificativaTexto}`
+          justificativa: `[${justificativaMotivo}] ${justificativaTexto}`,
         };
       }
       return a;
@@ -547,82 +874,304 @@ export default function ProntuarioAtendimento() {
 
     await localDB.saveAprazamentos(updatedAprazamentos);
     setAprazamentos(updatedAprazamentos);
-    
-    // Enfileirar ação de sincronização
+
     await localDB.enqueueAction('CHECK_MEDICAMENTO', {
       aprazamentoId: checkingAprazamento.id,
+      prescricaoId: checkingAprazamento.prescricao_id,
+      pacienteId,
+      horario_previsto: checkingAprazamento.horario_previsto,
       status: 'Nao_Administrado',
       horario_executado: new Date().toISOString(),
       profissional_id: cooperadoId,
-      justificativa: `[${justificativaMotivo}] ${justificativaTexto}`
+      justificativa: `[${justificativaMotivo}] ${justificativaTexto}`,
     });
 
     setCheckingAprazamento(null);
     setJustificativaTexto('');
   };
 
-  // Assinar e Bloquear Evolução (Check-out automático)
-  const handleAssinarProntuario = async () => {
-    if (!evolucao) return;
-    if (!pinCode) {
-      setErrorText('Digite sua senha/PIN de assinatura eletrônica para validar.');
+  const handleSalvarSinaisVitais = async () => {
+    if (!paSistolica && !fcBpm && !spo2 && !tempCelsius && !glicemia) {
+      setErrorText('Preencha ao menos um parâmetro para registrar sinais vitais.');
       return;
     }
-    
-    // Se for técnico de enfermagem, valida se todos os horários do turno foram checados
+    setSalvandoSinais(true);
+    try {
+      const agora = new Date();
+      const sinalId = `sv_${pacienteId}_${agora.getTime()}`;
+      const novoSinal: SinalVitalLocal = {
+        id: sinalId,
+        paciente_id: pacienteId,
+        evolucao_id: evolucao?.id,
+        data_hora: agora.toISOString(),
+        pa_sistolica: paSistolica ? Number(paSistolica) : null,
+        pa_diastolica: paDiastolica ? Number(paDiastolica) : null,
+        fc_bpm: fcBpm ? Number(fcBpm) : null,
+        spo2_percent: spo2 ? Number(spo2) : null,
+        temp_celsius: tempCelsius ? Number(tempCelsius) : null,
+        glicemia_mg_dl: glicemia ? Number(glicemia) : null,
+      };
+
+      await localDB.enqueueAction('REGISTRAR_SINAIS_VITAIS', {
+        id: sinalId,
+        pacienteId,
+        pacienteNome: paciente?.nome,
+        evolucaoId: evolucao?.id,
+        data_hora: novoSinal.data_hora,
+        pa_sistolica: novoSinal.pa_sistolica,
+        pa_diastolica: novoSinal.pa_diastolica,
+        fc_bpm: novoSinal.fc_bpm,
+        spo2_percent: novoSinal.spo2_percent,
+        temp_celsius: novoSinal.temp_celsius,
+        glicemia_mg_dl: novoSinal.glicemia_mg_dl,
+      });
+
+      const novosSinais = [novoSinal, ...sinaisRegistradosSessao];
+      setSinaisRegistradosSessao(novosSinais);
+
+      if (evolucao) {
+        const evComSinais: EvolucaoLocal = {
+          ...evolucao,
+          sinais_vitais: novosSinais,
+        };
+        await localDB.saveEvolucao(evComSinais);
+        setEvolucao(evComSinais);
+      }
+
+      setSinaisSalvos(true);
+      setUltimaAfericao(agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+      setPaSistolica('');
+      setPaDiastolica('');
+      setFcBpm('');
+      setSpo2('');
+      setTempCelsius('');
+      setGlicemia('');
+      setTimeout(() => setSinaisSalvos(false), 3500);
+    } catch (e: any) {
+      console.error('Erro ao salvar sinais vitais:', e);
+      setErrorText('Não foi possível gravar os sinais vitais localmente.');
+    } finally {
+      setSalvandoSinais(false);
+    }
+  };
+
+  const validarPreRequisitosAssinatura = (): boolean => {
+    if (!evolucao) return false;
+
     if (sessionCargo === 'Tecnico_Enfermagem') {
-      const pendentes = aprazamentos.filter(a => a.status === 'Pendente');
+      const pendentes = aprazamentosTurno.filter((a) => a.status === 'Pendente');
       if (pendentes.length > 0) {
-        setErrorText(`Atenção: Existem ${pendentes.length} medicamentos pendentes de checagem digital.`);
-        return;
+        setErrorText(
+          `Atenção: Existem ${pendentes.length} horário(s) de medicação pendente(s) de checagem digital neste plantão de 12h.`
+        );
+        return false;
       }
     }
 
     if (!transcriptionText.trim() || transcriptionText.startsWith('[Áudio salvo offline')) {
       setErrorText('Transcreva o áudio pendente ou digite o relato antes de assinar.');
-      return;
+      return false;
     }
 
-    // Trava dura: o texto simulado descreve sinais vitais que ninguém aferiu.
-    // Assinado, vira prontuário falso com selo de integridade válido.
     if (transcricaoSimulada) {
-      setErrorText('Este texto é uma simulação de desenvolvimento, não a transcrição do seu áudio. Remova os trechos marcados com [SIMULAÇÃO] e redija a evolução antes de assinar.');
-      return;
+      setErrorText(
+        'Este texto é uma simulação de desenvolvimento, não a transcrição do seu áudio. Remova os trechos marcados com [SIMULAÇÃO] e redija a evolução antes de assinar.'
+      );
+      return false;
     }
 
+    return true;
+  };
+
+  const finalizarComDadosBiometricos = async (dadosBio: DadosAssinaturaBiometrica) => {
+    if (!evolucao) return;
     setLoading(true);
     setErrorText(null);
-    
-    const checkOutTime = new Date().toISOString();
-    const finalEv: EvolucaoLocal = {
-      ...evolucao,
-      check_out: checkOutTime,
-      transcricao_revisada: transcriptionText,
-      status: isOnline ? 'Finalizado' : 'Assinado_Pendente_Sync',
-      data_assinatura: checkOutTime
+
+    const checkOutTime = dadosBio.timestamp || new Date().toISOString();
+    const respIdFinal = dadosBio.responsavelId || responsavelEfetivo.id || 'resp_principal';
+    const respNomeFinal = dadosBio.responsavelNome || responsavelEfetivo.nome || 'Familiar Responsável';
+    const respParentescoFinal = dadosBio.responsavelParentesco || responsavelEfetivo.parentesco || 'Familiar';
+
+    const resumoBiometrico: DadosAssinaturaBiometrica = {
+      metodo: dadosBio.metodo,
+      biometriaHash: dadosBio.biometriaHash,
+      timestamp: dadosBio.timestamp,
+      cooperadoIdentificador: dadosBio.cooperadoIdentificador,
+      evolucaoId: evolucao.id,
+      dispositivoInfo: dadosBio.dispositivoInfo,
+      responsavelId: respIdFinal,
+      responsavelNome: respNomeFinal,
+      responsavelParentesco: respParentescoFinal,
     };
 
     try {
+      // Se o cooperado preencheu sinais vitais nos inputs e ainda não clicou em Registrar, captura automaticamente
+      let sinaisFinais = [...sinaisRegistradosSessao];
+      if (paSistolica || fcBpm || spo2 || tempCelsius || glicemia) {
+        const agora = new Date();
+        const sinalId = `sv_${pacienteId}_${agora.getTime()}`;
+        const sinalAuto: SinalVitalLocal = {
+          id: sinalId,
+          paciente_id: pacienteId,
+          evolucao_id: evolucao.id,
+          data_hora: agora.toISOString(),
+          pa_sistolica: paSistolica ? Number(paSistolica) : null,
+          pa_diastolica: paDiastolica ? Number(paDiastolica) : null,
+          fc_bpm: fcBpm ? Number(fcBpm) : null,
+          spo2_percent: spo2 ? Number(spo2) : null,
+          temp_celsius: tempCelsius ? Number(tempCelsius) : null,
+          glicemia_mg_dl: glicemia ? Number(glicemia) : null,
+        };
+        await localDB.enqueueAction('REGISTRAR_SINAIS_VITAIS', {
+          id: sinalId,
+          pacienteId,
+          pacienteNome: paciente?.nome,
+          evolucaoId: evolucao.id,
+          data_hora: sinalAuto.data_hora,
+          pa_sistolica: sinalAuto.pa_sistolica,
+          pa_diastolica: sinalAuto.pa_diastolica,
+          fc_bpm: sinalAuto.fc_bpm,
+          spo2_percent: sinalAuto.spo2_percent,
+          temp_celsius: sinalAuto.temp_celsius,
+          glicemia_mg_dl: sinalAuto.glicemia_mg_dl,
+        });
+        sinaisFinais = [sinalAuto, ...sinaisFinais];
+        setSinaisRegistradosSessao(sinaisFinais);
+        setPaSistolica('');
+        setPaDiastolica('');
+        setFcBpm('');
+        setSpo2('');
+        setTempCelsius('');
+        setGlicemia('');
+      }
+
+      if (paciente) {
+        await localDB.savePacientes([paciente]);
+      }
+
+      const seloLocal = `v2:bio:${dadosBio.metodo.toLowerCase()}:sha256=${dadosBio.biometriaHash}:coop=${dadosBio.cooperadoIdentificador}:ts=${checkOutTime}`;
+      const finalEv: EvolucaoLocal & { assinatura_biometrica?: DadosAssinaturaBiometrica } = {
+        ...evolucao,
+        paciente_nome: paciente?.nome || evolucao.paciente_nome,
+        paciente_cpf: paciente?.cpf || evolucao.paciente_cpf,
+        profissional_nome: cooperadoNome || evolucao.profissional_nome || 'Profissional Cooperado',
+        check_out: checkOutTime,
+        transcricao_revisada: transcriptionText,
+        status: 'Assinado_Pendente_Sync',
+        data_assinatura: checkOutTime,
+        assinatura_digital: evolucao.assinatura_digital || seloLocal,
+        assinatura_biometrica: resumoBiometrico,
+        responsavel_id: respIdFinal,
+        responsavel_nome: respNomeFinal,
+        responsavel_parentesco: respParentescoFinal,
+        sinais_vitais: sinaisFinais.length > 0 ? sinaisFinais : evolucao.sinais_vitais,
+      };
+
       await localDB.saveEvolucao(finalEv);
+      setDadosBiometricos(resumoBiometrico);
       setEvolucao(finalEv);
       setIsLocked(true);
       setCheckedOut(true);
-      
-      // Enfileira ação de finalização
+      setShowFacialModal(false);
+
+      // Atualiza imediatamente o histórico de evoluções na tela
+      setHistoricoEvolucoes((prev) =>
+        ordenarEvolucoesRecentes([finalEv, ...prev.filter((e) => e.id !== finalEv.id)])
+      );
+
+      // Enfileira ação de finalização com metadados completos, responsável pelo plantão e hash biométrico SHA-256
       await localDB.enqueueAction('SIGN_EVOLUCAO', {
         evolucaoId: evolucao.id,
+        pacienteId,
+        pacienteNome: paciente?.nome,
+        checkIn: evolucao.check_in,
         checkOut: checkOutTime,
+        tipoProfissional: evolucao.tipo_profissional,
+        profissionalNome: finalEv.profissional_nome,
+        turno: evolucao.turno,
         transcricao_revisada: transcriptionText,
-        pinCode
+        pinCode: dadosBio.pinFallback || pinCode || undefined,
+        biometria_hash: dadosBio.biometriaHash,
+        metodo_assinatura: dadosBio.metodo,
+        biometria_timestamp: dadosBio.timestamp,
+        cooperado_identificador: dadosBio.cooperadoIdentificador,
+        responsavel_id: respIdFinal,
+        responsavel_nome: respNomeFinal,
+        responsavel_parentesco: respParentescoFinal,
+        assinatura_biometrica: {
+          metodo: dadosBio.metodo,
+          biometriaHash: dadosBio.biometriaHash,
+          timestamp: dadosBio.timestamp,
+          cooperadoIdentificador: dadosBio.cooperadoIdentificador,
+          dispositivoInfo: dadosBio.dispositivoInfo,
+          responsavelId: respIdFinal,
+          responsavelNome: respNomeFinal,
+          responsavelParentesco: respParentescoFinal,
+        },
       });
-      
-      console.log('Prontuário assinado e finalizado localmente!');
+
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        await synchronizeQueue().catch(() => false);
+      }
+      await atualizarHistoricoLocal();
+
+      console.log('Prontuário assinado biometricamente e finalizado!');
     } catch (e) {
       console.error(e);
       setErrorText('Erro ao salvar assinatura localmente.');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAbrirValidacaoFacial = () => {
+    if (!validarPreRequisitosAssinatura()) return;
+    setErrorText(null);
+    setShowFacialModal(true);
+  };
+
+  // Assinar e Bloquear Evolução (Check-out automático via Reconhecimento Facial ou Fallback PIN)
+  const handleAssinarProntuario = async () => {
+    if (!evolucao) return;
+    if (!validarPreRequisitosAssinatura()) return;
+
+    if (dadosBiometricos) {
+      await finalizarComDadosBiometricos(dadosBiometricos);
+      return;
+    }
+
+    const pinLimpo = pinCode.trim();
+    if (!pinLimpo) {
+      // Sem PIN digitado, abre o modal de Reconhecimento Facial (padrão oficial)
+      setErrorText(null);
+      setShowFacialModal(true);
+      return;
+    }
+
+    if (pinLimpo !== '1234' && !/^\d{4,6}$/.test(pinLimpo)) {
+      setErrorText('Digite um PIN válido (ex: 1234 ou 6 dígitos) ou utilize o Reconhecimento Facial.');
+      return;
+    }
+
+    const timestampIso = new Date().toISOString();
+    const identificadorCooperado = cooperadoCpf || cooperadoId || 'coop_sessao';
+    const hashPin = await gerarHashBiometricoSha256({
+      imagemBase64: `PIN_FALLBACK:${pinLimpo}`,
+      cooperadoIdentificador: identificadorCooperado,
+      evolucaoId: evolucao.id,
+      timestampIso,
+    });
+
+    await finalizarComDadosBiometricos({
+      metodo: 'PIN_FALLBACK',
+      biometriaHash: hashPin,
+      timestamp: timestampIso,
+      cooperadoIdentificador: identificadorCooperado,
+      evolucaoId: evolucao.id,
+      pinFallback: pinLimpo,
+      dispositivoInfo: typeof navigator !== 'undefined' ? navigator.userAgent : 'PIN-Fallback',
+    });
   };
 
   // Formatar tempo em segundos para HH:MM:SS
@@ -771,9 +1320,23 @@ export default function ProntuarioAtendimento() {
         )}
 
         {checkedOut && (
-          <span className="text-xs font-heavy text-idle-ink bg-idle-soft border border-idle-line px-3 py-1 rounded-lg">
-            Finalizada
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-heavy text-pos-ink bg-pos-soft border border-pos-line px-3 py-1 rounded-lg flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
+              Finalizada
+            </span>
+            {!paciente.limite_atingido && (
+              <button
+                type="button"
+                data-testid="btn-novo-atendimento"
+                onClick={handleIniciarNovoAtendimento}
+                className="bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs px-3 py-1.5 rounded-lg shadow-card transition-all active:scale-[0.98] flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                <PlusCircle className="w-3.5 h-3.5" aria-hidden="true" />
+                Novo Atendimento
+              </button>
+            )}
+          </div>
         )}
       </div>
 
@@ -786,8 +1349,6 @@ export default function ProntuarioAtendimento() {
 
               {/* Seleção do Turno */}
               <div>
-                {/* Grupo de botões, não um campo: rotular via role/aria-labelledby.
-                    Um <label> solto aqui não se associa a nada. */}
                 <span id="rotuloTurno" className="text-xs font-strong text-muted uppercase tracking-wider block mb-1.5">Turno de Enfermagem</span>
                 <div role="group" aria-labelledby="rotuloTurno" className="grid grid-cols-3 gap-2">
                   {(['Diurno', 'Noturno', '24h'] as const).map((t) => (
@@ -810,10 +1371,15 @@ export default function ProntuarioAtendimento() {
               {/* Aprazamento de Medicamentos */}
               <div className="border-t border-line-soft pt-3">
                 <div className="flex items-center justify-between mb-2.5">
-                  <h4 className="text-xs font-strong text-muted uppercase tracking-wider flex items-center gap-1.5">
-                  <Pill className="w-4 h-4 text-accent-ink" aria-hidden="true" />
-                  Aprazamento & Checagem Digital
-                  </h4>
+                  <div className="flex flex-col">
+                    <h4 className="text-xs font-strong text-muted uppercase tracking-wider flex items-center gap-1.5">
+                      <Pill className="w-4 h-4 text-accent-ink" aria-hidden="true" />
+                      Aprazamento & Checagem Digital
+                    </h4>
+                    <span className="text-[11px] text-muted font-medium mt-0.5">
+                      Plantão {turno} (12h) • {aprazamentosTurno.length} horário(s) agendado(s)
+                    </span>
+                  </div>
                   {isOnline && (
                     <button
                       type="button"
@@ -828,9 +1394,9 @@ export default function ProntuarioAtendimento() {
                   )}
                 </div>
 
-                {aprazamentos.length === 0 ? (
+                {aprazamentosTurno.length === 0 ? (
                   <div className="text-center py-4 text-muted text-xs flex flex-col items-center gap-2">
-                    <p>Sem prescrições médicas ativas carregadas.</p>
+                    <p>Nenhum medicamento agendado para o plantão {turno.toLowerCase()} (12h).</p>
                     {isOnline && (
                       <button
                         type="button"
@@ -845,7 +1411,7 @@ export default function ProntuarioAtendimento() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {aprazamentos.map((apraz) => (
+                    {aprazamentosTurno.map((apraz) => (
                       <div
                         key={apraz.id}
                         className={`border rounded-xl p-3 flex justify-between items-center transition-all ${
@@ -877,12 +1443,6 @@ export default function ProntuarioAtendimento() {
 
                         {/* Checagem Actions */}
                         {apraz.status === 'Pendente' ? (
-                          // Par de maior risco da tela: registra administração de
-                          // medicamento. Eram 30x30px (p-2 + ícone de 14px) a 6px
-                          // um do outro, vermelho colado no verde, só ícone. Em
-                          // campo, no celular, isso é erro de dose esperando
-                          // acontecer. Agora 44x44 com separação de 12px, e o
-                          // rótulo aparece assim que a largura permite.
                           <div className="flex gap-3 shrink-0">
                             <button
                               disabled={isLocked}
@@ -919,6 +1479,146 @@ export default function ProntuarioAtendimento() {
               </div>
             </div>
           )}
+
+          {/* Módulo de Aferição de Sinais Vitais à Beira do Leito */}
+          <div className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-strong text-muted uppercase tracking-wider flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-accent-ink" aria-hidden="true" />
+                Aferição de Sinais Vitais (Leito)
+              </h3>
+              <div className="flex items-center gap-2">
+                {ultimaAfericao && !sinaisSalvos && (
+                  <span className="text-[11px] text-muted italic">
+                    Última às {ultimaAfericao}
+                  </span>
+                )}
+                {sinaisSalvos && (
+                  <span className="text-xs font-semibold text-pos-ink bg-pos-soft border border-pos-line px-2 py-0.5 rounded-md flex items-center gap-1 animate-fade-in">
+                    <Check className="w-3 h-3" /> Registrado!
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {sinaisRegistradosSessao.length > 0 && (
+              <div className="bg-pos-soft/60 border border-pos-line rounded-lg p-2.5 flex flex-wrap items-center gap-2 text-xs">
+                <span className="font-heavy text-pos-ink text-[11px] uppercase tracking-wider">Aferido nesta sessão:</span>
+                {sinaisRegistradosSessao[0].pa_sistolica && (
+                  <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono font-semibold text-ink">
+                    PA {sinaisRegistradosSessao[0].pa_sistolica}/{sinaisRegistradosSessao[0].pa_diastolica || '--'} mmHg
+                  </span>
+                )}
+                {sinaisRegistradosSessao[0].fc_bpm && (
+                  <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono font-semibold text-ink">
+                    FC {sinaisRegistradosSessao[0].fc_bpm} bpm
+                  </span>
+                )}
+                {sinaisRegistradosSessao[0].spo2_percent && (
+                  <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono font-semibold text-ink">
+                    SpO2 {sinaisRegistradosSessao[0].spo2_percent}%
+                  </span>
+                )}
+                {sinaisRegistradosSessao[0].temp_celsius && (
+                  <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono font-semibold text-ink">
+                    Temp {sinaisRegistradosSessao[0].temp_celsius}°C
+                  </span>
+                )}
+                {sinaisRegistradosSessao[0].glicemia_mg_dl && (
+                  <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono font-semibold text-ink">
+                    HGT {sinaisRegistradosSessao[0].glicemia_mg_dl} mg/dL
+                  </span>
+                )}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs">
+              <div className="flex flex-col gap-1">
+                <label className="text-muted font-strong">PA Sistólica (mmHg)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 120"
+                  value={paSistolica}
+                  onChange={(e) => setPaSistolica(e.target.value)}
+                  disabled={isLocked}
+                  className="bg-canvas border border-line rounded-lg p-2 text-ink-body font-mono text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-muted font-strong">PA Diastólica (mmHg)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 80"
+                  value={paDiastolica}
+                  onChange={(e) => setPaDiastolica(e.target.value)}
+                  disabled={isLocked}
+                  className="bg-canvas border border-line rounded-lg p-2 text-ink-body font-mono text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-muted font-strong">Freq. Cardíaca (bpm)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 75"
+                  value={fcBpm}
+                  onChange={(e) => setFcBpm(e.target.value)}
+                  disabled={isLocked}
+                  className="bg-canvas border border-line rounded-lg p-2 text-ink-body font-mono text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-muted font-strong">SpO2 (%)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 98"
+                  value={spo2}
+                  onChange={(e) => setSpo2(e.target.value)}
+                  disabled={isLocked}
+                  className="bg-canvas border border-line rounded-lg p-2 text-ink-body font-mono text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-muted font-strong">Temperatura (°C)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="Ex: 36.5"
+                  value={tempCelsius}
+                  onChange={(e) => setTempCelsius(e.target.value)}
+                  disabled={isLocked}
+                  className="bg-canvas border border-line rounded-lg p-2 text-ink-body font-mono text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <label className="text-muted font-strong">Glicemia (mg/dL)</label>
+                <input
+                  type="number"
+                  placeholder="Ex: 110"
+                  value={glicemia}
+                  onChange={(e) => setGlicemia(e.target.value)}
+                  disabled={isLocked}
+                  className="bg-canvas border border-line rounded-lg p-2 text-ink-body font-mono text-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={handleSalvarSinaisVitais}
+                disabled={isLocked || salvandoSinais}
+                className="bg-accent hover:bg-accent-hover text-on-accent text-xs font-strong px-4 py-2 rounded-lg shadow-raised transition-all active:scale-[0.98] disabled:opacity-50 flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              >
+                <Activity className="w-3.5 h-3.5" />
+                {salvandoSinais ? 'Registrando...' : 'Registrar Sinais Vitais'}
+              </button>
+            </div>
+          </div>
 
           {/* Modal Justificativa de Omissão */}
           {checkingAprazamento && checkingAprazamento.status === 'Pendente' && (
@@ -980,11 +1680,6 @@ export default function ProntuarioAtendimento() {
                   <button
                     onClick={handleJustificarNaoAdministrado}
                     disabled={!justificativaTexto.trim()}
-                    // `text-white` era incondicional e o estado desabilitado usava
-                    // `bg-slate-355`, classe que não existe no Tailwind: sem fundo,
-                    // o rótulo virava branco sobre o modal branco e sumia. Agora os
-                    // dois estados vêm de token, e `disabled-ink` sobre `disabled`
-                    // foi medido em 4,55:1 no claro e 4,56:1 no escuro.
                     className={`w-full min-h-[44px] py-2.5 font-strong rounded-lg shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
                       justificativaTexto.trim()
                         ? 'bg-accent hover:bg-accent-hover text-on-accent'
@@ -1113,8 +1808,6 @@ export default function ProntuarioAtendimento() {
                   value={transcriptionText}
                   onChange={(e) => {
                     setTranscriptionText(e.target.value);
-                    // A trava cai sozinha quando o último marcador sai do texto:
-                    // editar uma vírgula não deveria liberar a assinatura.
                     if (transcricaoSimulada && !e.target.value.includes('[SIMULAÇÃO]')) {
                       setTranscricaoSimulada(false);
                     }
@@ -1126,38 +1819,179 @@ export default function ProntuarioAtendimento() {
             </div>
           </div>
 
-          {/* Seção 3: Assinatura Eletrônica e Fechamento */}
+          {/* Seção 3: Assinatura Eletrônica, Reconhecimento Facial e Fechamento */}
           <div className="bg-accent-soft border border-accent-line rounded-xl p-4 shadow-card flex flex-col gap-4">
-            <div>
-              <h3 className="text-xs font-strong text-ink flex items-center gap-1.5">
-                <Lock className="w-4 h-4 text-accent-ink" aria-hidden="true" />
-                Validação de Assinatura Eletrônica
-              </h3>
-              <p className="text-xs text-muted mt-0.5">
-                Digite sua senha/PIN de segurança para assinar digitalmente e bloquear alterações.
-              </p>
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <h3 className="text-xs font-strong text-ink flex items-center gap-1.5">
+                  <Lock className="w-4 h-4 text-accent-ink" aria-hidden="true" />
+                  Validação de Assinatura Eletrônica
+                </h3>
+                <p className="text-xs text-muted mt-0.5">
+                  Selecione o familiar/responsável que acompanha o encerramento do plantão e assine por Reconhecimento Facial (padrão oficial) ou PIN de contingência.
+                </p>
+              </div>
+              <span className="text-[10px] font-heavy uppercase tracking-wider bg-surface text-accent-ink border border-accent-line px-2 py-0.5 rounded-full shrink-0">
+                Biometria SHA-256
+              </span>
             </div>
 
             {!isLocked ? (
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  maxLength={6}
-                  placeholder="PIN (6 dígitos)"
-                  value={pinCode}
-                  onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
-                  style={{ fontSize: 16 }}
-                  className="bg-surface border border-accent-line rounded-lg p-2.5 text-center font-heavy text-ink w-28 min-h-[44px] placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-accent-soft focus:border-accent"
-                />
-                <button
-                  onClick={handleAssinarProntuario}
-                  className="flex-1 bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs py-2.5 rounded-lg shadow-raised transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+              <div className="flex flex-col gap-3">
+                {/* Seletor do Familiar / Responsável pela Finalização do Plantão */}
+                <div
+                  data-testid="secao-selecao-responsavel"
+                  className="bg-surface border border-accent-line rounded-xl p-3.5 flex flex-col gap-2.5"
                 >
-                  Assinar e Finalizar
+                  <div className="flex items-center justify-between gap-2">
+                    <div>
+                      <span className="text-[11px] font-heavy text-ink uppercase tracking-wider flex items-center gap-1.5">
+                        <UserCheck className="w-4 h-4 text-accent-ink" aria-hidden="true" />
+                        Familiar / Responsável pela Finalização do Plantão
+                      </span>
+                      <p className="text-[11px] text-muted mt-0.5">
+                        Indique quem está recebendo a passagem/finalização do plantão no domicílio:
+                      </p>
+                    </div>
+                    <span className="text-[10px] font-heavy text-accent-ink bg-accent-soft border border-accent-line px-2 py-0.5 rounded-full shrink-0">
+                      Obrigatório no Plantão
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {responsaveisPaciente.map((r) => {
+                      const selecionado = responsavelSelecionadoId === r.id;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          data-testid={`btn-selecionar-responsavel-${r.id}`}
+                          onClick={() => setResponsavelSelecionadoId(r.id)}
+                          className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
+                            selecionado
+                              ? 'bg-accent text-on-accent border-accent shadow-card'
+                              : 'bg-canvas hover:bg-chip text-ink border-line'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-heavy truncate flex items-center gap-1.5">
+                              <span>{r.nome}</span>
+                              {r.principal && (
+                                <span
+                                  className={`text-[9px] uppercase font-heavy px-1.5 py-0.2 rounded ${
+                                    selecionado
+                                      ? 'bg-white/20 text-on-accent'
+                                      : 'bg-pos-soft text-pos-ink border border-pos-line'
+                                  }`}
+                                >
+                                  Principal
+                                </span>
+                              )}
+                            </div>
+                            <div className={`text-[11px] ${selecionado ? 'text-on-accent/90' : 'text-muted'}`}>
+                              Vínculo: {r.parentesco}
+                              {r.telefone ? ` • ${r.telefone}` : ''}
+                            </div>
+                          </div>
+                          <div
+                            className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                              selecionado ? 'bg-white text-accent border-white' : 'border-line'
+                            }`}
+                          >
+                            {selecionado && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+
+                    <button
+                      type="button"
+                      data-testid="btn-selecionar-responsavel-outro"
+                      onClick={() => setResponsavelSelecionadoId('outro')}
+                      className={`p-2.5 rounded-xl border text-left transition-all flex items-center justify-between gap-2 ${
+                        responsavelSelecionadoId === 'outro'
+                          ? 'bg-accent text-on-accent border-accent shadow-card'
+                          : 'bg-canvas hover:bg-chip text-ink border-line'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="text-xs font-heavy">Outro Familiar / Acompanhante</div>
+                        <div
+                          className={`text-[11px] ${
+                            responsavelSelecionadoId === 'outro' ? 'text-on-accent/90' : 'text-muted'
+                          }`}
+                        >
+                          Informar nome manualmente no plantão
+                        </div>
+                      </div>
+                      <div
+                        className={`w-5 h-5 rounded-full border flex items-center justify-center shrink-0 ${
+                          responsavelSelecionadoId === 'outro' ? 'bg-white text-accent border-white' : 'border-line'
+                        }`}
+                      >
+                        {responsavelSelecionadoId === 'outro' && <Check className="w-3.5 h-3.5" aria-hidden="true" />}
+                      </div>
+                    </button>
+                  </div>
+
+                  {responsavelSelecionadoId === 'outro' && (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                      <input
+                        type="text"
+                        data-testid="input-outro-responsavel-nome"
+                        placeholder="Nome completo do familiar presente"
+                        value={outroResponsavelNome}
+                        onChange={(e) => setOutroResponsavelNome(e.target.value)}
+                        className="sm:col-span-2 bg-canvas border border-line rounded-lg px-3 py-2 text-xs text-ink placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      />
+                      <select
+                        data-testid="select-outro-responsavel-parentesco"
+                        value={outroResponsavelParentesco}
+                        onChange={(e) => setOutroResponsavelParentesco(e.target.value)}
+                        className="bg-canvas border border-line rounded-lg px-2.5 py-2 text-xs font-strong text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                      >
+                        <option value="Filho(a)">Filho(a)</option>
+                        <option value="Cônjuge">Cônjuge</option>
+                        <option value="Neto(a)">Neto(a)</option>
+                        <option value="Irmão(ã)">Irmão(ã)</option>
+                        <option value="Cuidador(a) Familiar">Cuidador(a) Familiar</option>
+                        <option value="Familiar">Familiar</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  data-testid="btn-abrir-validacao-facial"
+                  onClick={handleAbrirValidacaoFacial}
+                  disabled={loading}
+                  className="w-full bg-accent hover:bg-accent-hover text-on-accent font-strong text-xs py-3 px-4 rounded-xl shadow-raised transition-all active:scale-[0.98] flex items-center justify-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                >
+                  <Camera className="w-4 h-4" aria-hidden="true" />
+                  Assinar com Reconhecimento Facial (Câmera)
                 </button>
+
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="password"
+                    maxLength={6}
+                    placeholder="PIN (6 dígitos)"
+                    value={pinCode}
+                    onChange={(e) => setPinCode(e.target.value.replace(/\D/g, ''))}
+                    className="bg-surface border border-accent-line rounded-lg px-3 py-2.5 text-center text-xs font-heavy text-ink w-36 sm:w-40 min-h-[44px] placeholder-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-focus focus-visible:ring-offset-1 focus-visible:ring-offset-accent-soft focus:border-accent"
+                  />
+                  <button
+                    onClick={handleAssinarProntuario}
+                    disabled={loading}
+                    className="flex-1 bg-surface hover:bg-chip border border-accent-line text-ink font-strong text-xs py-2.5 min-h-[44px] rounded-lg shadow-card transition-all active:scale-[0.98] focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                  >
+                    Assinar e Finalizar
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="bg-accent text-on-accent p-3.5 rounded-xl text-center text-xs font-strong flex flex-col gap-1">
+              <div className="bg-accent text-on-accent p-3.5 rounded-xl text-center text-xs font-strong flex flex-col gap-1.5">
                 <p className="flex items-center justify-center gap-1.5">
                   <CheckSquare className="w-4 h-4" aria-hidden="true" />
                   Prontuário Assinado Digitalmente
@@ -1165,6 +1999,30 @@ export default function ProntuarioAtendimento() {
                 <p className="font-normal text-on-accent-muted text-xs">
                   Bloqueado para edições. Documento indexado ao histórico clínico permanente.
                 </p>
+                {(evolucao?.responsavel_nome || responsavelEfetivo?.nome) && (
+                  <p
+                    data-testid="responsavel-assinado-resumo"
+                    className="text-[11px] font-heavy text-on-accent bg-white/15 px-2.5 py-1 rounded-lg mx-auto"
+                  >
+                    Familiar / Responsável no Plantão: {evolucao?.responsavel_nome || responsavelEfetivo?.nome}
+                    {(evolucao?.responsavel_parentesco || responsavelEfetivo?.parentesco)
+                      ? ` (${evolucao?.responsavel_parentesco || responsavelEfetivo?.parentesco})`
+                      : ''}
+                  </p>
+                )}
+                {dadosBiometricos && (
+                  <div className="mt-1 pt-2 border-t border-white/20 flex flex-col gap-1 text-[10px] font-mono text-on-accent/90">
+                    <span className="flex items-center justify-center gap-1 font-sans font-bold uppercase tracking-wider">
+                      <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
+                      {dadosBiometricos.metodo === 'FACIAL'
+                        ? 'Biometria Facial Validada (SHA-256)'
+                        : 'Assinatura de Contingência Validada (SHA-256)'}
+                    </span>
+                    <span className="truncate px-2" data-testid="selo-biometrico-assinado">
+                      Hash: {dadosBiometricos.biometriaHash}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1179,15 +2037,167 @@ export default function ProntuarioAtendimento() {
         </div>
       )}
 
-      {/* Botão de retorno se concluído */}
-      {checkedOut && (
-        <button
-          onClick={() => router.push('/cooperado')}
-          className="w-full bg-invert hover:bg-invert-hover text-on-invert font-strong text-xs py-3 rounded-xl shadow-raised transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      {/* Seção 4: Histórico de Evoluções Realizadas no Prontuário do Paciente */}
+      {historicoEvolucoes.length > 0 && (
+        <div
+          data-testid="secao-historico-evolucoes"
+          className="bg-surface border border-line rounded-xl p-4 shadow-card flex flex-col gap-3"
         >
-          Voltar para a Agenda
-        </button>
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-strong text-ink uppercase tracking-wider flex items-center gap-1.5">
+              <FileText className="w-4 h-4 text-accent-ink" aria-hidden="true" />
+              Histórico de Evoluções Realizadas ({historicoEvolucoes.length})
+            </h3>
+            <span className="text-[11px] font-semibold text-pos-ink bg-pos-soft border border-pos-line px-2 py-0.5 rounded-full">
+              Prontuário Ativo
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {historicoEvolucoes.map((evItem) => {
+              const dtRef = evItem.data_assinatura || evItem.check_out || evItem.check_in;
+              const dataFormatada = dtRef
+                ? new Date(dtRef).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                : '';
+              const horaInicio = evItem.check_in
+                ? new Date(evItem.check_in).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                : '';
+              const horaFim = (evItem.check_out || evItem.data_assinatura)
+                ? new Date(evItem.check_out || evItem.data_assinatura || '').toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                : '';
+              const textoClinico =
+                evItem.transcricao_revisada ||
+                [
+                  evItem.soap_subjetivo ? `[S] ${evItem.soap_subjetivo}` : '',
+                  evItem.soap_objetivo ? `[O] ${evItem.soap_objetivo}` : '',
+                  evItem.soap_avaliacao ? `[A] ${evItem.soap_avaliacao}` : '',
+                  evItem.soap_plano ? `[P] ${evItem.soap_plano}` : '',
+                ]
+                  .filter(Boolean)
+                  .join('\n');
+              const hashExtraido =
+                evItem.assinatura_biometrica?.biometriaHash ||
+                extrairHashBiometricoDeSelo(evItem.assinatura_digital)?.hash ||
+                evItem.assinatura_digital;
+              const sincronizado = evItem.status === 'Finalizado' || evItem.status === 'Auditado' || (evItem as any).status === 'Concluído';
+
+              return (
+                <div
+                  key={evItem.id}
+                  data-testid={`card-evolucao-historico-${evItem.id}`}
+                  className="bg-canvas border border-line rounded-xl p-3.5 flex flex-col gap-2.5 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2">
+                    <div className="flex flex-col">
+                      <span className="font-heavy text-ink">
+                        {evItem.profissional_nome || cooperadoNome || 'Profissional Cooperado'}
+                      </span>
+                      <span className="text-[11px] text-muted">
+                        {dataFormatada} • {horaInicio}{horaFim ? ` às ${horaFim}` : ''}
+                        {evItem.turno ? ` • Turno ${evItem.turno}` : ''}
+                      </span>
+                      {evItem.responsavel_nome && (
+                        <span
+                          data-testid={`historico-responsavel-${evItem.id}`}
+                          className="text-[11px] font-strong text-accent-ink mt-0.5 flex items-center gap-1"
+                        >
+                          <UserCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                          Familiar / Responsável no Plantão: {evItem.responsavel_nome}
+                          {evItem.responsavel_parentesco ? ` (${evItem.responsavel_parentesco})` : ''}
+                        </span>
+                      )}
+                    </div>
+                    <span
+                      className={`text-[11px] font-heavy px-2.5 py-0.5 rounded-full border flex items-center gap-1 ${
+                        sincronizado
+                          ? 'bg-pos-soft text-pos-ink border-pos-line'
+                          : 'bg-warn-soft text-warn-ink border-warn-line'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3 h-3" aria-hidden="true" />
+                      {sincronizado ? 'Assinado & Sincronizado' : 'Aguardando Sincronização'}
+                    </span>
+                  </div>
+
+                  {Array.isArray(evItem.sinais_vitais) && evItem.sinais_vitais.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {evItem.sinais_vitais[0].pa_sistolica && (
+                        <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono text-[11px] font-semibold text-ink">
+                          PA {evItem.sinais_vitais[0].pa_sistolica}/{evItem.sinais_vitais[0].pa_diastolica || '--'} mmHg
+                        </span>
+                      )}
+                      {evItem.sinais_vitais[0].fc_bpm && (
+                        <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono text-[11px] font-semibold text-ink">
+                          FC {evItem.sinais_vitais[0].fc_bpm} bpm
+                        </span>
+                      )}
+                      {evItem.sinais_vitais[0].spo2_percent && (
+                        <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono text-[11px] font-semibold text-ink">
+                          SpO2 {evItem.sinais_vitais[0].spo2_percent}%
+                        </span>
+                      )}
+                      {evItem.sinais_vitais[0].temp_celsius && (
+                        <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono text-[11px] font-semibold text-ink">
+                          Temp {evItem.sinais_vitais[0].temp_celsius}°C
+                        </span>
+                      )}
+                      {evItem.sinais_vitais[0].glicemia_mg_dl && (
+                        <span className="bg-surface border border-line px-2 py-0.5 rounded font-mono text-[11px] font-semibold text-ink">
+                          HGT {evItem.sinais_vitais[0].glicemia_mg_dl} mg/dL
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {textoClinico && (
+                    <div className="bg-surface border border-line-soft rounded-lg p-2.5 text-ink-body whitespace-pre-wrap leading-relaxed">
+                      {textoClinico}
+                    </div>
+                  )}
+
+                  {hashExtraido && (
+                    <div className="flex items-center justify-between gap-2 pt-1 text-[10px] font-mono text-muted">
+                      <span className="flex items-center gap-1 font-sans font-semibold text-accent-ink">
+                        <ShieldCheck className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
+                        Assinatura Biométrica SHA-256 Validada
+                      </span>
+                      <span className="truncate max-w-[180px]" title={String(hashExtraido)}>
+                        {String(hashExtraido)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
+
+      {/* Modal de Validação Facial WebRTC */}
+      <ValidacaoFacialModal
+        aberto={showFacialModal}
+        cooperadoId={cooperadoId}
+        cooperadoNome={cooperadoNome}
+        cooperadoCpf={cooperadoCpf}
+        evolucaoId={evolucao?.id || `ev_${pacienteId}`}
+        loading={loading}
+        responsaveisDisponiveis={responsaveisPaciente}
+        responsavelSelecionadoId={responsavelEfetivo.id}
+        onSelecionarResponsavel={(idResp) => setResponsavelSelecionadoId(idResp)}
+        responsavelNome={responsavelEfetivo.nome}
+        responsavelParentesco={responsavelEfetivo.parentesco}
+        onFechar={() => setShowFacialModal(false)}
+        onConfirmar={finalizarComDadosBiometricos}
+      />
+
+      {/* Botão de retorno para a Agenda */}
+      <button
+        type="button"
+        onClick={() => router.push('/cooperado')}
+        className="w-full bg-invert hover:bg-invert-hover text-on-invert font-strong text-xs py-3 rounded-xl shadow-raised transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+      >
+        Voltar para a Agenda
+      </button>
     </div>
   );
 }

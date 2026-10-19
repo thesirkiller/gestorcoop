@@ -1,15 +1,38 @@
 export const MAX_DOCUMENTO_BYTES = 10 * 1024 * 1024;
 export const TIPOS_DOCUMENTO = {
   identificacao: 'Identificação (RG ou CNH)',
-  residencia: 'Comprovante de residência',
-  outro: 'Outro documento',
+  conselho: 'Carteira Profissional (COREN / Conselho)',
+  certidao_regularidade: 'Certidão de Regularidade do COREN / Conselho',
+  residencia: 'Comprovante de endereço',
+  cartao_vacinacao: 'Cartão de vacinação',
+  cartao_sus_pis: 'Cartão do SUS / PIS (opcional)',
+  outro: 'Outro documento de identificação social (opcional)',
 } as const;
+
+export type TipoDocumentoAdesao = keyof typeof TIPOS_DOCUMENTO;
+
+export const TIPOS_DOCUMENTO_OBRIGATORIOS: readonly TipoDocumentoAdesao[] = [
+  'identificacao',
+  'conselho',
+  'certidao_regularidade',
+  'residencia',
+  'cartao_vacinacao',
+] as const;
+
+export const TIPOS_DOCUMENTO_OPCIONAIS: readonly TipoDocumentoAdesao[] = [
+  'cartao_sus_pis',
+  'outro',
+] as const;
 
 export interface DocumentoAdesao {
   url: string;
   name: string;
-  tipo: keyof typeof TIPOS_DOCUMENTO;
+  tipo: TipoDocumentoAdesao;
   comprovante: string;
+}
+
+export function isTipoDocumentoValido(tipo: unknown): tipo is TipoDocumentoAdesao {
+  return typeof tipo === 'string' && Object.prototype.hasOwnProperty.call(TIPOS_DOCUMENTO, tipo);
 }
 
 export function normalizarUrlDocumento(value: unknown): string | null {
@@ -24,8 +47,20 @@ export function normalizarUrlDocumento(value: unknown): string | null {
 }
 
 export function documentosObrigatoriosPendentes(files: DocumentoAdesao[]): string[] {
-  return (['identificacao', 'residencia'] as const)
-    .filter(tipo => !files.some(file => file.tipo === tipo && normalizarUrlDocumento(file.url) && file.comprovante))
+  const lista = Array.isArray(files) ? files : [];
+  const urlsUsadas = new Set<string>();
+  const tiposValidos = new Set<TipoDocumentoAdesao>();
+
+  for (const file of lista) {
+    if (!file || typeof file !== 'object' || !isTipoDocumentoValido(file.tipo) || !file.comprovante) continue;
+    const urlNorm = normalizarUrlDocumento(file.url);
+    if (!urlNorm || urlsUsadas.has(urlNorm)) continue;
+    urlsUsadas.add(urlNorm);
+    tiposValidos.add(file.tipo);
+  }
+
+  return TIPOS_DOCUMENTO_OBRIGATORIOS
+    .filter(tipo => !tiposValidos.has(tipo))
     .map(tipo => TIPOS_DOCUMENTO[tipo]);
 }
 
