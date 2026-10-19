@@ -1,0 +1,164 @@
+name: CI
+
+# Gate obrigatório de PR do fluxo dev → homolog → main (ver docs/como-trabalhar.md).
+# Executa 100% no Self-Hosted Runner da VPS Oracle Cloud (custo zero de minutos no GitHub).
+
+on:
+  pull_request:
+    branches: [main, homolog]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  guards:
+    name: Guards (migração e padrões)
+    runs-on: self-hosted
+    steps:
+      - name: main só aceita promoção vinda de homolog
+        if: github.base_ref == 'main' && github.head_ref != 'homolog'
+        run: |
+          echo "::error::PR para main vindo de '${{ github.head_ref }}'. Produção (main) só recebe promoção de homolog — altere a base deste PR para homolog (docs/como-trabalhar.md)."
+          exit 1
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: atualizar referência da base preservando histórico
+        if: github.event_name == 'pull_request'
+        run: git fetch --no-tags origin "+refs/heads/$GITHUB_BASE_REF:refs/remotes/origin/$GITHUB_BASE_REF"
+
+      - name: contract (DDL destrutivo) exige label contract-aprovado
+        if: github.event_name == 'pull_request'
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        run: |
+          novos=$(git diff --name-only "origin/$GITHUB_BASE_REF"...HEAD -- temp-app/migrations/ | grep '\.sql$' || true)
+          [ -z "$novos" ] && exit 0
+          BLOQUEIA='DROP +(TABLE|COLUMN)|RENAME +(TO|COLUMN)|TRUNCATE|DELETE +FROM'
+          AVISA='DROP +(INDEX|VIEW|TRIGGER)'
+          destrutivo=""
+          for f in $novos; do
+            [ -f "$f" ] || continue
+            plano=$(tr '\n' ' ' < "$f")
+            echo "$plano" | grep -qEi "$BLOQUEIA" && destrutivo="$destrutivo $f"
+            echo "$plano" | grep -qEi "$AVISA" && \
+              echo "::warning file=$f::contém DROP de índice/view/trigger. Confirme que a migração recria o objeto."
+          done
+          [ -z "$destrutivo" ] && { echo "✓ sem DDL destrutivo."; exit 0; }
+          echo "DDL destrutivo detectado em:$destrutivo"
+          echo "$LABELS" | grep -q 'contract-aprovado' || {
+            echo "::error::migração DESTRUTIVA sem a label contract-aprovado. Contract só mergeia depois que a release do expand estiver em produção e estável."
+            exit 1
+          }
+          echo "✓ contract com label consciente."
+
+      - name: migração nova exige numeração maior que a última já mergeada
+        if: github.event_name == 'pull_request'
+        run: |
+          novos=$(git diff --name-only --diff-filter=A "origin/$GITHUB_BASE_REF"...HEAD -- temp-app/migrations/ | grep '\.sql$' || true)
+          [ -z "$novos" ] && exit 0
+          pad() { printf '%08d' "$((10#$1))"; }
+          maior=$(git ls-tree -r --name-only "origin/$GITHUB_BASE_REF" -- temp-app/migrations/ \
+                  | grep '\.sql$' | xargs -r -n1 basename | cut -d_ -f1 \
+                  | while read -r t; do pad "$t"; echo; done | sort -n | tail -1)
+          [ -z "$maior" ] && exit 0
+          rc=0
+          for f in $novos; do
+            num=$(pad "$(basename "$f" | cut -d_ -f1)")
+            if [ "$num" -le "$maior" ]; then
+              echo "::error::$f tem prefixo $num, menor ou igual à última migração já mergeada ($maior). Renomeie com numeração superior."
+              rc=1
+            fi
+          done
+          exit $rc
+
+      - name: nome de migração no padrão <numero>_<slug>.sql
+        run: |
+          bad=$(ls temp-app/migrations/ | grep -vE '^[0-9]{4,14}_[a-z0-9_]+\.sql$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::migração fora do padrão: $bad"
+            exit 1
+          fi
+          echo "✓ todas as migrações seguem o padrão <numero>_<slug>.sql"
+
+  build-test:
+    name: Lint · Typecheck · Test · Build
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: temp-app
+    env:
+      NODE_OPTIONS: --max-old-space-size=2560
+      NEXT_TELEMETRY_DISABLED: 1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Instalar dependências
+        run: npm ci --no-audit --no-fund
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck (tsc --noEmit)
+        run: npx tsc --noEmit
+      - name: Testes de Documentação e API
+        run: npm run test:documentacao
+      - name: Testes de Prontuários (RPC + Schema)
+        run: npm run test:prontuarios
+      - name: Build Next.js
+        run: npm run build
+
+  db:
+    name: Migrações do zero (D1 efêmero)
+    runs-on: self-hosted
+    defaults:
+      run:
+        working-directory: temp-app
+    steps:
+      - uses: actions/checkout@v4
+      - name: Aplicar todas as migrações sobre banco D1/SQLite limpo e validar contrato
+        run: |
+          node -e '
+            const { DatabaseSync } = require("node:sqlite");
+            const fs = require("node:fs");
+            const path = require("node:path");
+            const db = new DatabaseSync(":memory:");
+            const files = fs.readdirSync("migrations").filter(f => f.endsWith(".sql")).sort();
+            for (const f of files) {
+              console.log("═══ Aplicando:", f);
+              const sql = fs.readFileSync(path.join("migrations", f), "utf8");
+              db.exec(sql);
+            }
+            const tables = db.prepare("SELECT name FROM sqlite_master WHERE type=\x27table\x27 ORDER BY name").all().map(r => r.name);
+            console.log("Tabelas criadas (" + tables.length + "):", tables.join(", "));
+            const obrigatorias = [
+              "pacientes", "evolucoes", "prescricoes", "aprazamentos", "sinais_vitais",
+              "equipamentos", "locacoes", "movimentacoes", "planos_terapeuticos", "plano_terapeutico_metas"
+            ];
+            for (const t of obrigatorias) {
+              if (!tables.includes(t)) {
+                console.error("ERRO: Tabela obrigatória ausente após migrações:", t);
+                process.exit(1);
+              }
+            }
+            if (tables.length < 18) {
+              console.error("ERRO: Esperado >= 18 tabelas, encontrado:", tables.length);
+              process.exit(1);
+            }
+            console.log("✓ Contrato de schema D1 validado com sucesso!");
+          '
+
+  gitleaks:
+    name: Segredos (gitleaks)
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar vazamento de credenciais no working tree
+        run: |
+          if ! command -v gitleaks >/dev/null 2>&1; then
+            curl -sSL https://github.com/gitleaks/gitleaks/releases/download/v8.24.3/gitleaks_8.24.3_linux_x64.tar.gz | tar -xz gitleaks
+            ./gitleaks detect --source . --no-git --redact --no-banner --exit-code 1
+          else
+            gitleaks detect --source . --no-git --redact --no-banner --exit-code 1
+          fi

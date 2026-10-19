@@ -31,3 +31,22 @@ Sempre que o usuário acionar o comando `/boost`, solicitar análise aprofundada
 ### 3. Segunda Opinião & Consultas Pontuais
 - Quando o usuário mencionar `/codex`, "pergunte ao codex", "peça uma segunda opinião ao codex" ou desejar validação externa, utilize prontamente `codex_ask`.
 - Para revisões de pull requests ou commits específicos, utilize `codex_review` apontando a branch ou hash correspondente.
+
+---
+
+## 🔒 Fluxo Obrigatório de Branches e Gates de CI/CD (`homolog` → `main`)
+
+1. **PRs de feature miram obrigatoriamente a branch `homolog`** (default do repositório), **NUNCA** a `main` diretamente.
+2. **Proibido `git push` direto em `homolog` ou `main`**: Ambas as branches são protegidas no GitHub. Toda alteração deve ser feita em uma branch de tarefa (`feat/*`, `fix/*`, `chore/*`) criada a partir de `origin/homolog` e submetida via Pull Request para `homolog`.
+3. **Promoção para Produção (`main`)**: Apenas via Pull Request `homolog → main` após validação em homologação. O guard do CI bloqueia qualquer PR para `main` cuja branch de origem não seja `homolog`.
+4. **4 Gates Obrigatórios (Executados no Self-Hosted Runner da VPS Oracle `163.176.25.166`)**:
+   - `Guards (migração e padrões)`: Valida origem do PR, nomenclatura e numeração crescente em `temp-app/migrations/<numero>_<slug>.sql`, e bloqueia DDL destrutivo (`DROP TABLE/COLUMN`, `RENAME`, `TRUNCATE`, `DELETE FROM`) sem a label `contract-aprovado`.
+   - `Lint · Typecheck · Test · Build`: Executa `npm run lint`, `npx tsc --noEmit`, `npm run test:documentacao`, `npm run test:prontuarios` e `npm run build` em `temp-app`.
+   - `Migrações do zero (D1 efêmero)`: Aplica todas as migrações `temp-app/migrations/*.sql` do zero em um banco SQLite/D1 limpo e valida o contrato de tabelas.
+   - `Segredos (gitleaks)`: Varre o repositório com `gitleaks` bloqueando qualquer credencial exposta.
+5. **Validação Local Obrigatória antes de abrir PR**:
+   Sempre execute dentro de `temp-app/` antes do push:
+   ```bash
+   npm run lint && npx tsc --noEmit && npm run test:documentacao && npm run test:prontuarios
+   ```
+
