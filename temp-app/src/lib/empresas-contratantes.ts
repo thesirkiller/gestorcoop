@@ -14,26 +14,6 @@ export interface EmpresaContratante {
   corBadgeBorda: string;
 }
 
-const SVG_LOGO_MULTI = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" fill="none">
-    <rect width="320" height="100" rx="16" fill="#0F172A"/>
-    <circle cx="48" cy="50" r="26" fill="#0284C7"/>
-    <path d="M48 33V67M31 50H65" stroke="white" stroke-width="7.5" stroke-linecap="round"/>
-    <text x="86" y="53" font-family="Arial, sans-serif" font-weight="900" font-size="30" fill="#FFFFFF" letter-spacing="1.5">MULTCARE</text>
-    <text x="88" y="75" font-family="Arial, sans-serif" font-weight="700" font-size="13" fill="#38BDF8" letter-spacing="3">HOME CARE</text>
-  </svg>`
-)}`;
-
-const SVG_LOGO_ISA = `data:image/svg+xml;utf8,${encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 100" fill="none">
-    <rect width="320" height="100" rx="16" fill="#064E3B"/>
-    <circle cx="52" cy="50" r="28" fill="#10B981"/>
-    <path d="M40 50L48 58L65 41" stroke="white" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="94" y="55" font-family="Arial, sans-serif" font-weight="900" font-size="38" fill="#FFFFFF" letter-spacing="4">ISA</text>
-    <text x="96" y="76" font-family="Arial, sans-serif" font-weight="700" font-size="12" fill="#6EE7B7" letter-spacing="2.5">ASSISTÊNCIA INTEGRAL</text>
-  </svg>`
-)}`;
-
 export const EMPRESAS_CONTRATANTES: EmpresaContratante[] = [
   {
     id: 'verdes-mares',
@@ -52,10 +32,10 @@ export const EMPRESAS_CONTRATANTES: EmpresaContratante[] = [
     id: 'multi',
     nome: 'Multcare Home Care',
     nomeCurto: 'Multcare',
-    razaoSocial: 'MULTCARE ASSISTÊNCIA DOMICILIAR INTEGRAL LTDA',
+    razaoSocial: 'MULTCARE COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DE SAÚDE',
     cnpj: '32.450.918/0001-20',
-    cabecalhoTexto: 'MULTCARE HOME CARE DE ASSISTÊNCIA INTEGRAL — INSCRIÇÃO CNPJ: 32.450.918/0001-20',
-    logoUrl: SVG_LOGO_MULTI,
+    cabecalhoTexto: 'MULTCARE COOPERATIVA DE TRABALHO DOS PROFISSIONAIS DE SAÚDE — CNPJ: 32.450.918/0001-20',
+    logoUrl: '/logos/multcare.jpeg',
     corPrimaria: '#0284c7',
     corBadgeBg: 'bg-sky-50',
     corBadgeTexto: 'text-sky-800',
@@ -63,12 +43,12 @@ export const EMPRESAS_CONTRATANTES: EmpresaContratante[] = [
   },
   {
     id: 'isa',
-    nome: 'ISA Home Care',
-    nomeCurto: 'ISA',
-    razaoSocial: 'ISA SAÚDE E ASSISTÊNCIA DOMICILIAR INTEGRAL',
+    nome: 'Isa Care Assistência Domiciliar',
+    nomeCurto: 'Isa Care',
+    razaoSocial: 'ISA CARE SAÚDE E ASSISTÊNCIA DOMICILIAR INTEGRAL',
     cnpj: '18.920.340/0001-88',
-    cabecalhoTexto: 'ISA HOME CARE DE ASSISTÊNCIA INTEGRAL — INSCRIÇÃO CNPJ: 18.920.340/0001-88',
-    logoUrl: SVG_LOGO_ISA,
+    cabecalhoTexto: 'ISA CARE ASSISTÊNCIA DOMICILIAR INTEGRAL — INSCRIÇÃO CNPJ: 18.920.340/0001-88',
+    logoUrl: '/logos/isacare.jpeg',
     corPrimaria: '#059669',
     corBadgeBg: 'bg-emerald-50',
     corBadgeTexto: 'text-emerald-800',
@@ -96,6 +76,8 @@ export function identificarEmpresaContratante(valor?: string | null): EmpresaCon
   if (
     limpo.includes('verdes') ||
     limpo.includes('mares') ||
+    limpo.includes('serramaris') ||
+    limpo.includes('serra maris') ||
     limpo === 'verdes-mares' ||
     limpo.includes('54.800.169')
   ) {
@@ -103,6 +85,7 @@ export function identificarEmpresaContratante(valor?: string | null): EmpresaCon
   }
   if (
     limpo.includes('multcare') ||
+    limpo.includes('unicare') ||
     limpo.includes('multi') ||
     limpo === 'multi-saude' ||
     limpo.includes('32.450.918') ||
@@ -112,6 +95,8 @@ export function identificarEmpresaContratante(valor?: string | null): EmpresaCon
   }
   if (
     /\bisa\b/.test(limpo) ||
+    limpo.includes('isacare') ||
+    limpo.includes('isa care') ||
     limpo.includes('isa home') ||
     limpo.includes('isa saude') ||
     limpo.includes('18.920.340')

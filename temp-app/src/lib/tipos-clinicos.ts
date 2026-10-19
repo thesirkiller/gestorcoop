@@ -39,12 +39,15 @@ export interface MetaPlanoTerapeutico {
   status_meta?: 'Em_Andamento' | 'Concluido' | 'Pendente' | 'Excedido';
 }
 
+export type StatusPlanoTerapeutico = 'Ativo' | 'Inativo' | 'Concluido' | 'Cancelado';
+
 export interface PlanoTerapeutico {
   id: string;
   paciente_id: string;
-  data_inicio: string; // YYYY-MM-DD
-  data_fim: string;    // YYYY-MM-DD
-  status: 'Ativo' | 'Concluido' | 'Cancelado';
+  versao?: number;
+  data_inicio: string; // YYYY-MM-01 (sempre dia 01 do mês)
+  data_fim: string;    // YYYY-MM-28|29|30|31 (sempre último dia do mês)
+  status: StatusPlanoTerapeutico;
   observacoes?: string;
   created_at?: string;
   updated_at?: string;
@@ -55,6 +58,82 @@ export interface PlanoTerapeutico {
   total_restante?: number;
   tem_pendencias?: boolean;
   pendencias_alertas?: string[];
+}
+
+export interface PeriodoMesVigencia {
+  data_inicio: string;
+  data_fim: string;
+  mes_referencia: string;
+  ultimo_dia: number;
+  ano: number;
+  mes: number;
+}
+
+/**
+ * Calcula automaticamente o primeiro dia (01) e o último dia (28, 29, 30 ou 31)
+ * do mês de referência. O Plano Terapêutico sempre vigora do dia 01 até o último dia do mês.
+ */
+export function obterPeriodoMesVigencia(dataRef?: string | Date | null): PeriodoMesVigencia {
+  let ano: number;
+  let mes: number; // 1-12
+
+  if (dataRef instanceof Date && !Number.isNaN(dataRef.getTime())) {
+    ano = dataRef.getUTCFullYear();
+    mes = dataRef.getUTCMonth() + 1;
+  } else if (typeof dataRef === 'string' && dataRef.trim()) {
+    const limpo = dataRef.trim();
+    const matchIso = limpo.match(/^(\d{4})-(\d{2})/);
+    const matchBr = limpo.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (matchIso) {
+      ano = Number(matchIso[1]);
+      mes = Number(matchIso[2]);
+    } else if (matchBr) {
+      ano = Number(matchBr[3]);
+      mes = Number(matchBr[2]);
+    } else {
+      const d = new Date(limpo);
+      if (!Number.isNaN(d.getTime())) {
+        ano = d.getUTCFullYear();
+        mes = d.getUTCMonth() + 1;
+      } else {
+        const agora = new Date();
+        ano = agora.getUTCFullYear();
+        mes = agora.getUTCMonth() + 1;
+      }
+    }
+  } else {
+    const agora = new Date();
+    ano = agora.getUTCFullYear();
+    mes = agora.getUTCMonth() + 1;
+  }
+
+  if (!Number.isInteger(ano) || ano < 1970 || ano > 2100) {
+    ano = new Date().getUTCFullYear();
+  }
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+    mes = new Date().getUTCMonth() + 1;
+  }
+
+  const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  const mesStr = String(mes).padStart(2, '0');
+  const ultimoDiaStr = String(ultimoDia).padStart(2, '0');
+  const mesReferencia = `${ano}-${mesStr}`;
+
+  return {
+    data_inicio: `${mesReferencia}-01`,
+    data_fim: `${mesReferencia}-${ultimoDiaStr}`,
+    mes_referencia: mesReferencia,
+    ultimo_dia: ultimoDia,
+    ano,
+    mes,
+  };
+}
+
+export function formatarDataIsoParaBr(dataIso?: string | null): string {
+  if (!dataIso) return '--/--/----';
+  const match = String(dataIso).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`;
+  return String(dataIso);
 }
 
 export function normalizarNome(nome?: string): string {
