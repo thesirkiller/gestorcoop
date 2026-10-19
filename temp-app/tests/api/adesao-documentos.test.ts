@@ -395,7 +395,7 @@ test('POST /api/cooperado/adesao bloqueia COREN aleatório/sequencial ou sem UF 
   expect(writes).toHaveLength(0);
 });
 
-test('POST /api/cooperado/adesao conclui com sucesso com os 5 documentos obrigatórios + opcionais e grava COREN formatado', async () => {
+test('POST /api/cooperado/adesao conclui com sucesso com os 6 documentos obrigatórios + opcionais e grava COREN formatado', async () => {
   const data = await payloadCompleto();
   data.uploadedFiles = await criarDocumentos([
     ...TIPOS_DOCUMENTO_OBRIGATORIOS,
@@ -410,7 +410,7 @@ test('POST /api/cooperado/adesao conclui com sucesso com os 5 documentos obrigat
 
   expect(profWrites).toHaveLength(1);
   expect((profWrites[0] as { txt_conselho: string }).txt_conselho).toBe('COREN-GO 248591-ENF');
-  expect((writes[0] as { fks_pasta: string[] }).fks_pasta).toHaveLength(6);
+  expect((writes[0] as { fks_pasta: string[] }).fks_pasta).toHaveLength(7);
 });
 
 test('Empresas contratantes reconhecem Verdes Mares, Multcare/Multi e ISA e calculam idade corretamente', () => {
