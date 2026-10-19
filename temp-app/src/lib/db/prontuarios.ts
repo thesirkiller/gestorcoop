@@ -6,9 +6,21 @@ import {
   cooperadoCorresponde,
   parseProfissionaisDesignados,
   normalizarEspecialidade as normalizarEspecialidadeTipos,
+  obterPeriodoMesVigencia,
+  formatarDataIsoParaBr,
+  type StatusPlanoTerapeutico,
+  type PeriodoMesVigencia,
 } from '@/lib/tipos-clinicos';
 
-export { normalizarNome, cooperadoCorresponde, parseProfissionaisDesignados };
+export {
+  normalizarNome,
+  cooperadoCorresponde,
+  parseProfissionaisDesignados,
+  obterPeriodoMesVigencia,
+  formatarDataIsoParaBr,
+  type StatusPlanoTerapeutico,
+  type PeriodoMesVigencia,
+};
 
 export type EspecialidadeProfissional =
   | 'Tecnico_Enfermagem'
@@ -66,6 +78,7 @@ export interface PacienteClinico {
   tem_plano_terapeutico?: boolean;
   plano_vigente?: {
     id: string;
+    versao?: number;
     data_inicio: string;
     data_fim: string;
     total_previsto: number;
@@ -73,6 +86,11 @@ export interface PacienteClinico {
     total_restante: number;
     tem_pendencias: boolean;
   } | null;
+  bloqueio_plano?: boolean;
+  bloqueio_plano_motivo?: string;
+  especialidade_prevista?: number;
+  especialidade_realizada?: number;
+  especialidade_restante?: number;
 }
 
 export interface PrescricaoClinica {
@@ -99,6 +117,8 @@ export interface AprazamentoClinico {
   medicamento?: string;
   dosagem?: string;
   via_administracao?: string;
+  medico_nome?: string;
+  medico_crm?: string;
   horario_previsto: string;
   horario_executado?: string;
   status: 'Pendente' | 'Administrado' | 'Nao_Administrado';
@@ -196,9 +216,10 @@ export interface MetaPlanoTerapeutico {
 export interface PlanoTerapeutico {
   id: string;
   paciente_id: string;
-  data_inicio: string; // YYYY-MM-DD
-  data_fim: string;    // YYYY-MM-DD
-  status: 'Ativo' | 'Concluido' | 'Cancelado';
+  versao?: number;
+  data_inicio: string; // YYYY-MM-DD (sempre dia 01 do mês)
+  data_fim: string;    // YYYY-MM-DD (sempre último dia do mês: 28, 29, 30 ou 31)
+  status: StatusPlanoTerapeutico;
   observacoes?: string;
   created_at?: string;
   updated_at?: string;
@@ -555,7 +576,7 @@ async function executarComandoDdl(db: any, sql: string): Promise<void> {
 const SONDA_SCHEMA = [
   'SELECT',
   '(SELECT COUNT(*) FROM (SELECT telefone, responsavel_nome, responsavel_telefone, responsaveis_json, diagnostico_principal, cid10, complexidade, plano_saude, numero_carteirinha, status, created_at, limite_visitas_mes FROM pacientes LIMIT 0))',
-  '+ (SELECT COUNT(*) FROM (SELECT id FROM planos_terapeuticos LIMIT 0))',
+  '+ (SELECT COUNT(*) FROM (SELECT id, versao FROM planos_terapeuticos LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM plano_terapeutico_metas LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id, medico_nome, medico_crm, horarios_padrao, instrucoes, status, created_at FROM prescricoes LIMIT 0))',
   '+ (SELECT COUNT(*) FROM (SELECT id FROM aprazamentos LIMIT 0))',
@@ -607,6 +628,7 @@ export async function garantirSchemaD1(db: any): Promise<void> {
       `CREATE TABLE IF NOT EXISTS planos_terapeuticos (
         id TEXT PRIMARY KEY,
         paciente_id TEXT NOT NULL REFERENCES pacientes(id) ON DELETE CASCADE,
+        versao INTEGER NOT NULL DEFAULT 1,
         data_inicio TEXT NOT NULL,
         data_fim TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'Ativo',
@@ -614,6 +636,8 @@ export async function garantirSchemaD1(db: any): Promise<void> {
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         updated_at TEXT NOT NULL DEFAULT (datetime('now'))
       )`,
+      'ALTER TABLE planos_terapeuticos ADD COLUMN versao INTEGER NOT NULL DEFAULT 1',
+      'CREATE INDEX IF NOT EXISTS idx_planos_paciente_versao ON planos_terapeuticos(paciente_id, versao DESC)',
       `CREATE TABLE IF NOT EXISTS plano_terapeutico_metas (
         id TEXT PRIMARY KEY,
         plano_id TEXT NOT NULL REFERENCES planos_terapeuticos(id) ON DELETE CASCADE,
@@ -899,6 +923,7 @@ function mapearPlanoRow(row: any, metas: MetaPlanoTerapeutico[]): PlanoTerapeuti
   return {
     id: row.id,
     paciente_id: row.paciente_id,
+    versao: Number(row.versao || 1),
     data_inicio: row.data_inicio,
     data_fim: row.data_fim,
     status: row.status,
@@ -1640,6 +1665,8 @@ export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): Aprazament
         medicamento: prescricao.medicamento,
         dosagem: prescricao.dosagem,
         via_administracao: prescricao.via_administracao,
+        medico_nome: prescricao.medico_nome,
+        medico_crm: prescricao.medico_crm,
         horario_previsto: instante.toISOString(),
         status: 'Pendente',
       });
@@ -1710,6 +1737,67 @@ export async function criarPrescricaoClinica(dados: Omit<PrescricaoClinica, 'id'
   inMemoryPrescricoes.set(id, prescricao);
   for (const ap of slots) inMemoryAprazamentos.set(ap.id, ap);
   return prescricao;
+}
+
+export async function atualizarPrescricaoClinica(
+  id: string,
+  pacienteId: string,
+  dados: Partial<Pick<PrescricaoClinica, 'medico_nome' | 'medico_crm' | 'medicamento' | 'dosagem' | 'via_administracao' | 'instrucoes' | 'status'>>
+): Promise<PrescricaoClinica | null> {
+  seedClinicalMemory();
+  const db = getClinicalDb();
+  if (db) {
+    await garantirSchemaD1(db);
+    await db
+      .prepare(
+        `UPDATE prescricoes
+            SET medico_nome = COALESCE(?, medico_nome),
+                medico_crm = COALESCE(?, medico_crm),
+                instrucoes = COALESCE(?, instrucoes),
+                status = COALESCE(?, status)
+          WHERE id = ? AND paciente_id = ?`
+      )
+      .bind(
+        dados.medico_nome !== undefined ? dados.medico_nome : null,
+        dados.medico_crm !== undefined ? dados.medico_crm : null,
+        dados.instrucoes !== undefined ? dados.instrucoes : null,
+        dados.status !== undefined ? dados.status : null,
+        id,
+        pacienteId
+      )
+      .run();
+
+    const row = await db
+      .prepare('SELECT * FROM prescricoes WHERE id = ? AND paciente_id = ?')
+      .bind(id, pacienteId)
+      .first<any>();
+    if (row) {
+      const atualizada = mapearPrescricaoRow(row);
+      inMemoryPrescricoes.set(id, atualizada);
+      return atualizada;
+    }
+  }
+
+  const existente = inMemoryPrescricoes.get(id);
+  if (!existente || existente.paciente_id !== pacienteId) return null;
+  const atualizada: PrescricaoClinica = {
+    ...existente,
+    ...(dados.medico_nome !== undefined ? { medico_nome: dados.medico_nome } : {}),
+    ...(dados.medico_crm !== undefined ? { medico_crm: dados.medico_crm } : {}),
+    ...(dados.instrucoes !== undefined ? { instrucoes: dados.instrucoes } : {}),
+    ...(dados.status !== undefined ? { status: dados.status } : {}),
+  };
+  inMemoryPrescricoes.set(id, atualizada);
+  for (const [apId, ap] of Array.from(inMemoryAprazamentos.entries())) {
+    if (ap.prescricao_id === id) {
+      inMemoryAprazamentos.set(apId, {
+        ...ap,
+        medico_nome: atualizada.medico_nome,
+        medico_crm: atualizada.medico_crm,
+      });
+    }
+  }
+  return atualizada;
 }
 
 export async function registrarSinalVitalClinico(dados: Omit<SinalVitalClinico, 'id'> & { id?: string }): Promise<SinalVitalClinico> {
@@ -2625,6 +2713,8 @@ export async function carregarProntuario360(
           medicamento: a.medicamento || pr?.medicamento,
           dosagem: a.dosagem || pr?.dosagem,
           via_administracao: a.via_administracao || pr?.via_administracao,
+          medico_nome: a.medico_nome || pr?.medico_nome,
+          medico_crm: a.medico_crm || pr?.medico_crm,
         };
       })
       .sort((a, b) => new Date(a.horario_previsto).getTime() - new Date(b.horario_previsto).getTime());
@@ -2646,7 +2736,7 @@ export async function carregarProntuario360(
       'SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id = ? ORDER BY m.rowid'
     ).bind(pacienteId),
     db.prepare(`
-      SELECT a.*, p.medicamento, p.dosagem, p.via_administracao,
+      SELECT a.*, p.medicamento, p.dosagem, p.via_administracao, p.medico_nome, p.medico_crm,
              COALESCE(
                NULLIF(
                  (SELECT ev.profissional_nome FROM evolucoes ev WHERE ev.profissional_id = a.profissional_id AND ev.paciente_id = p.paciente_id AND ev.profissional_nome != '' LIMIT 1),

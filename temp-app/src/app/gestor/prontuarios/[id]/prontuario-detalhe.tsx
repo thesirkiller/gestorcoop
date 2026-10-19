@@ -159,6 +159,8 @@ interface AprazamentoData {
   medicamento?: string;
   dosagem?: string;
   via_administracao?: string;
+  medico_nome?: string;
+  medico_crm?: string;
   horario_previsto: string;
   horario_executado?: string;
   status: 'Pendente' | 'Administrado' | 'Nao_Administrado';
@@ -570,6 +572,66 @@ export default function Prontuario360Detalhe() {
     }
   };
 
+  const [medicosDisponiveis, setMedicosDisponiveis] = useState<Array<{ id: string; nome: string; crm?: string }>>([]);
+  const [editandoMedicoPrescId, setEditandoMedicoPrescId] = useState<string | null>(null);
+  const [editMedicoForm, setEditMedicoForm] = useState({ medico_nome: '', medico_crm: '' });
+  const [salvandoMedicoPrescId, setSalvandoMedicoPrescId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isNovaPrescricaoOpen && !editandoMedicoPrescId) return;
+    let ativo = true;
+    axios
+      .get('/api/gestor/cooperados')
+      .then((res) => {
+        if (!ativo) return;
+        const listaRaw: any[] = Array.isArray(res.data?.data)
+          ? res.data.data
+          : Array.isArray(res.data?.results)
+          ? res.data.results
+          : [];
+        const extraidos: Array<{ id: string; nome: string; crm?: string }> = [];
+        const nomesVistos = new Set<string>();
+
+        // 1. Médicos já utilizados nas prescrições ou escalados no plano do paciente
+        for (const pr of prescricoes) {
+          if (pr.medico_nome && !nomesVistos.has(pr.medico_nome.toLowerCase())) {
+            nomesVistos.add(pr.medico_nome.toLowerCase());
+            extraidos.push({ id: `presc_${pr.id}`, nome: pr.medico_nome, crm: pr.medico_crm || '' });
+          }
+        }
+        for (const meta of planoVigente?.metas || []) {
+          if (String(meta.especialidade).toLowerCase().includes('medic')) {
+            for (const prof of meta.profissionais_designados || []) {
+              if (prof.nome && !nomesVistos.has(prof.nome.toLowerCase())) {
+                nomesVistos.add(prof.nome.toLowerCase());
+                extraidos.push({ id: prof.id || prof.nome, nome: prof.nome, crm: (prof as any).crm_coren || '' });
+              }
+            }
+          }
+        }
+        // 2. Cooperados da base (priorizando médicos)
+        for (const c of listaRaw) {
+          const nome = (c.txt_nomeCompleto || c.nomeCompleto || c.nome_text || c.txt_nome || c.nome || '').trim();
+          if (!nome || nomesVistos.has(nome.toLowerCase())) continue;
+          const cargo = (
+            Array.isArray(c.fks_profissoes) && c.fks_profissoes.length > 0
+              ? c.fks_profissoes.join(', ')
+              : c.txt_profissao || c.cargo || ''
+          ).toLowerCase();
+          const crm = (c.txt_conselho || c.txt_crm || c.txt_coren || c.conselho || '').trim();
+          if (cargo.includes('medic') || cargo.includes('médic') || crm.toUpperCase().includes('CRM')) {
+            nomesVistos.add(nome.toLowerCase());
+            extraidos.push({ id: c._id || c.id || nome, nome, crm });
+          }
+        }
+        setMedicosDisponiveis(extraidos);
+      })
+      .catch(() => {});
+    return () => {
+      ativo = false;
+    };
+  }, [isNovaPrescricaoOpen, editandoMedicoPrescId, prescricoes, planoVigente]);
+
   const handleSalvarPrescricao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!paciente) return;
@@ -607,6 +669,36 @@ export default function Prontuario360Detalhe() {
       console.error('Erro ao salvar prescrição:', err);
     } finally {
       setSalvando(false);
+    }
+  };
+
+  const handleAtualizarMedicoPrescricao = async (prescricaoId: string) => {
+    if (!paciente) return;
+    setSalvandoMedicoPrescId(prescricaoId);
+    try {
+      const res = await axios.patch(`/api/gestor/prontuarios/pacientes/${paciente.id}/prescricoes`, {
+        prescricao_id: prescricaoId,
+        medico_nome: editMedicoForm.medico_nome.trim(),
+        medico_crm: editMedicoForm.medico_crm.trim(),
+      });
+      if (res.data?.success && res.data?.data) {
+        const atualizada = res.data.data;
+        setPrescricoes((prev) => prev.map((p) => (p.id === prescricaoId ? { ...p, ...atualizada } : p)));
+        setAprazamentos((prev) =>
+          prev.map((a) =>
+            String(a.prescricao_id) === String(prescricaoId)
+              ? { ...a, medico_nome: atualizada.medico_nome, medico_crm: atualizada.medico_crm }
+              : a
+          )
+        );
+        setEditandoMedicoPrescId(null);
+        setToastDetalhe('Médico prescritor atualizado com sucesso!');
+        setTimeout(() => setToastDetalhe(null), 3500);
+      }
+    } catch (err: any) {
+      console.error('Erro ao atualizar médico da prescrição:', err);
+    } finally {
+      setSalvandoMedicoPrescId(null);
     }
   };
 
@@ -1581,11 +1673,119 @@ export default function Prontuario360Detalhe() {
                                 Instruções: <span className="text-slate-800 italic">{pr.instrucoes}</span>
                               </p>
                             )}
-                            {pr.medico_nome && (
-                              <p className="text-slate-500 pt-1 border-t border-slate-200/60 text-[11px]">
-                                Prescrito por: <strong className="text-slate-700">{pr.medico_nome}</strong>
-                                {pr.medico_crm ? ` (${pr.medico_crm})` : ''}
-                              </p>
+                          </div>
+
+                          {/* Bloco em Destaque: Médico Prescritor */}
+                          <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl p-2.5 mb-2">
+                            {editandoMedicoPrescId === pr.id ? (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                                    <Stethoscope className="w-3.5 h-3.5 text-indigo-600" />
+                                    Informar Médico Prescritor
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setEditandoMedicoPrescId(null)}
+                                    className="text-[10px] font-semibold text-slate-500 hover:text-slate-700"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                                {medicosDisponiveis.length > 0 && (
+                                  <select
+                                    value=""
+                                    onChange={(e) => {
+                                      const med = medicosDisponiveis.find((m) => m.id === e.target.value);
+                                      if (med) {
+                                        setEditMedicoForm({
+                                          medico_nome: med.nome,
+                                          medico_crm: med.crm || editMedicoForm.medico_crm,
+                                        });
+                                      }
+                                    }}
+                                    className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs text-slate-700"
+                                  >
+                                    <option value="">Selecionar médico cadastrado (opcional)...</option>
+                                    {medicosDisponiveis.map((m) => (
+                                      <option key={m.id} value={m.id}>
+                                        {m.nome} {m.crm ? `(${m.crm})` : ''}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Nome do Médico (Ex: Dr. Roberto Almeida)"
+                                    value={editMedicoForm.medico_nome}
+                                    onChange={(e) => setEditMedicoForm({ ...editMedicoForm, medico_nome: e.target.value })}
+                                    className="sm:col-span-2 px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs text-slate-900"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="CRM (Ex: CRM-CE 14520)"
+                                    value={editMedicoForm.medico_crm}
+                                    onChange={(e) => setEditMedicoForm({ ...editMedicoForm, medico_crm: e.target.value })}
+                                    className="px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs text-slate-900"
+                                  />
+                                </div>
+                                <div className="flex justify-end">
+                                  <button
+                                    type="button"
+                                    disabled={salvandoMedicoPrescId === pr.id}
+                                    onClick={() => handleAtualizarMedicoPrescricao(pr.id)}
+                                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 disabled:opacity-50"
+                                  >
+                                    {salvandoMedicoPrescId === pr.id ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <Check className="w-3 h-3" />
+                                    )}
+                                    Salvar Médico
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="p-1.5 bg-white rounded-lg border border-indigo-100 text-indigo-600 shrink-0">
+                                    <Stethoscope className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 block">
+                                      Médico Prescritor
+                                    </span>
+                                    {pr.medico_nome ? (
+                                      <p className="text-xs font-bold text-slate-900 truncate">
+                                        {pr.medico_nome}
+                                        {pr.medico_crm ? (
+                                          <span className="ml-1.5 font-mono text-[11px] font-semibold text-indigo-700">
+                                            ({pr.medico_crm})
+                                          </span>
+                                        ) : null}
+                                      </p>
+                                    ) : (
+                                      <p className="text-xs text-amber-700 font-semibold">
+                                        Médico não informado — clique ao lado para preencher
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditandoMedicoPrescId(pr.id);
+                                    setEditMedicoForm({
+                                      medico_nome: pr.medico_nome || '',
+                                      medico_crm: pr.medico_crm || '',
+                                    });
+                                  }}
+                                  className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold shrink-0 transition-colors"
+                                >
+                                  {pr.medico_nome ? 'Editar Médico' : '+ Informar Médico'}
+                                </button>
+                              </div>
                             )}
                           </div>
 
@@ -1674,6 +1874,7 @@ export default function Prontuario360Detalhe() {
                           <tr>
                             <th className="py-3 px-4">Horário Previsto</th>
                             <th className="py-3 px-4">Medicamento / Dosagem</th>
+                            <th className="py-3 px-4">Médico Prescritor</th>
                             <th className="py-3 px-4 text-center">Status</th>
                             <th className="py-3 px-4">Executado Em</th>
                             <th className="py-3 px-4">Profissional</th>
@@ -1681,51 +1882,66 @@ export default function Prontuario360Detalhe() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {aprazamentos.map((a) => (
-                            <tr key={a.id} className="hover:bg-slate-50/60 transition-colors">
-                              <td className="py-3 px-4 font-mono font-medium text-slate-900 whitespace-nowrap">
-                                {new Date(a.horario_previsto).toLocaleDateString('pt-BR')} {new Date(a.horario_previsto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span className="font-bold text-slate-900">{a.medicamento || 'Medicamento'}</span>
-                                {(a.dosagem || a.via_administracao) && (
-                                  <span className="text-slate-500 block text-[11px]">
-                                    {a.dosagem} • Via {a.via_administracao || 'Oral'}
+                          {aprazamentos.map((a) => {
+                            const prescRef = prescricoes.find((p) => String(p.id) === String(a.prescricao_id));
+                            const medicoNome = a.medico_nome || prescRef?.medico_nome;
+                            const medicoCrm = a.medico_crm || prescRef?.medico_crm;
+                            return (
+                              <tr key={a.id} className="hover:bg-slate-50/60 transition-colors">
+                                <td className="py-3 px-4 font-mono font-medium text-slate-900 whitespace-nowrap">
+                                  {new Date(a.horario_previsto).toLocaleDateString('pt-BR')} {new Date(a.horario_previsto).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="font-bold text-slate-900">{a.medicamento || 'Medicamento'}</span>
+                                  {(a.dosagem || a.via_administracao) && (
+                                    <span className="text-slate-500 block text-[11px]">
+                                      {a.dosagem} • Via {a.via_administracao || 'Oral'}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-slate-800">
+                                  {medicoNome ? (
+                                    <div>
+                                      <span className="font-semibold text-slate-900 block">{medicoNome}</span>
+                                      {medicoCrm && <span className="text-[10px] font-mono text-indigo-700">{medicoCrm}</span>}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400">--</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <span
+                                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                      a.status === 'Administrado'
+                                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                        : a.status === 'Nao_Administrado'
+                                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                        : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}
+                                  >
+                                    {a.status === 'Administrado' ? 'Administrado' : a.status === 'Nao_Administrado' ? 'Não Administrado' : 'Pendente'}
                                   </span>
-                                )}
-                              </td>
-                              <td className="py-3 px-4 text-center">
-                                <span
-                                  className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    a.status === 'Administrado'
-                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                                      : a.status === 'Nao_Administrado'
-                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                                      : 'bg-slate-100 text-slate-600 border border-slate-200'
-                                  }`}
-                                >
-                                  {a.status === 'Administrado' ? 'Administrado' : a.status === 'Nao_Administrado' ? 'Não Administrado' : 'Pendente'}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 whitespace-nowrap text-slate-600">
-                                {a.horario_executado
-                                  ? `${new Date(a.horario_executado).toLocaleDateString('pt-BR')} ${new Date(a.horario_executado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-                                  : '--'}
-                              </td>
-                              <td className="py-3 px-4 text-slate-800 font-medium">
-                                {a.profissional_nome || '--'}
-                              </td>
-                              <td className="py-3 px-4 text-slate-600">
-                                {a.justificativa ? (
-                                  <span className="text-rose-700 font-medium">{a.justificativa}</span>
-                                ) : a.status === 'Administrado' ? (
-                                  <span className="text-emerald-700">Dose administrada</span>
-                                ) : (
-                                  '--'
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td className="py-3 px-4 whitespace-nowrap text-slate-600">
+                                  {a.horario_executado
+                                    ? `${new Date(a.horario_executado).toLocaleDateString('pt-BR')} ${new Date(a.horario_executado).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+                                    : '--'}
+                                </td>
+                                <td className="py-3 px-4 text-slate-800 font-medium">
+                                  {a.profissional_nome || '--'}
+                                </td>
+                                <td className="py-3 px-4 text-slate-600">
+                                  {a.justificativa ? (
+                                    <span className="text-rose-700 font-medium">{a.justificativa}</span>
+                                  ) : a.status === 'Administrado' ? (
+                                    <span className="text-emerald-700">Dose administrada</span>
+                                  ) : (
+                                    '--'
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
@@ -1880,6 +2096,72 @@ export default function Prontuario360Detalhe() {
             </div>
 
             <form onSubmit={handleSalvarPrescricao} className="space-y-3.5">
+              {/* Bloco em Destaque: Médico Prescritor */}
+              <div className="bg-indigo-50/70 border border-indigo-200 rounded-2xl p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                    <Stethoscope className="w-4 h-4 text-indigo-600" />
+                    Médico Responsável pela Prescrição
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-700 bg-white px-2 py-0.5 rounded-full border border-indigo-200">
+                    Identificação Médica
+                  </span>
+                </div>
+
+                {medicosDisponiveis.length > 0 && (
+                  <div>
+                    <label className="block text-[11px] font-semibold text-indigo-900 mb-1">
+                      Selecionar Médico Cadastrado (preenchimento rápido)
+                    </label>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const med = medicosDisponiveis.find((m) => m.id === e.target.value);
+                        if (med) {
+                          setNovaPrescricaoForm((prev) => ({
+                            ...prev,
+                            medico_nome: med.nome,
+                            medico_crm: med.crm || prev.medico_crm,
+                          }));
+                        }
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    >
+                      <option value="">Escolher da lista ou digitar abaixo...</option>
+                      {medicosDisponiveis.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.nome} {m.crm ? `— ${m.crm}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-bold text-slate-800 mb-1">Médico Prescritor *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ex: Dr. Roberto Almeida"
+                      value={novaPrescricaoForm.medico_nome}
+                      onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, medico_nome: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-800 mb-1">CRM / UF</label>
+                    <input
+                      type="text"
+                      placeholder="Ex: CRM-CE 14520"
+                      value={novaPrescricaoForm.medico_crm}
+                      onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, medico_crm: e.target.value })}
+                      className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-xl text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">Medicamento & Princípio Ativo *</label>
                 <input
@@ -1960,29 +2242,6 @@ export default function Prontuario360Detalhe() {
                   onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, instrucoes: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Médico Prescritor</label>
-                  <input
-                    type="text"
-                    placeholder="Nome do Médico"
-                    value={novaPrescricaoForm.medico_nome}
-                    onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, medico_nome: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">CRM</label>
-                  <input
-                    type="text"
-                    placeholder="Ex: CRM-SP 123456"
-                    value={novaPrescricaoForm.medico_crm}
-                    onChange={(e) => setNovaPrescricaoForm({ ...novaPrescricaoForm, medico_crm: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-                  />
-                </div>
               </div>
 
               <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">

@@ -171,7 +171,7 @@ export default function PlanoTerapeuticoTab({
       id: plano.id,
       data_inicio: plano.data_inicio,
       data_fim: plano.data_fim,
-      status: plano.status,
+      status: plano.status === 'Concluido' || plano.status === 'Cancelado' ? plano.status : 'Ativo',
       observacoes: plano.observacoes || '',
       metas: (plano.metas || []).map((m) => ({
         id: m.id,

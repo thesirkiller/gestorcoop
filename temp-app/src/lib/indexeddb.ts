@@ -57,6 +57,8 @@ export interface AprazamentoLocal {
   medicamento?: string;
   dosagem?: string;
   via_administracao?: string;
+  medico_nome?: string;
+  medico_crm?: string;
 }
 
 export interface SinalVitalLocal {
@@ -486,6 +488,8 @@ export function gerarSlotsAprazamentoLocal(prescricao: PrescricaoLocal): Aprazam
         medicamento: prescricao.medicamento,
         dosagem: prescricao.dosagem,
         via_administracao: prescricao.via_administracao,
+        medico_nome: prescricao.medico_nome,
+        medico_crm: prescricao.medico_crm,
       });
     }
     dia.setUTCDate(dia.getUTCDate() + 1);

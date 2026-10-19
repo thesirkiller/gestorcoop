@@ -1411,7 +1411,11 @@ export default function ProntuarioAtendimento() {
                   </div>
                 ) : (
                   <div className="flex flex-col gap-2">
-                    {aprazamentosTurno.map((apraz) => (
+                    {aprazamentosTurno.map((apraz) => {
+                      const prescRef = prescricoes.find((p) => String(p.id) === String(apraz.prescricao_id));
+                      const medicoNome = apraz.medico_nome || prescRef?.medico_nome;
+                      const medicoCrm = apraz.medico_crm || prescRef?.medico_crm;
+                      return (
                       <div
                         key={apraz.id}
                         className={`border rounded-xl p-3 flex justify-between items-center transition-all ${
@@ -1434,6 +1438,12 @@ export default function ProntuarioAtendimento() {
                           <p className="text-sm text-ink-body leading-snug">
                             Dosagem: {apraz.dosagem} | Via: {apraz.via_administracao}
                           </p>
+                          {medicoNome && (
+                            <p className="text-xs font-semibold text-accent-ink">
+                              Médico Prescritor: {medicoNome}
+                              {medicoCrm ? ` (${medicoCrm})` : ''}
+                            </p>
+                          )}
                           {apraz.justificativa && (
                             <p className="text-sm text-crit-ink not-italic mt-1">
                               Justificativa: {apraz.justificativa}
@@ -1473,7 +1483,8 @@ export default function ProntuarioAtendimento() {
                           </span>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

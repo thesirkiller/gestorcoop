@@ -624,9 +624,10 @@ export default function ImpressaoProntuarioModal({
 
   // Renderiza a folha de Prescrição de Enfermagem & Médica / Aprazamentos
   const renderFolhaPrescricaoEnfermagem = () => {
-    const medicoRef =
-      prescricoes.find((p) => p.medico_nome)?.medico_nome ||
-      'Equipe Médica e de Enfermagem Domiciliar';
+    const prescComMedico = prescricoes.find((p) => p.medico_nome);
+    const medicoRef = prescComMedico?.medico_nome
+      ? `${prescComMedico.medico_nome}${prescComMedico.medico_crm ? ` (${prescComMedico.medico_crm})` : ''}`
+      : 'Equipe Médica e de Enfermagem Domiciliar';
     const dataHoje = new Date().toLocaleDateString('pt-BR');
 
     return (
@@ -653,6 +654,7 @@ export default function ImpressaoProntuarioModal({
                 <tr className="bg-slate-100 border-b border-slate-800 text-[11px] font-extrabold uppercase text-left">
                   <th className="border-r border-slate-800 py-2 px-2.5">Medicamento / Cuidado</th>
                   <th className="border-r border-slate-800 py-2 px-2.5">Dosagem & Via</th>
+                  <th className="border-r border-slate-800 py-2 px-2.5">Médico Prescritor</th>
                   <th className="border-r border-slate-800 py-2 px-2.5 text-center">Frequência</th>
                   <th className="border-r border-slate-800 py-2 px-2.5">Horários (Aprazamento)</th>
                   <th className="py-2 px-2.5">Instruções / Checagem</th>
@@ -669,17 +671,22 @@ export default function ImpressaoProntuarioModal({
                     <tr key={pr.id || idx}>
                       <td className="border-r border-slate-800 py-2 px-2.5 font-bold">
                         {idx + 1}. {pr.medicamento}
-                        {pr.medico_nome && (
-                          <span className="block text-[10px] font-normal text-slate-600">
-                            Prescritor: {pr.medico_nome} {pr.medico_crm ? `(${pr.medico_crm})` : ''}
-                          </span>
-                        )}
                       </td>
                       <td className="border-r border-slate-800 py-2 px-2.5">
                         <span className="font-semibold">{pr.dosagem}</span>
                         <span className="block text-[10px] text-slate-600">
                           Via {pr.via_administracao}
                         </span>
+                      </td>
+                      <td className="border-r border-slate-800 py-2 px-2.5">
+                        <span className="font-semibold text-slate-900 block">
+                          {pr.medico_nome || '--'}
+                        </span>
+                        {pr.medico_crm && (
+                          <span className="block text-[10px] font-mono text-slate-700">
+                            {pr.medico_crm}
+                          </span>
+                        )}
                       </td>
                       <td className="border-r border-slate-800 py-2 px-2.5 text-center font-mono font-bold">
                         {pr.frequencia_horas ? `${pr.frequencia_horas}/${pr.frequencia_horas}h` : '--'}

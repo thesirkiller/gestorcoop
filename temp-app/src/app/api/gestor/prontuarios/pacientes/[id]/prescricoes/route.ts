@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server';
 import { obterSessao } from '@/lib/sessao';
-import { listarPrescricoesClinicas, criarPrescricaoClinica } from '@/lib/db/prontuarios';
+import { listarPrescricoesClinicas, criarPrescricaoClinica, atualizarPrescricaoClinica } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'edge';
@@ -55,6 +55,41 @@ export async function POST(
       success: true,
       data: prescricao,
       message: 'Prescrição médica cadastrada e aprazamentos gerados.',
+    });
+  } catch (error: any) {
+    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    if (!(await obterSessao('gestor'))) {
+      return NextResponse.json({ success: false, error: 'Sessão de gestor inválida.' }, { status: 401 });
+    }
+    const pacienteId = params.id;
+    const body = await request.json();
+    if (!body.prescricao_id) {
+      return NextResponse.json({ success: false, error: 'ID da prescrição é obrigatório.' }, { status: 400 });
+    }
+
+    const atualizada = await atualizarPrescricaoClinica(body.prescricao_id, pacienteId, {
+      medico_nome: body.medico_nome !== undefined ? String(body.medico_nome).trim() : undefined,
+      medico_crm: body.medico_crm !== undefined ? String(body.medico_crm).trim() : undefined,
+      instrucoes: body.instrucoes !== undefined ? String(body.instrucoes).trim() : undefined,
+      status: body.status,
+    });
+
+    if (!atualizada) {
+      return NextResponse.json({ success: false, error: 'Prescrição não localizada.' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: atualizada,
+      message: 'Prescrição médica atualizada com sucesso.',
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
