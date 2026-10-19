@@ -15,6 +15,7 @@ import {
   obterPacienteClinico,
   listarPrescricoesClinicas,
   gerarSlotsAprazamento,
+  deduplicarAprazamentosClinicos,
   normalizarResponsaveisPaciente,
 } from '@/lib/db/prontuarios';
 
@@ -302,18 +303,20 @@ export async function GET(request: NextRequest) {
         };
       });
 
-      dbAprazamentos = (
-        await db
-          .prepare(
-            `SELECT a.*, p.paciente_id, p.medicamento, p.dosagem, p.via_administracao
-               FROM aprazamentos a
-               JOIN prescricoes p ON p.id = a.prescricao_id
-              WHERE p.paciente_id IN (${marcadores})
-              ORDER BY a.horario_previsto ASC`
-          )
-          .bind(...idsAlvo)
-          .all<any>()
-      ).results || [];
+      dbAprazamentos = deduplicarAprazamentosClinicos(
+        (
+          await db
+            .prepare(
+              `SELECT a.*, p.paciente_id, p.medicamento, p.dosagem, p.via_administracao
+                 FROM aprazamentos a
+                 JOIN prescricoes p ON p.id = a.prescricao_id
+                WHERE p.paciente_id IN (${marcadores})
+                ORDER BY a.horario_previsto ASC`
+            )
+            .bind(...idsAlvo)
+            .all<any>()
+        ).results || []
+      );
 
       // Garante que prescrições ativas sem slots de aprazamento persistidos tenham slots gerados
       const prescricoesSemApraz = dbPrescricoes.filter((p: any) =>
@@ -362,7 +365,7 @@ export async function GET(request: NextRequest) {
           }
         }
 
-        dbAprazamentos.push(...novosSlots);
+        dbAprazamentos = deduplicarAprazamentosClinicos([...dbAprazamentos, ...novosSlots]);
       }
 
       // Evoluções e sinais vitais dos pacientes alvo

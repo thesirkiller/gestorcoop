@@ -1596,38 +1596,47 @@ export async function listarPrescricoesClinicas(pacienteId: string, apenasAtivas
  */
 const FUSO_APRAZAMENTO = process.env.APRAZAMENTO_UTC_OFFSET || '-03:00';
 
-/** Teto de segurança: prescrição de longa duração não deve gerar milhares de linhas. */
-const MAX_SLOTS_APRAZAMENTO = 400;
+/** Teto de segurança: uma prescrição diária gera apenas os horários do ciclo do dia (máx. 12 doses/dia). */
+const MAX_SLOTS_APRAZAMENTO = 12;
 
 /**
- * Gera um slot por horário padrão por dia, da data de início até a de fim.
- *
- * Antes só existia slot para o dia do cadastro: uma prescrição de 30 dias dava
- * três horários hoje e nada amanhã.
+ * Gera exatamente um ciclo diário de aprazamento (1 slot por horário padrão da prescrição),
+ * evitando explosão de dezenas/centenas de horários pendentes acumulados por múltiplos dias.
  */
 export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): AprazamentoClinico[] {
-  let horarios: string[] = [];
+  let horariosBrutos: string[] = [];
   if (Array.isArray(prescricao.horarios_padrao) && prescricao.horarios_padrao.length > 0) {
-    horarios = prescricao.horarios_padrao;
+    horariosBrutos = prescricao.horarios_padrao;
   } else if (typeof (prescricao as any).horarios_padrao === 'string' && (prescricao as any).horarios_padrao.trim()) {
     try {
       const parsed = JSON.parse((prescricao as any).horarios_padrao);
-      if (Array.isArray(parsed) && parsed.length > 0) horarios = parsed;
-      else horarios = (prescricao as any).horarios_padrao.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
+      if (Array.isArray(parsed) && parsed.length > 0) horariosBrutos = parsed;
+      else horariosBrutos = (prescricao as any).horarios_padrao.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
     } catch {
-      horarios = (prescricao as any).horarios_padrao.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
+      horariosBrutos = (prescricao as any).horarios_padrao.split(/[,•]/).map((s: string) => s.trim()).filter(Boolean);
     }
   }
 
-  if (horarios.length === 0) {
+  if (horariosBrutos.length === 0) {
     const freq = prescricao.frequencia_horas || 12;
-    if (freq === 24) horarios = ['08:00'];
-    else if (freq === 12) horarios = ['08:00', '20:00'];
-    else if (freq === 8) horarios = ['08:00', '16:00', '00:00'];
-    else if (freq === 6) horarios = ['06:00', '12:00', '18:00', '00:00'];
-    else if (freq === 4) horarios = ['04:00', '08:00', '12:00', '16:00', '20:00', '00:00'];
-    else horarios = ['08:00', '20:00'];
+    if (freq === 24) horariosBrutos = ['08:00'];
+    else if (freq === 12) horariosBrutos = ['08:00', '20:00'];
+    else if (freq === 8) horariosBrutos = ['08:00', '16:00', '00:00'];
+    else if (freq === 6) horariosBrutos = ['06:00', '12:00', '18:00', '00:00'];
+    else if (freq === 4) horariosBrutos = ['04:00', '08:00', '12:00', '16:00', '20:00', '00:00'];
+    else horariosBrutos = ['08:00', '20:00'];
   }
+
+  const horariosUnicos = new Set<string>();
+  for (const h of horariosBrutos) {
+    const limpo = String(h || '').trim();
+    if (!limpo) continue;
+    const [hhRaw, mmRaw] = limpo.split(':');
+    const hh = String(parseInt(hhRaw || '8', 10) || 0).padStart(2, '0');
+    const mm = String(parseInt(mmRaw || '0', 10) || 0).padStart(2, '0');
+    horariosUnicos.add(`${hh}:${mm}`);
+  }
+  const horarios = Array.from(horariosUnicos).slice(0, MAX_SLOTS_APRAZAMENTO);
 
   const parseData = (dStr?: string) => {
     if (!dStr || !dStr.trim()) return new Date();
@@ -1641,40 +1650,53 @@ export function gerarSlotsAprazamento(prescricao: PrescricaoClinica): Aprazament
   };
 
   const inicio = parseData(prescricao.data_inicio);
-  let fim = parseData(prescricao.data_fim);
-  if (!prescricao.data_fim || !String(prescricao.data_fim).trim()) {
-    fim = inicio;
-  } else if (fim < inicio || Number.isNaN(fim.getTime())) {
-    fim = inicio;
-  }
+  const dataIso = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth(), inicio.getUTCDate()))
+    .toISOString()
+    .slice(0, 10);
 
   const slots: AprazamentoClinico[] = [];
-  const dia = new Date(Date.UTC(inicio.getUTCFullYear(), inicio.getUTCMonth(), inicio.getUTCDate()));
-  const ultimoDia = new Date(Date.UTC(fim.getUTCFullYear(), fim.getUTCMonth(), fim.getUTCDate()));
-
-  while (dia <= ultimoDia && slots.length < MAX_SLOTS_APRAZAMENTO) {
-    const dataIso = dia.toISOString().slice(0, 10);
-    for (const h of horarios) {
-      if (slots.length >= MAX_SLOTS_APRAZAMENTO) break;
-      const instante = new Date(`${dataIso}T${h}:00${FUSO_APRAZAMENTO}`);
-      if (Number.isNaN(instante.getTime())) continue;
-      slots.push({
-        id: `apraz_${prescricao.id}_${dataIso}_${(h || '0800').replace(':', '')}`,
-        prescricao_id: prescricao.id,
-        paciente_id: prescricao.paciente_id,
-        medicamento: prescricao.medicamento,
-        dosagem: prescricao.dosagem,
-        via_administracao: prescricao.via_administracao,
-        medico_nome: prescricao.medico_nome,
-        medico_crm: prescricao.medico_crm,
-        horario_previsto: instante.toISOString(),
-        status: 'Pendente',
-      });
-    }
-    dia.setUTCDate(dia.getUTCDate() + 1);
+  for (const h of horarios) {
+    if (slots.length >= MAX_SLOTS_APRAZAMENTO) break;
+    const instante = new Date(`${dataIso}T${h}:00${FUSO_APRAZAMENTO}`);
+    if (Number.isNaN(instante.getTime())) continue;
+    slots.push({
+      id: `apraz_${prescricao.id}_${dataIso}_${(h || '0800').replace(':', '')}`,
+      prescricao_id: prescricao.id,
+      paciente_id: prescricao.paciente_id,
+      medicamento: prescricao.medicamento,
+      dosagem: prescricao.dosagem,
+      via_administracao: prescricao.via_administracao,
+      medico_nome: prescricao.medico_nome,
+      medico_crm: prescricao.medico_crm,
+      horario_previsto: instante.toISOString(),
+      status: 'Pendente',
+    });
   }
 
   return slots;
+}
+
+export function deduplicarAprazamentosClinicos(lista: AprazamentoClinico[]): AprazamentoClinico[] {
+  const porChave = new Map<string, AprazamentoClinico>();
+  for (const item of lista) {
+    if (!item) continue;
+    const chave = `${item.prescricao_id}__${item.horario_previsto}`;
+    const existente = porChave.get(chave);
+    if (!existente) {
+      porChave.set(chave, item);
+      continue;
+    }
+    if (existente.status === 'Pendente' && item.status !== 'Pendente') {
+      porChave.set(chave, item);
+    } else if (
+      existente.status === item.status &&
+      !String(existente.id).startsWith(`apraz_${item.prescricao_id}_`) &&
+      String(item.id).startsWith(`apraz_${item.prescricao_id}_`)
+    ) {
+      porChave.set(chave, item);
+    }
+  }
+  return Array.from(porChave.values());
 }
 
 export async function criarPrescricaoClinica(dados: Omit<PrescricaoClinica, 'id'> & { id?: string }): Promise<PrescricaoClinica> {
@@ -2772,7 +2794,7 @@ export async function carregarProntuario360(
     paciente,
     evolucoes,
     prescricoes: (rPresc.results || []).map(mapearPrescricaoRow),
-    aprazamentos: (rApraz.results || []) as AprazamentoClinico[],
+    aprazamentos: deduplicarAprazamentosClinicos((rApraz.results || []) as AprazamentoClinico[]),
     sinaisVitais: (rSinais.results || []) as SinalVitalClinico[],
     pareceres: (rPar.results || []) as ParecerAuditoriaClinica[],
     planos,

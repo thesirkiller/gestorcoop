@@ -584,17 +584,29 @@ export default function ProntuarioAtendimento() {
   const refData = evolucao?.check_in ? new Date(evolucao.check_in) : new Date();
   const janelaTurno = useMemo(() => obterJanelaTurno(refData, turno), [evolucao?.check_in, turno]);
 
-  // Filtra aprazamentos para o plantão de 12 horas ativo (ou 24h)
+  // Filtra e deduplica aprazamentos para o plantão de 12 horas ativo (ou 24h)
   const aprazamentosTurno = useMemo(() => {
     const tInicio = janelaTurno.inicio.getTime();
     const tFim = janelaTurno.fim.getTime();
 
-    return aprazamentos.filter((a) => {
+    const filtrados = aprazamentos.filter((a) => {
       if (!a.horario_previsto) return false;
       const tSlot = new Date(a.horario_previsto).getTime();
       if (Number.isNaN(tSlot)) return false;
       return tSlot >= tInicio && tSlot < tFim;
     });
+
+    const dedup = new Map<string, AprazamentoLocal>();
+    for (const item of filtrados) {
+      const chave = `${item.prescricao_id}__${item.horario_previsto}`;
+      const existente = dedup.get(chave);
+      if (!existente || (existente.status === 'Pendente' && item.status !== 'Pendente')) {
+        dedup.set(chave, item);
+      }
+    }
+    return Array.from(dedup.values()).sort(
+      (a, b) => new Date(a.horario_previsto).getTime() - new Date(b.horario_previsto).getTime()
+    );
   }, [aprazamentos, janelaTurno]);
 
   // Garante que prescrições ativas tenham slots gerados para o turno de 12h no IndexedDB
@@ -610,7 +622,13 @@ export default function ProntuarioAtendimento() {
         for (const pr of prescricoes) {
           const esperados = gerarSlotsParaTurno(pr, janelaTurno);
           for (const esp of esperados) {
-            if (!existing.some((e) => e.id === esp.id)) {
+            const jaExiste = existing.some(
+              (e) =>
+                e.id === esp.id ||
+                (String(e.prescricao_id) === String(esp.prescricao_id) &&
+                  e.horario_previsto === esp.horario_previsto)
+            );
+            if (!jaExiste) {
               paraSalvar.push(esp);
               existing.push(esp);
             }
@@ -620,8 +638,8 @@ export default function ProntuarioAtendimento() {
         if (paraSalvar.length > 0 && !cancelado) {
           await localDB.saveAprazamentos(paraSalvar);
           setAprazamentos((prev) => {
-            const ids = new Set(prev.map((p) => p.id));
-            const novos = paraSalvar.filter((s) => !ids.has(s.id));
+            const chaves = new Set(prev.map((p) => `${p.prescricao_id}__${p.horario_previsto}`));
+            const novos = paraSalvar.filter((s) => !chaves.has(`${s.prescricao_id}__${s.horario_previsto}`));
             return [...prev, ...novos];
           });
         }

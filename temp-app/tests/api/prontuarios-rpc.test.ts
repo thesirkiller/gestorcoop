@@ -1809,7 +1809,7 @@ test('filtrarSlotsPorJanela: quando banco possui 50+ slots acumulados, recorta e
   assert.equal(slotsFiltrados.length, 2, 'Apenas os slots estritamente contidos nas 12h do plantão devem ser retornados');
 });
 
-test('gerarSlotsAprazamento e gerarSlotsAprazamentoLocal: sem data_fim não estende 30 dias arbitrariamente', () => {
+test('gerarSlotsAprazamento e gerarSlotsAprazamentoLocal: sem data_fim ou com data_fim de 30 dias não multiplica slots por 30 dias', () => {
   const prescSemFim = {
     id: 'pr_sem_fim',
     paciente_id: 'pac_sem_fim',
@@ -1825,6 +1825,16 @@ test('gerarSlotsAprazamento e gerarSlotsAprazamentoLocal: sem data_fim não este
 
   assert.equal(slotsServer.length, 4, 'Sem data_fim, servidor gera apenas os 4 horários da data de início');
   assert.equal(slotsLocal.length, 4, 'Sem data_fim, cliente local gera apenas os 4 horários da data de início');
+
+  const presc30Dias = {
+    ...prescSemFim,
+    id: 'pr_30_dias',
+    data_fim: '2026-11-09',
+  };
+  const slotsServer30 = gerarSlotsAprazamento(presc30Dias as any);
+  const slotsLocal30 = gerarSlotsAprazamentoLocal(presc30Dias as any);
+  assert.equal(slotsServer30.length, 4, 'Com data_fim de 30 dias, servidor deve gerar apenas 1 ciclo diário (4 slots, nunca 124)');
+  assert.equal(slotsLocal30.length, 4, 'Com data_fim de 30 dias, cliente local deve gerar apenas 1 ciclo diário (4 slots, nunca 124)');
 });
 
 test('gerarSlotsParaTurno: preserva corretamente dose de meia-noite (00:00) no plantão noturno sem converter para 08:00', () => {
