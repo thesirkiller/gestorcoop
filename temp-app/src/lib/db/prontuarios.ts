@@ -2054,12 +2054,22 @@ export function calcularProgressoPlano(
   };
 }
 
+export function ehPlanoMensal(dataInicio?: string | null, dataFim?: string | null): boolean {
+  if (!dataInicio || !dataFim) return false;
+  const ini = dataInicio.trim().split('T')[0];
+  const fim = dataFim.trim().split('T')[0];
+  if (!/^\d{4}-\d{2}-01$/.test(ini)) return false;
+  const periodo = obterPeriodoMesVigencia(ini);
+  return ini === periodo.data_inicio && fim === periodo.data_fim;
+}
+
 export async function salvarPlanoTerapeutico(dados: {
   id?: string;
   paciente_id: string;
-  data_inicio: string;
-  data_fim: string;
-  status?: 'Ativo' | 'Concluido' | 'Cancelado';
+  mes_referencia?: string;
+  data_inicio?: string;
+  data_fim?: string;
+  status?: StatusPlanoTerapeutico;
   observacoes?: string;
   metas: Array<{
     id?: string;
@@ -2075,20 +2085,60 @@ export async function salvarPlanoTerapeutico(dados: {
   // Assegura que o paciente existe no D1 para a foreign key
   await obterPacienteClinico(dados.paciente_id);
 
-  const planoId = dados.id || novoId('pln');
   const now = agoraIso();
+  const periodoVigencia = obterPeriodoMesVigencia(dados.mes_referencia || dados.data_inicio || now);
+
+  // Consulta planos existentes do paciente para calcular a próxima versão (v1 -> v2 -> v3...)
+  let planosExistentes: Array<{ id: string; versao: number; status: string }> = [];
+  if (db) {
+    try {
+      const resExistentes = await db
+        .prepare('SELECT id, versao, status FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY versao DESC, rowid DESC')
+        .bind(dados.paciente_id)
+        .all<any>();
+      planosExistentes = (resExistentes.results || []).map((r: any) => ({
+        id: String(r.id),
+        versao: Number(r.versao || 1),
+        status: String(r.status || 'Ativo'),
+      }));
+    } catch {
+      planosExistentes = [];
+    }
+  } else {
+    planosExistentes = Array.from(inMemoryPlanosTerapeuticos.values())
+      .filter((p) => p.paciente_id === dados.paciente_id)
+      .map((p) => ({
+        id: p.id,
+        versao: Number(p.versao || 1),
+        status: p.status || 'Ativo',
+      }));
+  }
+
+  const maxVersao = planosExistentes.reduce((max, p) => Math.max(max, Number(p.versao || 1)), 0);
+  const statusDesejado: StatusPlanoTerapeutico = dados.status || 'Ativo';
+  const idJaExiste = dados.id ? planosExistentes.some((p) => p.id === dados.id) : false;
+
+  // Se o plano está sendo criado ou editado como Ativo, criamos sempre uma nova versão (ex: v1 fica Inativo e nasce v2 Ativo)
+  const criarNovaVersaoAtiva = statusDesejado === 'Ativo';
+  const novaVersao = criarNovaVersaoAtiva
+    ? maxVersao + 1
+    : (planosExistentes.find((p) => p.id === dados.id)?.versao || maxVersao || 1);
+  const planoId = criarNovaVersaoAtiva
+    ? (!dados.id || idJaExiste ? novoId('pln') : dados.id)
+    : (dados.id || novoId('pln'));
 
   const novoPlano: PlanoTerapeutico = {
     id: planoId,
     paciente_id: dados.paciente_id,
-    data_inicio: dados.data_inicio,
-    data_fim: dados.data_fim,
-    status: dados.status || 'Ativo',
+    versao: novaVersao,
+    data_inicio: periodoVigencia.data_inicio,
+    data_fim: periodoVigencia.data_fim,
+    status: statusDesejado,
     observacoes: dados.observacoes || '',
     created_at: now,
     updated_at: now,
-    metas: dados.metas.map((m) => ({
-      id: m.id || novoId('meta'),
+    metas: (dados.metas || []).map((m) => ({
+      id: (!m.id || criarNovaVersaoAtiva) ? novoId('meta') : m.id,
       plano_id: planoId,
       especialidade: m.especialidade,
       quantidade_prevista: Number(m.quantidade_prevista) || 1,
@@ -2099,25 +2149,39 @@ export async function salvarPlanoTerapeutico(dados: {
 
   if (db) {
     try {
-      const statements = [db.prepare(`
-        INSERT INTO planos_terapeuticos (id, paciente_id, data_inicio, data_fim, status, observacoes, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          data_inicio = excluded.data_inicio,
-          data_fim = excluded.data_fim,
-          status = excluded.status,
-          observacoes = excluded.observacoes,
-          updated_at = excluded.updated_at
-      `).bind(
-        novoPlano.id,
-        novoPlano.paciente_id,
-        novoPlano.data_inicio,
-        novoPlano.data_fim,
-        novoPlano.status,
-        novoPlano.observacoes,
-        novoPlano.created_at,
-        novoPlano.updated_at
-      ), db.prepare('DELETE FROM plano_terapeutico_metas WHERE plano_id = ?').bind(planoId)];
+      const statements: any[] = [];
+      if (criarNovaVersaoAtiva) {
+        statements.push(
+          db
+            .prepare("UPDATE planos_terapeuticos SET status = 'Inativo', updated_at = ? WHERE paciente_id = ? AND status = 'Ativo' AND id != ?")
+            .bind(now, dados.paciente_id, planoId)
+        );
+      }
+
+      statements.push(
+        db.prepare(`
+          INSERT INTO planos_terapeuticos (id, paciente_id, versao, data_inicio, data_fim, status, observacoes, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            versao = excluded.versao,
+            data_inicio = excluded.data_inicio,
+            data_fim = excluded.data_fim,
+            status = excluded.status,
+            observacoes = excluded.observacoes,
+            updated_at = excluded.updated_at
+        `).bind(
+          novoPlano.id,
+          novoPlano.paciente_id,
+          novoPlano.versao,
+          novoPlano.data_inicio,
+          novoPlano.data_fim,
+          novoPlano.status,
+          novoPlano.observacoes,
+          novoPlano.created_at,
+          novoPlano.updated_at
+        ),
+        db.prepare('DELETE FROM plano_terapeutico_metas WHERE plano_id = ?').bind(planoId)
+      );
 
       for (const meta of novoPlano.metas || []) {
         statements.push(db.prepare(`
@@ -2139,6 +2203,18 @@ export async function salvarPlanoTerapeutico(dados: {
     }
   }
 
+  if (criarNovaVersaoAtiva) {
+    for (const [idExistente, planoMem] of Array.from(inMemoryPlanosTerapeuticos.entries())) {
+      if (planoMem.paciente_id === dados.paciente_id && planoMem.status === 'Ativo' && idExistente !== planoId) {
+        inMemoryPlanosTerapeuticos.set(idExistente, {
+          ...planoMem,
+          status: 'Inativo',
+          updated_at: now,
+        });
+      }
+    }
+  }
+
   inMemoryPlanosTerapeuticos.set(planoId, novoPlano);
   for (const m of novoPlano.metas || []) {
     inMemoryPlanoMetas.set(m.id, m);
@@ -2148,7 +2224,10 @@ export async function salvarPlanoTerapeutico(dados: {
   return enriquecerPlanoComCalculos(novoPlano, evolucoes);
 }
 
-export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): Promise<PlanoTerapeutico[]> {
+async function carregarPlanosEEvolucoesPorPaciente(pacienteId: string): Promise<{
+  planos: PlanoTerapeutico[];
+  evolucoes: EvolucaoClinica[];
+}> {
   seedClinicalMemory();
   const db = getClinicalDb();
   if (db) {
@@ -2156,7 +2235,7 @@ export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): P
     // Uma ida ao D1: antes eram 1 (planos) + 1 por plano (metas) + 1 (evoluções),
     // todas em sequência.
     const [rPlanos, rMetas, rEvolucoes] = await db.batch<any>([
-      db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC').bind(pacienteId),
+      db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC, versao DESC, rowid DESC').bind(pacienteId),
       db.prepare(
         'SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id = ? ORDER BY m.rowid'
       ).bind(pacienteId),
@@ -2164,14 +2243,30 @@ export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): P
     ]);
     const planos = montarPlanos(rPlanos.results || [], rMetas.results || []);
     const evolucoes = (rEvolucoes.results || []).map(mapearEvolucaoRow);
-    return planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes));
+    return {
+      planos: planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes)),
+      evolucoes,
+    };
   }
 
-  const planos = Array.from(inMemoryPlanosTerapeuticos.values()).filter((p) => p.paciente_id === pacienteId);
+  const planos = Array.from(inMemoryPlanosTerapeuticos.values())
+    .filter((p) => p.paciente_id === pacienteId)
+    .sort((a, b) => {
+      if (b.data_inicio !== a.data_inicio) return b.data_inicio.localeCompare(a.data_inicio);
+      return Number(b.versao || 1) - Number(a.versao || 1);
+    });
 
   // Buscar evoluções para cálculo de progresso
   const evolucoes = await listarEvolucoesClinicas({ paciente_id: pacienteId });
-  return planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes));
+  return {
+    planos: planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes)),
+    evolucoes,
+  };
+}
+
+export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): Promise<PlanoTerapeutico[]> {
+  const { planos } = await carregarPlanosEEvolucoesPorPaciente(pacienteId);
+  return planos;
 }
 
 /** Agrupa as metas (já em ordem de inserção) nos planos, preservando a ordem dos planos. */
@@ -2187,22 +2282,46 @@ function montarPlanos(planoRows: any[], metaRows: any[]): PlanoTerapeutico[] {
 }
 
 export async function obterPlanoTerapeuticoVigente(pacienteId: string, dataIso?: string): Promise<PlanoTerapeutico | null> {
-  const planos = await listarPlanosTerapeuticosPorPaciente(pacienteId);
-  return selecionarPlanoVigente(planos, dataIso);
+  const { planos, evolucoes } = await carregarPlanosEEvolucoesPorPaciente(pacienteId);
+  return selecionarPlanoVigente(planos, dataIso, evolucoes);
 }
 
 /**
- * Primeiro plano `Ativo` (na ordem recebida — `data_inicio DESC`) cuja vigência
+ * Primeiro plano `Ativo` (na ordem recebida — `data_inicio DESC, versao DESC`) cuja vigência
  * cobre a data de referência (UTC, YYYY-MM-DD).
+ * Caso o plano ativo seja de vigência mensal (`01` até o último dia do mês) e o mês tenha
+ * virado (`dataRef > p.data_fim`), renova automaticamente a janela para o mês de `dataRef`,
+ * zerando/recalculando os atendimentos realizados dentro do novo mês.
  */
-export function selecionarPlanoVigente(planos: PlanoTerapeutico[], dataIso?: string): PlanoTerapeutico | null {
+export function selecionarPlanoVigente(
+  planos: PlanoTerapeutico[],
+  dataIso?: string,
+  evolucoes?: EvolucaoClinica[],
+): PlanoTerapeutico | null {
   if (planos.length === 0) return null;
   const dataRef = (dataIso || new Date().toISOString()).split('T')[0]; // YYYY-MM-DD
-  return planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim) || null;
+  const direto = planos.find((p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim);
+  if (direto) return direto;
+
+  const mensalRenovado = planos.find(
+    (p) => p.status === 'Ativo' && ehPlanoMensal(p.data_inicio, p.data_fim) && dataRef > p.data_fim
+  );
+  if (mensalRenovado) {
+    const periodoNovoMes = obterPeriodoMesVigencia(dataRef);
+    const planoViradaMes: PlanoTerapeutico = {
+      ...mensalRenovado,
+      data_inicio: periodoNovoMes.data_inicio,
+      data_fim: periodoNovoMes.data_fim,
+    };
+    return enriquecerPlanoComCalculos(planoViradaMes, evolucoes || []);
+  }
+
+  return null;
 }
 
-function dataFimNaoExpirou(dataFim: string | undefined | null, hojeIso: string): boolean {
+function dataFimNaoExpirou(dataFim: string | undefined | null, hojeIso: string, dataInicio?: string | null): boolean {
   if (!dataFim || !dataFim.trim()) return true;
+  if (ehPlanoMensal(dataInicio, dataFim)) return true;
   const d = dataFim.trim();
   if (/^\d{2}\/\d{2}\/\d{4}/.test(d)) {
     const [dia, mes, ano] = d.split('/');
@@ -2233,7 +2352,7 @@ export async function listarIdsPacientesVinculadosAoCooperado(
       // Busca planos com status Ativo cuja vigência cubra hoje ou seja futura (para Próximos)
       const rows = await db
         .prepare(
-          `SELECT p.paciente_id, p.data_fim, m.especialidade, m.profissionais_designados
+          `SELECT p.paciente_id, p.data_inicio, p.data_fim, m.especialidade, m.profissionais_designados
              FROM planos_terapeuticos p
              JOIN plano_terapeutico_metas m ON m.plano_id = p.id
             WHERE (p.status COLLATE NOCASE = 'ativo' OR p.status IS NULL OR p.status = '')`
@@ -2241,7 +2360,7 @@ export async function listarIdsPacientesVinculadosAoCooperado(
         .all<any>();
 
       for (const row of rows.results || []) {
-        if (!dataFimNaoExpirou(row.data_fim, hoje)) continue;
+        if (!dataFimNaoExpirou(row.data_fim, hoje, row.data_inicio)) continue;
         const metasDesignadas = parseProfissionaisDesignados(row.profissionais_designados);
         let associado = false;
 
@@ -2264,7 +2383,7 @@ export async function listarIdsPacientesVinculadosAoCooperado(
   // Fallback em memória (para testes / dev sem D1)
   for (const plano of Array.from(inMemoryPlanosTerapeuticos.values())) {
     const statusAtivo = !plano.status || plano.status.toLowerCase() === 'ativo';
-    if (statusAtivo && dataFimNaoExpirou(plano.data_fim, hoje)) {
+    if (statusAtivo && dataFimNaoExpirou(plano.data_fim, hoje, plano.data_inicio)) {
       const metas = plano.metas || Array.from(inMemoryPlanoMetas.values()).filter((m) => m.plano_id === plano.id);
       for (const meta of metas) {
         let associado = false;
@@ -2492,6 +2611,7 @@ export async function listarPacientesComResumoClinico(
   const hoje = new Date().toISOString().split('T')[0];
   const mes = hoje.slice(0, 7);
   const mesSeguinte = mesSeguinteIso(mes);
+  const periodoHoje = obterPeriodoMesVigencia(hoje);
 
   // Prefixo `pac.`: o mesmo filtro é reaproveitado nas consultas que juntam
   // pacientes com evoluções/sinais (`status` também existe em `evolucoes`).
@@ -2521,7 +2641,8 @@ export async function listarPacientesComResumoClinico(
     (paginar ? ' LIMIT ? OFFSET ?' : '');
   const paramsSubquery = paginar ? [...paramsPacientes, limit, offset] : [...paramsPacientes];
 
-  const filtroPlanoVigente = "p.status = 'Ativo' AND p.data_inicio <= ? AND p.data_fim >= ?";
+  const condicaoMensalRenovavel = "(p.data_inicio <= ? AND substr(p.data_inicio, 1, 7) = substr(p.data_fim, 1, 7) AND substr(p.data_inicio, 9, 2) = '01' AND CAST(substr(p.data_fim, 9, 2) AS INTEGER) >= 28)";
+  const filtroPlanoVigente = `p.status = 'Ativo' AND ((p.data_inicio <= ? AND p.data_fim >= ?) OR ${condicaoMensalRenovavel})`;
 
   // Última evolução e último sinal: um *seek* por paciente listado, pelo índice
   // (paciente_id, check_in DESC) / (paciente_id, data_hora DESC).
@@ -2586,33 +2707,33 @@ export async function listarPacientesComResumoClinico(
 
     paginar
       ? db.prepare(
-          `SELECT p.* FROM planos_terapeuticos p WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} ORDER BY p.paciente_id, p.data_inicio DESC`
-        ).bind(...paramsSubquery, hoje, hoje)
+          `SELECT p.* FROM planos_terapeuticos p WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} ORDER BY p.paciente_id, p.data_inicio DESC, p.versao DESC, p.rowid DESC`
+        ).bind(...paramsSubquery, hoje, hoje, hoje)
       : db.prepare(
-          `SELECT p.* FROM planos_terapeuticos p WHERE ${filtroPlanoVigente} ORDER BY p.paciente_id, p.data_inicio DESC`
-        ).bind(hoje, hoje),
+          `SELECT p.* FROM planos_terapeuticos p WHERE ${filtroPlanoVigente} ORDER BY p.paciente_id, p.data_inicio DESC, p.versao DESC, p.rowid DESC`
+        ).bind(hoje, hoje, hoje),
 
     paginar
       ? db.prepare(
           `SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} ORDER BY m.rowid`
-        ).bind(...paramsSubquery, hoje, hoje)
+        ).bind(...paramsSubquery, hoje, hoje, hoje)
       : db.prepare(
           `SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE ${filtroPlanoVigente} ORDER BY m.rowid`
-        ).bind(hoje, hoje),
+        ).bind(hoje, hoje, hoje),
 
     paginar
       ? db.prepare(
           'SELECT p.id AS plano_id, e.tipo_profissional AS tipo_profissional, COUNT(*) AS total ' +
           'FROM planos_terapeuticos p JOIN evolucoes e ON e.paciente_id = p.paciente_id ' +
-          "AND e.check_in >= (p.data_inicio || 'T00:00:00.000Z') AND e.check_in <= (p.data_fim || 'T23:59:59.999Z') " +
+          "AND e.check_in >= ((CASE WHEN p.data_fim < ? THEN ? ELSE p.data_inicio END) || 'T00:00:00.000Z') AND e.check_in <= ((CASE WHEN p.data_fim < ? THEN ? ELSE p.data_fim END) || 'T23:59:59.999Z') " +
           `WHERE p.paciente_id IN (${subqueryPacientes}) AND ${filtroPlanoVigente} GROUP BY p.id, e.tipo_profissional`
-        ).bind(...paramsSubquery, hoje, hoje)
+        ).bind(hoje, periodoHoje.data_inicio, hoje, periodoHoje.data_fim, ...paramsSubquery, hoje, hoje, hoje)
       : db.prepare(
           'SELECT p.id AS plano_id, e.tipo_profissional AS tipo_profissional, COUNT(*) AS total ' +
           'FROM planos_terapeuticos p JOIN evolucoes e ON e.paciente_id = p.paciente_id ' +
-          "AND e.check_in >= (p.data_inicio || 'T00:00:00.000Z') AND e.check_in <= (p.data_fim || 'T23:59:59.999Z') " +
+          "AND e.check_in >= ((CASE WHEN p.data_fim < ? THEN ? ELSE p.data_inicio END) || 'T00:00:00.000Z') AND e.check_in <= ((CASE WHEN p.data_fim < ? THEN ? ELSE p.data_fim END) || 'T23:59:59.999Z') " +
           `WHERE ${filtroPlanoVigente} GROUP BY p.id, e.tipo_profissional`
-        ).bind(hoje, hoje),
+        ).bind(hoje, periodoHoje.data_inicio, hoje, periodoHoje.data_fim, hoje, hoje, hoje),
   ];
 
   if (paginar) {
@@ -2664,9 +2785,13 @@ export async function listarPacientesComResumoClinico(
   }
 
   const planosVigentes = new Map<string, PlanoTerapeutico>();
-  for (const plano of montarPlanos(rPlanos?.results || [], rMetas?.results || [])) {
-    if (planosVigentes.has(plano.paciente_id)) continue;
-    const contagem = contagemPorPlano.get(plano.id);
+  for (const planoOriginal of montarPlanos(rPlanos?.results || [], rMetas?.results || [])) {
+    if (planosVigentes.has(planoOriginal.paciente_id)) continue;
+    const plano =
+      planoOriginal.data_fim < hoje && ehPlanoMensal(planoOriginal.data_inicio, planoOriginal.data_fim)
+        ? { ...planoOriginal, data_inicio: periodoHoje.data_inicio, data_fim: periodoHoje.data_fim }
+        : planoOriginal;
+    const contagem = contagemPorPlano.get(planoOriginal.id);
     planosVigentes.set(plano.paciente_id, calcularProgressoPlano(plano, (esp) => contagem?.get(esp) || 0));
   }
 
@@ -2740,7 +2865,7 @@ export async function carregarProntuario360(
         };
       })
       .sort((a, b) => new Date(a.horario_previsto).getTime() - new Date(b.horario_previsto).getTime());
-    return { paciente, evolucoes, prescricoes, aprazamentos, sinaisVitais, pareceres, planos, planoVigente: selecionarPlanoVigente(planos) };
+    return { paciente, evolucoes, prescricoes, aprazamentos, sinaisVitais, pareceres, planos, planoVigente: selecionarPlanoVigente(planos, undefined, evolucoes) };
   }
 
   await garantirSchemaD1(db);
@@ -2753,7 +2878,7 @@ export async function carregarProntuario360(
     db.prepare('SELECT * FROM prescricoes WHERE paciente_id = ? ORDER BY created_at DESC').bind(pacienteId),
     db.prepare('SELECT * FROM sinais_vitais WHERE paciente_id = ? ORDER BY data_hora DESC LIMIT ?').bind(pacienteId, limiteSinais),
     db.prepare('SELECT * FROM pareceres_auditoria WHERE paciente_id = ? ORDER BY data_registro DESC').bind(pacienteId),
-    db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC').bind(pacienteId),
+    db.prepare('SELECT * FROM planos_terapeuticos WHERE paciente_id = ? ORDER BY data_inicio DESC, versao DESC, rowid DESC').bind(pacienteId),
     db.prepare(
       'SELECT m.* FROM plano_terapeutico_metas m JOIN planos_terapeuticos p ON p.id = m.plano_id WHERE p.paciente_id = ? ORDER BY m.rowid'
     ).bind(pacienteId),
@@ -2798,7 +2923,7 @@ export async function carregarProntuario360(
     sinaisVitais: (rSinais.results || []) as SinalVitalClinico[],
     pareceres: (rPar.results || []) as ParecerAuditoriaClinica[],
     planos,
-    planoVigente: selecionarPlanoVigente(planos),
+    planoVigente: selecionarPlanoVigente(planos, undefined, evolucoes),
   };
 }
 

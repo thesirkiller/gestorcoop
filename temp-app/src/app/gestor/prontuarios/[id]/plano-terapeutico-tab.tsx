@@ -13,8 +13,16 @@ import {
   X,
   Loader2,
   Edit3,
+  Lock,
+  History,
 } from 'lucide-react';
-import { formatarNomeEspecialidade, PlanoTerapeutico } from '@/lib/tipos-clinicos';
+import {
+  formatarNomeEspecialidade,
+  obterPeriodoMesVigencia,
+  formatarDataIsoParaBr,
+  PlanoTerapeutico,
+  StatusPlanoTerapeutico,
+} from '@/lib/tipos-clinicos';
 import { fetchFullDataset } from '@/lib/client-fetch';
 import SeletorCooperadosMeta, { CooperadoItem } from '../_components/SeletorCooperadosMeta';
 import { invalidarCacheNavegacao, CHAVE_CACHE_LISTAGEM_PACIENTES } from '@/lib/cache-navegacao';
@@ -75,15 +83,17 @@ export default function PlanoTerapeuticoTab({
   // Lista de cooperados do sistema
   const [todosCooperados, setTodosCooperados] = useState<CooperadoItem[]>([]);
 
-  // Estado do formulário
-  const hoje = new Date().toISOString().split('T')[0];
-  const proximoMes = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  // Período automático do mês corrente (sempre do dia 01 até 28/29/30/31)
+  const periodoMesAtual = obterPeriodoMesVigencia();
+  const maiorVersaoAtual = planosLocais.reduce((max, p) => Math.max(max, Number(p.versao || 1)), 0);
+  const proximaVersao = maiorVersaoAtual + 1;
 
   const [formPlano, setFormPlano] = useState<{
     id?: string;
+    versaoBase?: number;
     data_inicio: string;
     data_fim: string;
-    status: 'Ativo' | 'Concluido' | 'Cancelado';
+    status: StatusPlanoTerapeutico;
     observacoes: string;
     metas: Array<{
       id?: string;
@@ -92,8 +102,8 @@ export default function PlanoTerapeuticoTab({
       profissionais_designados: Array<{ id: string; nome: string; cargo?: string }>;
     }>;
   }>({
-    data_inicio: hoje,
-    data_fim: proximoMes,
+    data_inicio: periodoMesAtual.data_inicio,
+    data_fim: periodoMesAtual.data_fim,
     status: 'Ativo',
     observacoes: '',
     metas: [
@@ -150,9 +160,10 @@ export default function PlanoTerapeuticoTab({
   };
 
   const iniciarNovoPlano = () => {
+    const p = obterPeriodoMesVigencia();
     setFormPlano({
-      data_inicio: hoje,
-      data_fim: proximoMes,
+      data_inicio: p.data_inicio,
+      data_fim: p.data_fim,
       status: 'Ativo',
       observacoes: '',
       metas: [
@@ -167,11 +178,13 @@ export default function PlanoTerapeuticoTab({
   };
 
   const editarPlanoExistente = (plano: PlanoTerapeutico) => {
+    const p = obterPeriodoMesVigencia(plano.data_inicio);
     setFormPlano({
       id: plano.id,
-      data_inicio: plano.data_inicio,
-      data_fim: plano.data_fim,
-      status: plano.status === 'Concluido' || plano.status === 'Cancelado' ? plano.status : 'Ativo',
+      versaoBase: plano.versao || 1,
+      data_inicio: p.data_inicio,
+      data_fim: p.data_fim,
+      status: 'Ativo',
       observacoes: plano.observacoes || '',
       metas: (plano.metas || []).map((m) => ({
         id: m.id,
@@ -241,22 +254,27 @@ export default function PlanoTerapeuticoTab({
     try {
       const res = await axios.post(`/api/gestor/prontuarios/pacientes/${pacienteId}/planos`, {
         ...formPlano,
+        status: 'Ativo',
         paciente_id: pacienteId,
       });
       if (res.data.success) {
         invalidarCacheNavegacao(CHAVE_CACHE_LISTAGEM_PACIENTES);
-        setSucesso('Plano Terapêutico salvo com sucesso!');
+        const salvo: PlanoTerapeutico = res.data.data;
+        const listaAtualizada: PlanoTerapeutico[] | undefined = res.data.planos;
+        setSucesso(
+          maiorVersaoAtual > 0
+            ? `Nova Versão ${salvo?.versao || proximaVersao} salva como Ativa! A versão anterior foi mantida como Inativa para consulta.`
+            : `Plano Terapêutico (Versão ${salvo?.versao || 1}) salvo e ativado com sucesso!`
+        );
         setModoEdicao(false);
-        const salvo = res.data.data;
-        if (salvo && salvo.id) {
+        if (Array.isArray(listaAtualizada) && listaAtualizada.length > 0) {
+          setPlanosLocais(listaAtualizada);
+        } else if (salvo && salvo.id) {
           setPlanosLocais((prev) => {
-            const index = prev.findIndex((p) => p.id === salvo.id);
-            if (index >= 0) {
-              const updated = [...prev];
-              updated[index] = salvo;
-              return updated;
-            }
-            return [salvo, ...prev];
+            const anterioresInativados = prev.map((p) =>
+              p.status === 'Ativo' ? { ...p, status: 'Inativo' as const } : p
+            );
+            return [salvo, ...anterioresInativados];
           });
         }
         onPlanoAtualizado(salvo);
@@ -278,10 +296,10 @@ export default function PlanoTerapeuticoTab({
         <div>
           <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-indigo-600" />
-            Gestão de Planos Terapêuticos
+            Gestão de Planos Terapêuticos (Vigência Mensal & Versionamento)
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Defina o período de vigência e as metas de visitas por categoria profissional para o paciente {pacienteNome}.
+            Vigência automática do dia 01 até o último dia do mês ({formatarDataIsoParaBr(periodoMesAtual.data_inicio)} a {formatarDataIsoParaBr(periodoMesAtual.data_fim)}) para {pacienteNome}. Ao editar um plano ativo, a versão anterior fica Inativa para consulta e uma nova versão Ativa é gerada.
           </p>
         </div>
 
@@ -291,7 +309,7 @@ export default function PlanoTerapeuticoTab({
             className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl transition-all shadow-sm flex items-center gap-1.5 shrink-0"
           >
             <Plus className="w-4 h-4" />
-            Novo Plano Terapêutico
+            {planosLocais.length > 0 ? `Nova Versão (v${proximaVersao})` : 'Criar Plano Terapêutico (v1)'}
           </button>
         )}
       </div>
@@ -316,10 +334,14 @@ export default function PlanoTerapeuticoTab({
           <div className="flex items-center justify-between pb-4 border-b border-slate-100">
             <div>
               <h4 className="text-sm font-bold text-slate-900">
-                {formPlano.id ? 'Editar Plano Terapêutico' : 'Lançar Novo Plano Terapêutico'}
+                {formPlano.id
+                  ? `Editar Plano Terapêutico (Gerar Versão ${proximaVersao} Ativa)`
+                  : `Lançar Plano Terapêutico (Versão ${proximaVersao} Ativa)`}
               </h4>
               <p className="text-xs text-slate-500">
-                Especifique a vigência e as cotas contratadas para cada categoria profissional.
+                {maiorVersaoAtual > 0
+                  ? `A Versão ${maiorVersaoAtual} será automaticamente marcada como Inativa e preservada no histórico para consulta.`
+                  : 'O plano será criado na Versão 1 (Ativo) com vigência mensal automática.'}
               </p>
             </div>
             <button
@@ -331,41 +353,38 @@ export default function PlanoTerapeuticoTab({
             </button>
           </div>
 
-          {/* Período de Vigência e Status */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Início da Vigência *</label>
-              <input
-                type="date"
-                required
-                value={formPlano.data_inicio}
-                onChange={(e) => setFormPlano({ ...formPlano, data_inicio: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
+          {/* Banner de Vigência Mensal Automática (Sem seleção manual de datas) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-indigo-50/60 border border-indigo-100 rounded-xl p-4">
+            <div className="flex items-start gap-3">
+              <Calendar className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700 block">
+                  Vigência Mensal Automática
+                </span>
+                <p className="text-xs font-extrabold text-slate-900 mt-0.5">
+                  {formatarDataIsoParaBr(formPlano.data_inicio)} até {formatarDataIsoParaBr(formPlano.data_fim)}
+                </p>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  Válido sempre do dia 01 até o último dia do mês ({periodoMesAtual.ultimo_dia}), renovando a cota automaticamente na virada do mês.
+                </p>
+              </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Término da Vigência *</label>
-              <input
-                type="date"
-                required
-                value={formPlano.data_fim}
-                onChange={(e) => setFormPlano({ ...formPlano, data_fim: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Status do Plano</label>
-              <select
-                value={formPlano.status}
-                onChange={(e: any) => setFormPlano({ ...formPlano, status: e.target.value })}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="Ativo">Ativo (Em vigor)</option>
-                <option value="Concluido">Concluído</option>
-                <option value="Cancelado">Cancelado</option>
-              </select>
+            <div className="flex items-start gap-3">
+              <History className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 block">
+                  Controle de Versão do Plano
+                </span>
+                <p className="text-xs font-extrabold text-slate-900 mt-0.5">
+                  Versão {proximaVersao} • Status: Ativo
+                </p>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  {maiorVersaoAtual > 0
+                    ? `Substitui a Versão ${maiorVersaoAtual}, que passa para o status Inativo na lista abaixo.`
+                    : 'Primeira versão ativa do plano terapêutico deste paciente.'}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -377,7 +396,7 @@ export default function PlanoTerapeuticoTab({
                   Metas de Atendimentos por Especialidade
                 </h5>
                 <p className="text-[11px] text-slate-500">
-                  Defina a quantidade de visitas e os cooperados autorizados a visitar o paciente nesta especialidade.
+                  Defina a quantidade de visitas no mês e os cooperados autorizados. Ao atingir a cota mensal da especialidade, novos atendimentos são bloqueados automaticamente no painel e no app.
                 </p>
               </div>
               <button
@@ -410,7 +429,7 @@ export default function PlanoTerapeuticoTab({
 
                     <div className="w-full sm:w-36">
                       <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                        Qtd. Contratada
+                        Qtd. Contratada / Mês
                       </label>
                       <input
                         type="number"
@@ -487,7 +506,7 @@ export default function PlanoTerapeuticoTab({
                 </>
               ) : (
                 <>
-                  <Save className="w-4 h-4" /> Salvar Plano Terapêutico
+                  <Save className="w-4 h-4" /> Salvar Versão {proximaVersao} (Ativa)
                 </>
               )}
             </button>
@@ -495,42 +514,62 @@ export default function PlanoTerapeuticoTab({
         </form>
       ) : null}
 
-      {/* Listagem de Planos Cadastrados */}
+      {/* Listagem de Planos Cadastrados (Ativo + Histórico Inativo para Consulta) */}
       <div className="space-y-4">
         {planosLocais.length > 0 ? (
           planosLocais.map((plano) => {
             const isVigente = plano.status === 'Ativo';
+            const isInativo = plano.status === 'Inativo';
+            const versaoNum = plano.versao || 1;
             return (
               <div
                 key={plano.id}
                 className={`bg-white rounded-2xl border p-6 shadow-sm transition-all ${
-                  isVigente ? 'border-indigo-300 ring-2 ring-indigo-50' : 'border-slate-200'
+                  isVigente
+                    ? 'border-indigo-300 ring-2 ring-indigo-50'
+                    : 'border-slate-200 bg-slate-50/40 opacity-90'
                 }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="px-2.5 py-1 rounded-lg text-xs font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      Versão {versaoNum} (v{versaoNum})
+                    </span>
                     <span
                       className={`px-2.5 py-1 rounded-lg text-xs font-bold ${
-                        isVigente ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'
+                        isVigente
+                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                          : isInativo
+                          ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
                       }`}
                     >
-                      {plano.status}
+                      {isVigente ? 'Ativo' : isInativo ? 'Inativo (Histórico para Consulta)' : plano.status}
                     </span>
                     <h4 className="text-sm font-bold text-slate-900">
-                      Vigência: {plano.data_inicio} até {plano.data_fim}
+                      Vigência Mensal: {formatarDataIsoParaBr(plano.data_inicio)} até {formatarDataIsoParaBr(plano.data_fim)}
                     </h4>
                   </div>
 
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-slate-500 font-medium">
-                      Progresso Geral: <strong className="text-slate-800">{plano.total_realizado || 0} / {plano.total_previsto || 0}</strong>
+                      Progresso no Mês:{' '}
+                      <strong className="text-slate-800">
+                        {plano.total_realizado || 0} / {plano.total_previsto || 0}
+                      </strong>
                     </span>
-                    <button
-                      onClick={() => editarPlanoExistente(plano)}
-                      className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" /> Editar
-                    </button>
+                    {isVigente ? (
+                      <button
+                        onClick={() => editarPlanoExistente(plano)}
+                        className="text-indigo-600 hover:text-indigo-800 text-xs font-bold flex items-center gap-1 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg transition-all"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" /> Editar Plano
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                        <History className="w-3.5 h-3.5" /> Somente Consulta
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -545,7 +584,11 @@ export default function PlanoTerapeuticoTab({
                       <div
                         key={mIdx}
                         className={`p-3 rounded-xl border ${
-                          esgotada ? 'bg-emerald-50/40 border-emerald-200' : 'bg-slate-50 border-slate-200'
+                          esgotada && isVigente
+                            ? 'bg-rose-50/50 border-rose-200'
+                            : esgotada
+                            ? 'bg-emerald-50/40 border-emerald-200'
+                            : 'bg-slate-50 border-slate-200'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
@@ -561,13 +604,19 @@ export default function PlanoTerapeuticoTab({
                         <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden mb-2">
                           <div
                             className={`h-full transition-all ${
-                              esgotada ? 'bg-emerald-500' : 'bg-indigo-600'
+                              esgotada && isVigente ? 'bg-rose-500' : esgotada ? 'bg-emerald-500' : 'bg-indigo-600'
                             }`}
                             style={{
                               width: `${Math.min(100, Math.round((realizadas / previstas) * 100))}%`,
                             }}
                           />
                         </div>
+
+                        {esgotada && isVigente && (
+                          <div className="mb-1.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold">
+                            <Lock className="w-3 h-3" /> Limite Mensal Atingido • Bloqueado
+                          </div>
+                        )}
 
                         {meta.profissionais_designados && meta.profissionais_designados.length > 0 ? (
                           <div className="text-[10px] text-slate-500">
@@ -592,7 +641,7 @@ export default function PlanoTerapeuticoTab({
           })
         ) : (
           <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center text-slate-500">
-            Nenhum plano terapêutico registrado ainda. Clique em &quot;Novo Plano Terapêutico&quot; para criar o primeiro.
+            Nenhum plano terapêutico registrado ainda. Clique em &quot;Criar Plano Terapêutico (v1)&quot; para criar o primeiro.
           </div>
         )}
       </div>

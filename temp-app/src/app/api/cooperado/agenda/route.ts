@@ -17,6 +17,7 @@ import {
   gerarSlotsAprazamento,
   deduplicarAprazamentosClinicos,
   normalizarResponsaveisPaciente,
+  validarCheckInPlanoTerapeutico,
 } from '@/lib/db/prontuarios';
 
 export const dynamic = 'force-dynamic';
@@ -502,6 +503,61 @@ export async function GET(request: NextRequest) {
           };
         });
     }
+
+    dbPacientes = await Promise.all(
+      dbPacientes.map(async (p: any) => {
+        try {
+          const validacao = await validarCheckInPlanoTerapeutico({
+            pacienteId: p.id,
+            tipoProfissional: cooperadoCargo || 'Tecnico_Enfermagem',
+            cooperadoId,
+            cooperadoNome,
+            cooperadoCpf,
+            userId: sessao.userId,
+          });
+          const enriquecido: any = { ...p };
+          if (validacao.plano) {
+            enriquecido.tem_plano_terapeutico = true;
+            enriquecido.plano_vigente = {
+              id: validacao.plano.id,
+              versao: validacao.plano.versao || 1,
+              data_inicio: validacao.plano.data_inicio,
+              data_fim: validacao.plano.data_fim,
+              total_previsto: validacao.plano.total_previsto ?? 0,
+              total_realizado: validacao.plano.total_realizado ?? 0,
+              total_restante: validacao.plano.total_restante ?? 0,
+              tem_pendencias: Boolean(validacao.plano.tem_pendencias),
+            };
+          }
+          if (validacao.meta) {
+            const previstas = Number(validacao.previstas ?? validacao.meta.quantidade_prevista ?? 0);
+            const realizadas = Number(validacao.realizadas ?? validacao.meta.quantidade_realizada ?? 0);
+            const restantes = Math.max(0, previstas - realizadas);
+            enriquecido.especialidade_prevista = previstas;
+            enriquecido.especialidade_realizada = realizadas;
+            enriquecido.especialidade_restante = restantes;
+            if (!enriquecido.limite_visitas_mes || enriquecido.limite_visitas_mes === 0) {
+              enriquecido.limite_visitas_mes = previstas;
+              enriquecido.visitas_realizadas_mes = realizadas;
+              enriquecido.visitas_restantes_mes = restantes;
+            }
+          }
+          if (!validacao.permitido) {
+            enriquecido.bloqueio_plano = true;
+            enriquecido.bloqueio_plano_motivo = validacao.motivo;
+            if (validacao.cotaAtingida) {
+              enriquecido.limite_atingido = true;
+            }
+          } else {
+            enriquecido.bloqueio_plano = false;
+            enriquecido.bloqueio_plano_motivo = undefined;
+          }
+          return enriquecido;
+        } catch {
+          return p;
+        }
+      })
+    );
 
     return NextResponse.json({
       success: true,

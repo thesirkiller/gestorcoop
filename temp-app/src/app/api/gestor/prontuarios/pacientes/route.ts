@@ -81,16 +81,26 @@ export async function GET(request: NextRequest) {
     for (const p of pacientes) {
       const plano = planosVigentes.get(p.id);
       if (plano && plano.metas && plano.metas.length > 0) {
+        const totalPrevisto = plano.total_previsto ?? 0;
+        const totalRealizado = plano.total_realizado ?? 0;
+        const totalRestante = plano.total_restante ?? 0;
+        const cotaPlanoEsgotada = totalPrevisto > 0 && totalRealizado >= totalPrevisto;
         p.tem_plano_terapeutico = true;
         p.plano_vigente = {
           id: plano.id,
+          versao: plano.versao || 1,
           data_inicio: plano.data_inicio,
           data_fim: plano.data_fim,
-          total_previsto: plano.total_previsto ?? 0,
-          total_realizado: plano.total_realizado ?? 0,
-          total_restante: plano.total_restante ?? 0,
+          total_previsto: totalPrevisto,
+          total_realizado: totalRealizado,
+          total_restante: totalRestante,
           tem_pendencias: Boolean(plano.tem_pendencias),
         };
+        if (cotaPlanoEsgotada) {
+          p.bloqueio_plano = true;
+          p.bloqueio_plano_motivo = `Todas as metas do Plano Terapêutico (v${plano.versao || 1}) foram concluídas no mês (${totalRealizado}/${totalPrevisto}).`;
+          p.limite_atingido = true;
+        }
       } else {
         p.tem_plano_terapeutico = false;
       }
@@ -148,18 +158,19 @@ export async function POST(request: NextRequest) {
       limite_visitas_mes: Number(body.limite_visitas_mes || 0),
     });
 
-    // 2. Se vier com Plano Terapêutico Multiprofissional Dinâmico, salva e vincula
+    // 2. Se vier com Plano Terapêutico Multiprofissional Dinâmico, salva e vincula com vigência mensal automática (01 até último dia do mês)
     let planoSalvo = null;
     if (
       body.plano_terapeutico &&
       Array.isArray(body.plano_terapeutico.metas) &&
       body.plano_terapeutico.metas.length > 0
     ) {
-      const { data_inicio, data_fim, observacoes, metas } = body.plano_terapeutico;
+      const { mes_referencia, data_inicio, data_fim, observacoes, metas } = body.plano_terapeutico;
       planoSalvo = await salvarPlanoTerapeutico({
         paciente_id: pacienteSalvo.id,
-        data_inicio: data_inicio || new Date().toISOString().split('T')[0],
-        data_fim: data_fim || new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+        mes_referencia,
+        data_inicio,
+        data_fim,
         status: 'Ativo',
         observacoes: observacoes || 'Plano Terapêutico iniciado na admissão clínica.',
         metas: metas.map((m: any) => ({

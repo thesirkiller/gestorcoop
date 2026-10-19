@@ -37,14 +37,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     }
 
     const body = await request.json();
-    const { id, data_inicio, data_fim, status, observacoes, metas } = body;
-
-    if (!data_inicio || !data_fim) {
-      return NextResponse.json(
-        { success: false, error: 'Período obrigatório: data_inicio e data_fim devem ser informadas.' },
-        { status: 400 }
-      );
-    }
+    const { id, mes_referencia, data_inicio, data_fim, status, observacoes, metas } = body;
 
     if (!Array.isArray(metas) || metas.length === 0) {
       return NextResponse.json(
@@ -56,6 +49,7 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
     const planoSalvo = await salvarPlanoTerapeutico({
       id,
       paciente_id: pacienteId,
+      mes_referencia,
       data_inicio,
       data_fim,
       status: status || 'Ativo',
@@ -68,7 +62,9 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       })),
     });
 
-    return NextResponse.json({ success: true, data: planoSalvo });
+    const planos = await listarPlanosTerapeuticosPorPaciente(pacienteId);
+
+    return NextResponse.json({ success: true, data: planoSalvo, planos });
   } catch (error: any) {
     console.error('Erro ao salvar plano terapêutico:', error);
     return NextResponse.json(
