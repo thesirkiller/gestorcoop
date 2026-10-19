@@ -3,6 +3,7 @@ export const TIPOS_DOCUMENTO = {
   identificacao: 'Identificação (RG ou CNH)',
   conselho: 'Carteira Profissional (COREN / Conselho)',
   certidao_regularidade: 'Certidão de Regularidade do COREN / Conselho',
+  certidao_negativa_criminal: 'Certidão Negativa Criminal',
   residencia: 'Comprovante de endereço',
   cartao_vacinacao: 'Cartão de vacinação',
   cartao_sus_pis: 'Cartão do SUS / PIS (opcional)',
@@ -15,6 +16,7 @@ export const TIPOS_DOCUMENTO_OBRIGATORIOS: readonly TipoDocumentoAdesao[] = [
   'identificacao',
   'conselho',
   'certidao_regularidade',
+  'certidao_negativa_criminal',
   'residencia',
   'cartao_vacinacao',
 ] as const;

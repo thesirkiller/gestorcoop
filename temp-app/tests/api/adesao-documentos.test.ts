@@ -148,29 +148,31 @@ async function payloadCompleto() {
   };
 }
 
-test('Catálogo de documentos define os 5 obrigatórios e 2 opcionais solicitados pela cooperativa', async () => {
+test('Catálogo de documentos define os 6 obrigatórios e 2 opcionais solicitados pela cooperativa', async () => {
   expect(TIPOS_DOCUMENTO_OBRIGATORIOS).toEqual([
     'identificacao',
     'conselho',
     'certidao_regularidade',
+    'certidao_negativa_criminal',
     'residencia',
     'cartao_vacinacao',
   ]);
   expect(TIPOS_DOCUMENTO_OPCIONAIS).toEqual(['cartao_sus_pis', 'outro']);
 
-  // Sem documentos: todos os 5 obrigatórios ficam pendentes
-  expect(documentosObrigatoriosPendentes([])).toHaveLength(5);
+  // Sem documentos: todos os 6 obrigatórios ficam pendentes
+  expect(documentosObrigatoriosPendentes([])).toHaveLength(6);
 
-  // Apenas RG e comprovante de residência ainda deixam 3 obrigatórios pendentes
+  // Apenas RG e comprovante de residência ainda deixam 4 obrigatórios pendentes
   const parciais = await criarDocumentos(['identificacao', 'residencia']);
   const pendentes = documentosObrigatoriosPendentes(parciais);
   expect(pendentes).toEqual([
     TIPOS_DOCUMENTO.conselho,
     TIPOS_DOCUMENTO.certidao_regularidade,
+    TIPOS_DOCUMENTO.certidao_negativa_criminal,
     TIPOS_DOCUMENTO.cartao_vacinacao,
   ]);
 
-  // Todos os 5 obrigatórios presentes zeram as pendências
+  // Todos os 6 obrigatórios presentes zeram as pendências
   const todosObrigatorios = await criarDocumentos(TIPOS_DOCUMENTO_OBRIGATORIOS);
   expect(documentosObrigatoriosPendentes(todosObrigatorios)).toEqual([]);
 

@@ -63,6 +63,7 @@ test.describe('QA Visual — 4 Frentes da Reunião de Alinhamento (13/10/2026)',
       'rg_frente_verso.pdf',
       'carteira_coren_go.pdf',
       'certidao_regularidade_coren.pdf',
+      'certidao_negativa_criminal.pdf',
       'comprovante_endereco_goiania.pdf',
       'cartao_vacinacao_atualizado.pdf',
       'cartao_sus_pis.pdf',
@@ -156,13 +157,14 @@ test.describe('QA Visual — 4 Frentes da Reunião de Alinhamento (13/10/2026)',
     await page.getByRole('button', { name: /Salvar Conta/i }).click();
     await page.getByRole('button', { name: /Avançar/i }).click();
 
-    // Etapa 5 — Upload dos 5 Documentos Obrigatórios + Opcionais (SUS/PIS)
+    // Etapa 5 — Upload dos 6 Documentos Obrigatórios + Opcionais (SUS/PIS)
     await expect(page.getByRole('heading', { name: /Upload de Documentos/i })).toBeVisible();
 
     const tiposParaSelecionar = [
       'identificacao',
       'conselho',
       'certidao_regularidade',
+      'certidao_negativa_criminal',
       'residencia',
       'cartao_vacinacao',
       'cartao_sus_pis',
@@ -178,7 +180,7 @@ test.describe('QA Visual — 4 Frentes da Reunião de Alinhamento (13/10/2026)',
       await page.getByRole('combobox', { name: `Tipo de ${nomesArquivos[i]}` }).selectOption(tiposParaSelecionar[i]);
     }
 
-    await expect(page.getByText('Checklist de Documentação Obrigatória (5/5)')).toBeVisible();
+    await expect(page.getByText('Checklist de Documentação Obrigatória (6/6)')).toBeVisible();
     await expect(page.getByText('Documentos obrigatórios enviados. Você pode finalizar e assinar.')).toBeVisible();
     await expect(page.getByRole('button', { name: /Finalizar & Assinar/i })).toBeEnabled();
 

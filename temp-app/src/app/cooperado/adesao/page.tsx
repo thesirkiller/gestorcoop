@@ -109,7 +109,7 @@ const HELP_BY_STEP: Record<number, { title: string; items: string[] }> = {
   5: {
     title: 'Documentos',
     items: [
-      'Envie os 5 documentos obrigatórios: RG ou CNH, Carteira Profissional (COREN/Conselho), Certidão de Regularidade, Comprovante de Endereço e Cartão de Vacinação.',
+      'Envie os 6 documentos obrigatórios: RG ou CNH, Carteira Profissional (COREN/Conselho), Certidão de Regularidade, Certidão Negativa Criminal, Comprovante de Endereço e Cartão de Vacinação.',
       'Se desejar, anexe também o Cartão do SUS/PIS ou outro documento de identificação social (opcionais).',
       'Formatos aceitos: PDF, JPEG e PNG, com até 10MB por arquivo.',
     ],
