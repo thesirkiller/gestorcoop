@@ -6,6 +6,7 @@ import { gerarSeloAssinatura, obterSessaoCooperado } from '@/lib/sessao-cooperad
 import {
   garantirSchemaD1,
   normalizarEspecialidade,
+  ehPlanoMensal,
   validarCheckInPlanoTerapeutico,
   listarIdsPacientesVinculadosAoCooperado,
   inMemoryPacientes,
@@ -180,6 +181,74 @@ export async function POST(request: NextRequest) {
     const evolucoesSincronizadas: any[] = [];
     const checkInsNoLote = new Map<string, any>();
     const evolucoesAssinadasNoLote = new Set<string>();
+    const evolucoesNovasContabilizadasNoLote = new Set<string>();
+    const novasEvolucoesNoLote = new Map<string, number>();
+
+    const validarCotaComLote = async (params: {
+      evolucaoId: string;
+      pacienteId: string;
+      tipoProfissional: string;
+      checkInIso: string;
+    }): Promise<NextResponse | null> => {
+      if (evolucoesNovasContabilizadasNoLote.has(params.evolucaoId)) {
+        return null;
+      }
+      const validacao = await validarCheckInPlanoTerapeutico({
+        pacienteId: params.pacienteId,
+        tipoProfissional: params.tipoProfissional,
+        checkIn: params.checkInIso,
+        cooperadoId: sessao.cooperadoId,
+        cooperadoNome: sessao.nome,
+        cooperadoCpf: sessao.cpf,
+        userId: sessao.userId,
+      });
+
+      const periodoQuota =
+        validacao.plano && !ehPlanoMensal(validacao.plano)
+          ? `${validacao.plano.data_inicio}..${validacao.plano.data_fim}`
+          : (params.checkInIso || new Date().toISOString()).split('T')[0].slice(0, 7);
+      const chaveQuota = validacao.meta
+        ? `${params.pacienteId}|${periodoQuota}|${normalizarEspecialidade(validacao.meta.especialidade) || params.tipoProfissional}`
+        : `${params.pacienteId}|${periodoQuota}|__LEGADO__`;
+      const jaContabilizadasNoLote = db ? (novasEvolucoesNoLote.get(chaveQuota) || 0) : 0;
+      const realizadasTotais = (validacao.realizadas || 0) + jaContabilizadasNoLote;
+
+      if (!validacao.permitido) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: validacao.motivo || 'Atendimento bloqueado pelas regras do Plano Terapêutico.',
+            cotaAtingida: !!validacao.cotaAtingida,
+            limite: validacao.previstas,
+            realizadas: realizadasTotais,
+            meta: validacao.meta,
+            plano: validacao.plano,
+          },
+          { status: 403 }
+        );
+      }
+
+      if (typeof validacao.previstas === 'number' && validacao.previstas > 0 && realizadasTotais >= validacao.previstas) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: validacao.meta
+              ? `Limite atingido: O Plano Terapêutico deste paciente prevê ${validacao.previstas} atendimento(s) de ${validacao.meta.especialidade} e todos já foram realizados (${realizadasTotais}/${validacao.previstas}). Novos atendimentos desta especialidade estão bloqueados pela gestão.`
+              : `Limite mensal de ${validacao.previstas} visitas atingido para este paciente (${realizadasTotais}/${validacao.previstas}). Visita bloqueada pela gestão.`,
+            cotaAtingida: true,
+            limite: validacao.previstas,
+            realizadas: realizadasTotais,
+            meta: validacao.meta,
+            plano: validacao.plano,
+          },
+          { status: 403 }
+        );
+      }
+
+      evolucoesNovasContabilizadasNoLote.add(params.evolucaoId);
+      novasEvolucoesNoLote.set(chaveQuota, jaContabilizadasNoLote + 1);
+      return null;
+    };
 
     const extrairCamposSoap = (payloadSoap: any, transcricaoTexto: string) => {
       let subjetivo = typeof payloadSoap?.soap_subjetivo === 'string' ? payloadSoap.soap_subjetivo.trim() : '';
@@ -250,30 +319,13 @@ export async function POST(request: NextRequest) {
         }
 
         if (!evolucaoExistente) {
-          const validacao = await validarCheckInPlanoTerapeutico({
+          const erroCota = await validarCotaComLote({
+            evolucaoId,
             pacienteId,
             tipoProfissional: especialidadeSessao,
-            checkIn: checkIn || new Date().toISOString(),
-            cooperadoId: sessao.cooperadoId,
-            cooperadoNome: sessao.nome,
-            cooperadoCpf: sessao.cpf,
-            userId: sessao.userId,
+            checkInIso: checkIn || new Date().toISOString(),
           });
-
-          if (!validacao.permitido) {
-            return NextResponse.json(
-              {
-                success: false,
-                error: validacao.motivo || 'Atendimento bloqueado pelas regras do Plano Terapêutico.',
-                cotaAtingida: !!validacao.cotaAtingida,
-                limite: validacao.previstas,
-                realizadas: validacao.realizadas,
-                meta: validacao.meta,
-                plano: validacao.plano,
-              },
-              { status: 403 }
-            );
-          }
+          if (erroCota) return erroCota;
         }
 
         await garantirPacienteExistente(pacienteId, pacienteNome, operacoesBatch);
@@ -601,7 +653,7 @@ export async function POST(request: NextRequest) {
                     sessao.cargo ||
                     'Tecnico_Enfermagem'
                 ) || 'Tecnico_Enfermagem',
-              checkIn: payload.checkIn || checkInLote?.check_in || new Date().toISOString(),
+              checkIn: payload.checkIn || evolucaoDb?.check_in || checkInLote?.check_in || new Date().toISOString(),
               cooperadoId: sessao.cooperadoId,
               cooperadoNome: sessao.nome,
               cooperadoCpf: sessao.cpf,
@@ -620,6 +672,23 @@ export async function POST(request: NextRequest) {
           (evolucaoDb && evolucaoDb.profissional_id !== sessao.cooperadoId)
         ) {
           return NextResponse.json({ success: false, error: 'Atendimento fora dos pacientes autorizados.' }, { status: 403 });
+        }
+
+        if (!evolucaoDb && !checkInLote) {
+          const espSign =
+            normalizarEspecialidade(
+              payload.tipoProfissional ||
+                payload.tipo_profissional ||
+                sessao.cargo ||
+                'Tecnico_Enfermagem'
+            ) || 'Tecnico_Enfermagem';
+          const erroCotaSign = await validarCotaComLote({
+            evolucaoId,
+            pacienteId: pacienteIdResolvido,
+            tipoProfissional: espSign,
+            checkInIso: payload.checkIn || checkOut || new Date().toISOString(),
+          });
+          if (erroCotaSign) return erroCotaSign;
         }
 
         // Se a evolução já está Finalizada/Auditada no banco ou já foi assinada neste mesmo lote,

@@ -135,23 +135,27 @@ async function executeSyncPass(): Promise<boolean> {
         }
       }
 
-      // Atualiza status das evoluções assinadas no banco local para 'Finalizado'
+      // Atualiza status das evoluções sincronizadas no banco local
       const signedActions = actions.filter(
         (a) => a.type === 'SIGN_EVOLUCAO' || (a.type as string) === 'CHECK_OUT' || (a.type as string) === 'SALVAR_EVOLUCAO'
       );
-      if (signedActions.length > 0) {
+      const checkInActions = actions.filter((a) => a.type === 'CHECK_IN');
+      if (signedActions.length > 0 || checkInActions.length > 0) {
         const serverEvols: any[] = Array.isArray(response.data.evolucoes) ? response.data.evolucoes : [];
         const serverMap = new Map(serverEvols.map((e) => [e.id, e]));
         const localEvols = await localDB.getEvolucoes();
+        const signedIds = new Set<string>();
         for (const act of signedActions) {
           const evId = act.payload?.evolucaoId || act.payload?.id;
           if (!evId) continue;
+          signedIds.add(evId);
           const localEv = localEvols.find((e) => e.id === evId);
           const srvEv = serverMap.get(evId);
           if (localEv) {
             await localDB.saveEvolucao({
               ...localEv,
               status: 'Finalizado',
+              sync_status: 'synced',
               assinatura_digital: srvEv?.assinatura_digital || localEv.assinatura_digital,
               data_assinatura: srvEv?.data_assinatura || localEv.data_assinatura || act.payload?.checkOut,
               responsavel_id: srvEv?.responsavel_id || localEv.responsavel_id || act.payload?.responsavel_id,
@@ -163,6 +167,18 @@ async function executeSyncPass(): Promise<boolean> {
             await localDB.saveEvolucao({
               ...srvEv,
               status: 'Finalizado',
+              sync_status: 'synced',
+            });
+          }
+        }
+        for (const act of checkInActions) {
+          const evId = act.payload?.evolucaoId || act.payload?.id;
+          if (!evId || signedIds.has(evId)) continue;
+          const localEv = localEvols.find((e) => e.id === evId);
+          if (localEv && localEv.status === 'Em_Andamento' && localEv.sync_status === 'pending') {
+            await localDB.saveEvolucao({
+              ...localEv,
+              sync_status: 'synced',
             });
           }
         }

@@ -41,6 +41,8 @@ interface ProntuarioItem {
   visitas_realizadas_mes?: number;
   visitas_restantes_mes?: number;
   limite_atingido?: boolean;
+  bloqueio_plano?: boolean;
+  bloqueio_plano_motivo?: string;
   warnings?: string[];
   evolucaoId?: string;
   checkIn?: string;
@@ -171,7 +173,9 @@ export default function CooperadoDashboard() {
             limite_visitas_mes: p.limite_visitas_mes,
             visitas_realizadas_mes: p.visitas_realizadas_mes,
             visitas_restantes_mes: p.visitas_restantes_mes,
-            limite_atingido: p.limite_atingido,
+            limite_atingido: Boolean(p.limite_atingido || p.bloqueio_plano),
+            bloqueio_plano: Boolean(p.bloqueio_plano),
+            bloqueio_plano_motivo: p.bloqueio_plano_motivo,
             warnings: Array.isArray(p.warnings) ? p.warnings : [],
             evolucaoId: ev?.id,
             checkIn: ev?.check_in,
@@ -283,12 +287,12 @@ export default function CooperadoDashboard() {
       const response = await axios.get('/api/cooperado/agenda');
       const { pacientes, prescricoes, aprazamentos, evolucoes } = response.data;
 
-      await localDB.savePacientes(pacientes || []);
-      await localDB.savePrescricoes(prescricoes || []);
-      await localDB.saveAprazamentos(aprazamentos || []);
       if (Array.isArray(evolucoes) && evolucoes.length > 0) {
         await localDB.saveEvolucoes(evolucoes);
       }
+      await localDB.savePacientes(pacientes || []);
+      await localDB.savePrescricoes(prescricoes || []);
+      await localDB.saveAprazamentos(aprazamentos || []);
 
       const now = new Date().toISOString();
       window.localStorage.setItem('gc_last_prefetch', now);
@@ -706,14 +710,16 @@ export default function CooperadoDashboard() {
 
                   {/* Rodapé do Card com CTA */}
                   <div className="pt-2 border-t border-line-soft flex items-center justify-between text-xs">
-                    <span className="text-[11px] text-muted">
-                      {item.limite_visitas_mes
+                    <span className={`text-[11px] font-strong ${item.limite_atingido || item.bloqueio_plano ? 'text-crit-ink font-heavy' : 'text-muted'}`}>
+                      {item.limite_atingido || item.bloqueio_plano
+                        ? `🚫 Cota Mensal Esgotada (${item.visitas_realizadas_mes || 0}/${item.limite_visitas_mes || 0}) • Bloqueado`
+                        : item.limite_visitas_mes
                         ? `Cota mês: ${item.visitas_realizadas_mes || 0}/${item.limite_visitas_mes}`
                         : 'Atendimento Domiciliar'}
                     </span>
 
                     <span className="text-accent font-heavy text-xs flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                      Iniciar Prontuário
+                      {item.limite_atingido || item.bloqueio_plano ? 'Consultar Prontuário' : 'Iniciar Prontuário'}
                       <ChevronRight className="w-3.5 h-3.5" />
                     </span>
                   </div>
@@ -799,19 +805,19 @@ export default function CooperadoDashboard() {
                     </p>
                   </div>
 
-                  {item.limite_visitas_mes !== undefined && item.limite_visitas_mes > 0 && (
+                  {((item.limite_visitas_mes !== undefined && item.limite_visitas_mes > 0) || item.bloqueio_plano) && (
                     <div className="flex items-center gap-1.5">
                       <span
                         className={`text-[10px] font-heavy px-2 py-0.5 rounded-md border ${
-                          item.limite_atingido
+                          item.limite_atingido || item.bloqueio_plano
                             ? 'bg-crit-soft text-crit-ink border-crit-line'
                             : (item.visitas_restantes_mes || 0) <= 2
                             ? 'bg-warn-soft text-warn-ink border-warn-line'
                             : 'bg-accent-soft text-accent-soft-ink border-accent-line'
                         }`}
                       >
-                        {item.limite_atingido
-                          ? `⚠️ Cota atingida (${item.visitas_realizadas_mes}/${item.limite_visitas_mes})`
+                        {item.limite_atingido || item.bloqueio_plano
+                          ? `🚫 Cota Mensal Esgotada (${item.visitas_realizadas_mes}/${item.limite_visitas_mes}) • Bloqueado`
                           : `Visitas no mês: ${item.visitas_realizadas_mes || 0}/${item.limite_visitas_mes}`}
                       </span>
                     </div>

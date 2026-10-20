@@ -468,10 +468,10 @@ export default function Prontuario360Detalhe() {
         // segundo plano, sem segurar a tela.
         if (d.completo === true) {
           const planosCarregados: PlanoTerapeutico[] = Array.isArray(d.planos) ? d.planos : [];
-          // Mesma regra do caminho antigo: plano Ativo mais recente, senão o vigente do servidor, senão o primeiro.
+          // Prioriza o planoVigente já normalizado pelo servidor (com virada mensal), senão o Ativo mais recente.
           const ativoRecente = planosCarregados.find((p: any) => p.status === 'Ativo');
           setPlanos(planosCarregados);
-          setPlanoVigente(ativoRecente || d.planoVigente || planosCarregados[0] || null);
+          setPlanoVigente(d.planoVigente || ativoRecente || planosCarregados[0] || null);
           if (!silencioso) carregarEquipamentos();
           return;
         }
@@ -509,7 +509,7 @@ export default function Prontuario360Detalhe() {
             if (listaPlanos.length > 0) {
               planosCarregados = listaPlanos;
               const ativoRecente = listaPlanos.find((p: any) => p.status === 'Ativo');
-              if (ativoRecente) {
+              if (!planoVigenteCarregado && ativoRecente) {
                 planoVigenteCarregado = ativoRecente;
               } else if (!planoVigenteCarregado) {
                 planoVigenteCarregado = listaPlanos[0];
@@ -921,6 +921,7 @@ export default function Prontuario360Detalhe() {
           <div className="flex items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
+              data-testid="img-logo-empresa-ativa"
               src={empresaContratante.logoUrl}
               alt={`Logo ${empresaContratante.nome}`}
               className="h-11 w-auto object-contain rounded-lg bg-white p-1 border border-slate-200 shrink-0"
@@ -949,6 +950,7 @@ export default function Prontuario360Detalhe() {
                 <button
                   key={emp.id}
                   type="button"
+                  data-testid={`btn-empresa-${emp.id}`}
                   onClick={() => handleTrocarEmpresaContratante(emp)}
                   className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all ${
                     ativa
@@ -1338,13 +1340,10 @@ export default function Prontuario360Detalhe() {
               if (novoPlano && novoPlano.status === 'Ativo') {
                 setPlanoVigente(novoPlano);
                 setPlanos((prev) => {
-                  const idx = prev.findIndex((p) => p.id === novoPlano.id);
-                  if (idx >= 0) {
-                    const c = [...prev];
-                    c[idx] = novoPlano;
-                    return c;
-                  }
-                  return [novoPlano, ...prev];
+                  const anterioresInativados = prev
+                    .filter((p) => p.id !== novoPlano.id)
+                    .map((p) => (p.status === 'Ativo' ? { ...p, status: 'Inativo' as const } : p));
+                  return [novoPlano, ...anterioresInativados];
                 });
               }
               carregarProntuarioCompleto(true);
