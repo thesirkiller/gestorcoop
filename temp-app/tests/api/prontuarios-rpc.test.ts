@@ -50,8 +50,24 @@ import {
   listarIdsPacientesVinculadosAoCooperado,
   validarCheckInPlanoTerapeutico,
   gerarSlotsAprazamento,
+  salvarPlanoTerapeutico,
+  ehPlanoMensal,
 } from '../../src/lib/db/prontuarios';
-import { gerarSlotsAprazamentoLocal } from '../../src/lib/indexeddb';
+import {
+  obterPeriodoMesVigencia,
+  formatarDataIsoParaBr,
+} from '../../src/lib/tipos-clinicos';
+import {
+  EMPRESAS_CONTRATANTES,
+  obterEmpresaContratante,
+} from '../../src/lib/empresas-contratantes';
+import {
+  gerarSlotsAprazamentoLocal,
+  normalizarPacienteQuotaMensalLocal,
+  contabilizarEvolucaoNaCotaLocal,
+  reconciliarPacienteComCotaPendenteLocal,
+  localDB,
+} from '../../src/lib/indexeddb';
 import {
   obterJanelaTurno,
   gerarSlotsParaTurno,
@@ -62,7 +78,7 @@ import { NextRequest } from 'next/server';
 
 process.env.BUBBLE_API_URL = 'https://bubble.invalid/version-test/api/1.1';
 process.env.BUBBLE_API_TOKEN = 'token-de-teste';
-process.env.AUTH_JWT_SECRET = 'segredo-de-teste-com-mais-de-32-caracteres-necessarios';
+process.env.AUTH_JWT_SECRET = 'segredo-de-teste-com-mais-de-32-caracteres-necessarios'; // gitleaks:allow
 // Nenhuma chamada destes testes pode sair para o Bubble real.
 axios.defaults.adapter = async () => {
   throw new Error('Requisição externa não mockada');
@@ -1034,7 +1050,7 @@ test('otimização de prescrições ativas: usa índice idx_prescricoes_paciente
 
 test('rota /api/cron/sync-pacientes-bubble: autorização por segredo CRON_SECRET e execução', async () => {
   const segredoOriginal = process.env.CRON_SECRET;
-  process.env.CRON_SECRET = 'segredo_teste_cron_123';
+  process.env.CRON_SECRET = 'segredo_teste_cron_123'; // gitleaks:allow
 
   try {
     // Chamada sem autenticação -> 401
@@ -2261,3 +2277,1074 @@ test('familiares/responsáveis pela finalização do plantão: cadastro no pacie
   assert.equal(pacAposUpdateParcial.responsaveis?.[0].nome, 'Maria Helena Albuquerque');
   assert.equal(pacAposUpdateParcial.responsaveis?.[1].nome, 'Carlos Eduardo Prado');
 });
+
+test('obterPeriodoMesVigencia e ehPlanoMensal: calcula início no dia 01 e fim no último dia do mês (28, 29, 30 ou 31)', () => {
+  // Fevereiro comum (28 dias)
+  const fev2026 = obterPeriodoMesVigencia('2026-02-15');
+  assert.equal(fev2026.data_inicio, '2026-02-01');
+  assert.equal(fev2026.data_fim, '2026-02-28');
+  assert.equal(fev2026.ultimo_dia, 28);
+  assert.equal(fev2026.mes_referencia, '2026-02');
+  assert.equal(ehPlanoMensal(fev2026.data_inicio, fev2026.data_fim), true);
+
+  // Fevereiro bissexto (29 dias)
+  const fev2028 = obterPeriodoMesVigencia('2028-02-04');
+  assert.equal(fev2028.data_inicio, '2028-02-01');
+  assert.equal(fev2028.data_fim, '2028-02-29');
+  assert.equal(fev2028.ultimo_dia, 29);
+  assert.equal(ehPlanoMensal(fev2028.data_inicio, fev2028.data_fim), true);
+
+  // Mês de 30 dias (Abril / Setembro / Novembro)
+  const abr2026 = obterPeriodoMesVigencia('2026-04-20');
+  assert.equal(abr2026.data_inicio, '2026-04-01');
+  assert.equal(abr2026.data_fim, '2026-04-30');
+  assert.equal(abr2026.ultimo_dia, 30);
+  assert.equal(ehPlanoMensal(abr2026.data_inicio, abr2026.data_fim), true);
+
+  // Mês de 31 dias (Outubro / Dezembro)
+  const out2026 = obterPeriodoMesVigencia('2026-10-19');
+  assert.equal(out2026.data_inicio, '2026-10-01');
+  assert.equal(out2026.data_fim, '2026-10-31');
+  assert.equal(out2026.ultimo_dia, 31);
+  assert.equal(ehPlanoMensal(out2026.data_inicio, out2026.data_fim), true);
+
+  // Intervalos manuais que não são 01..últimoDia não são mensais automáticos
+  assert.equal(ehPlanoMensal('2026-10-05', '2026-10-31'), false);
+  assert.equal(ehPlanoMensal('2026-10-01', '2026-10-20'), false);
+  assert.equal(ehPlanoMensal('2026-10-01', '2026-11-30'), false);
+
+  assert.equal(formatarDataIsoParaBr('2026-10-01'), '01/10/2026');
+  assert.equal(formatarDataIsoParaBr('2026-10-31'), '31/10/2026');
+});
+
+test('salvarPlanoTerapeutico: versionamento imutável (v1 Ativo -> edição cria v2 Ativo e torna v1 Inativo -> edição cria v3 Ativo) e vigência mensal 01..últimoDia', async () => {
+  const pacId = 'pac_versao_plano_01';
+  await salvarPacienteClinico({
+    id: pacId,
+    nome: 'Paciente Versionamento Plano',
+    cpf: '444.555.666-77',
+  });
+
+  const periodoMesAtual = obterPeriodoMesVigencia();
+
+  // 1. Cria Plano v1 (mesmo passando datas arbitrárias ou sem datas, força 01..últimoDia do mês)
+  const v1 = await salvarPlanoTerapeutico({
+    paciente_id: pacId,
+    observacoes: 'Plano inicial v1',
+    metas: [
+      {
+        especialidade: 'Fisioterapeuta',
+        quantidade_prevista: 8,
+        profissionais_designados: [{ id: 'coop_fisio_1', nome: 'Dr. Rafael Fisio' }],
+      },
+    ],
+  });
+
+  assert.equal(v1.versao, 1, 'Primeiro plano deve nascer como versão 1');
+  assert.equal(v1.status, 'Ativo', 'Primeiro plano deve nascer com status Ativo');
+  assert.equal(v1.data_inicio, periodoMesAtual.data_inicio, 'Início deve ser dia 01 do mês corrente');
+  assert.equal(v1.data_fim, periodoMesAtual.data_fim, 'Fim deve ser o último dia (28/29/30/31) do mês corrente');
+  assert.equal(v1.metas?.length, 1);
+  assert.equal(v1.metas?.[0].quantidade_prevista, 8);
+
+  // 2. Edita o plano (passando id do v1 ou criando nova revisão): v1 fica Inativo e nasce v2 Ativo
+  const v2 = await salvarPlanoTerapeutico({
+    id: v1.id,
+    paciente_id: pacId,
+    observacoes: 'Plano revisado v2 com aumento de sessões',
+    metas: [
+      {
+        especialidade: 'Fisioterapeuta',
+        quantidade_prevista: 12,
+        profissionais_designados: [{ id: 'coop_fisio_1', nome: 'Dr. Rafael Fisio' }],
+      },
+      {
+        especialidade: 'Fonoaudiologo',
+        quantidade_prevista: 4,
+        profissionais_designados: [{ id: 'coop_fono_1', nome: 'Dra. Juliana Fono' }],
+      },
+    ],
+  });
+
+  assert.notEqual(v2.id, v1.id, 'Nova versão deve ter novo ID preservando o registro da v1');
+  assert.equal(v2.versao, 2, 'Segunda versão deve receber versao = 2');
+  assert.equal(v2.status, 'Ativo', 'Nova versão v2 deve estar Ativa');
+  assert.equal(v2.data_inicio, periodoMesAtual.data_inicio);
+  assert.equal(v2.data_fim, periodoMesAtual.data_fim);
+  assert.equal(v2.metas?.length, 2);
+
+  // 3. Verifica histórico de versões no banco (listarPlanosTerapeuticosPorPaciente e Prontuário 360)
+  const historicoAfterV2 = await listarPlanosTerapeuticosPorPaciente(pacId);
+  assert.equal(historicoAfterV2.length, 2, 'Ambas as versões (v2 e v1) devem permanecer na lista para consulta');
+  assert.equal(historicoAfterV2[0].versao, 2);
+  assert.equal(historicoAfterV2[0].status, 'Ativo');
+  assert.equal(historicoAfterV2[1].id, v1.id);
+  assert.equal(historicoAfterV2[1].versao, 1);
+  assert.equal(historicoAfterV2[1].status, 'Inativo', 'Versão anterior v1 deve constar como Inativo');
+  assert.equal(historicoAfterV2[1].metas?.[0].quantidade_prevista, 8, 'Metas originais da v1 permanecem intactas para auditoria');
+
+  // 4. Terceira edição -> gera v3 Ativo e marca v2 como Inativo
+  const v3 = await salvarPlanoTerapeutico({
+    id: v2.id,
+    paciente_id: pacId,
+    observacoes: 'Terceira versão v3',
+    metas: [
+      {
+        especialidade: 'Fisioterapeuta',
+        quantidade_prevista: 15,
+        profissionais_designados: [{ id: 'coop_fisio_1', nome: 'Dr. Rafael Fisio' }],
+      },
+    ],
+  });
+
+  assert.equal(v3.versao, 3);
+  assert.equal(v3.status, 'Ativo');
+
+  const p360 = await carregarProntuario360(pacId);
+  assert.ok(p360);
+  assert.equal(p360.planos.length, 3, 'Prontuário 360 deve retornar v3, v2 e v1');
+  assert.deepEqual(
+    p360.planos.map((p) => ({ versao: p.versao, status: p.status })),
+    [
+      { versao: 3, status: 'Ativo' },
+      { versao: 2, status: 'Inativo' },
+      { versao: 1, status: 'Inativo' },
+    ]
+  );
+  assert.equal(p360.planoVigente?.id, v3.id);
+  assert.equal(p360.planoVigente?.versao, 3);
+});
+
+test('bloqueio de cota no mês e virada mensal automática (rollover 01..últimoDia zerando contador e desbloqueando cooperado)', async () => {
+  const pacId = 'pac_virada_mes_cota_01';
+  const coopId = 'coop_fisio_cota_01';
+  const coopNome = 'Dra. Beatriz Fisioterapeuta';
+
+  await salvarPacienteClinico({
+    id: pacId,
+    nome: 'Paciente Cota e Virada Mensal',
+    cpf: '777.888.999-00',
+  });
+
+  // 1. Insere um plano mensal criado no mês passado (ex.: 2026-02-01 a 2026-02-28) com meta = 1 sessão de Fisioterapeuta
+  const planoMesPassadoId = 'pln_mes_passado_rollover';
+  inserir('planos_terapeuticos', {
+    id: planoMesPassadoId,
+    paciente_id: pacId,
+    versao: 1,
+    data_inicio: '2026-02-01',
+    data_fim: '2026-02-28',
+    status: 'Ativo',
+    observacoes: 'Plano mensal recorrente',
+    created_at: '2026-02-01T10:00:00.000Z',
+    updated_at: '2026-02-01T10:00:00.000Z',
+  });
+  inserir('plano_terapeutico_metas', {
+    id: 'meta_rollover_1',
+    plano_id: planoMesPassadoId,
+    especialidade: 'Fisioterapeuta',
+    quantidade_prevista: 1,
+    profissionais_designados: JSON.stringify([{ id: coopId, nome: coopNome }]),
+    created_at: '2026-02-01T10:00:00.000Z',
+  });
+
+  // Evolução realizada no mês passado (Fevereiro/2026) que esgotou a cota daquele mês
+  evolucao('ev_fev_passado_1', pacId, 'Fisioterapeuta', '2026-02-10T10:00:00.000Z', {
+    profissional_id: coopId,
+    profissional_nome: coopNome,
+    status: 'Finalizado',
+  });
+
+  // 2. Na virada para o mês atual (`hoje`), o plano mensal deve rolar automaticamente para 01..últimoDia do mês atual,
+  // zerando a contagem de evoluções realizadas no mês atual (0/1) e liberando o atendimento tanto no planoVigente quanto em planos[0]!
+  const periodoAtual = obterPeriodoMesVigencia(hoje);
+  const planoVigenteRolado = await obterPlanoTerapeuticoVigente(pacId);
+  assert.ok(planoVigenteRolado, 'Plano mensal ativo de mês anterior deve rolar automaticamente para o mês corrente');
+  assert.equal(planoVigenteRolado.data_inicio, periodoAtual.data_inicio);
+  assert.equal(planoVigenteRolado.data_fim, periodoAtual.data_fim);
+  assert.equal(planoVigenteRolado.total_previsto, 1);
+  assert.equal(planoVigenteRolado.total_realizado, 0, 'Contador deve iniciar zerado no novo mês');
+  assert.equal(planoVigenteRolado.total_restante, 1);
+
+  const listaPlanosRolada = await listarPlanosTerapeuticosPorPaciente(pacId);
+  assert.equal(listaPlanosRolada[0].data_inicio, periodoAtual.data_inicio, 'planos[0] na aba Plano Terapêutico também deve refletir o mês corrente');
+  assert.equal(listaPlanosRolada[0].data_fim, periodoAtual.data_fim);
+  assert.equal(listaPlanosRolada[0].total_realizado, 0, 'planos[0] deve ter contador zerado no novo mês');
+
+  const p360Rolado = await carregarProntuario360(pacId);
+  assert.ok(p360Rolado);
+  assert.equal(p360Rolado.planos[0].data_inicio, periodoAtual.data_inicio, 'Prontuário 360 planos[0] deve refletir vigência do mês atual');
+  assert.equal(p360Rolado.planos[0].data_fim, periodoAtual.data_fim);
+  assert.equal(p360Rolado.planos[0].total_realizado, 0);
+
+  // Cooperado vinculado continua enxergando o paciente na agenda após a virada do mês
+  const vinculados = await listarIdsPacientesVinculadosAoCooperado({
+    id: coopId,
+    nome: coopNome,
+  });
+  assert.ok(vinculados.includes(pacId), 'Cooperado designado no plano mensal deve permanecer vinculado após virada de mês');
+
+  // Check-in no novo mês deve ser permitido (0/1 realizadas no mês atual)
+  const checkInAntes = await validarCheckInPlanoTerapeutico({
+    pacienteId: pacId,
+    cooperadoId: coopId,
+    cooperadoNome: coopNome,
+    tipoProfissional: 'Fisioterapeuta',
+  });
+  assert.equal(checkInAntes.permitido, true, 'Check-in deve estar liberado no início do novo mês');
+  assert.equal(checkInAntes.realizadas, 0);
+  assert.equal(checkInAntes.previstas, 1);
+
+  // Sessão autenticada de cooperado para testar rotas de agenda e sync
+  const sessId = 'sess_coop_cota_01';
+  const token = await emitirTokenSessao(
+    {
+      area: 'cooperado',
+      userId: 'usr_coop_cota_01',
+      nome: coopNome,
+      cooperadoId: coopId,
+      cargo: 'Fisioterapeuta',
+    },
+    sessId
+  );
+  inserir('auth_sessions', {
+    id: sessId,
+    user_id: 'usr_coop_cota_01',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  // 2b. Se o cooperado enviar um lote com 2 atendimentos no mesmo POST /api/cooperado/sync quando o limite é 1,
+  // o lote deve ser recusado com 403 (cotaAtingida: true) para impedir extrapolação da cota mensal em lote offline!
+  const reqSyncLoteExcedente = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'CHECK_IN',
+          payload: {
+            evolucaoId: 'ev_lote_excedente_1',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: `${hoje}T08:00:00.000Z`,
+          },
+        },
+        {
+          type: 'CHECK_IN',
+          payload: {
+            evolucaoId: 'ev_lote_excedente_2',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: `${hoje}T09:00:00.000Z`,
+          },
+        },
+      ],
+    }),
+  });
+  const resSyncLoteExcedente = await cooperadoSyncPost(reqSyncLoteExcedente);
+  assert.equal(resSyncLoteExcedente.status, 403, 'Segundo atendimento no mesmo lote além da cota de 1 deve ser barrado com 403');
+  const jsonSyncLoteExcedente = (await resSyncLoteExcedente.json()) as any;
+  assert.equal(jsonSyncLoteExcedente.cotaAtingida, true);
+
+  // 3. Realiza 1 atendimento no mês atual -> atinge 1/1 e bloqueia novos atendimentos no mês!
+  evolucao('ev_mes_atual_1', pacId, 'Fisioterapeuta', `${hoje}T10:00:00.000Z`, {
+    profissional_id: coopId,
+    profissional_nome: coopNome,
+    status: 'Finalizado',
+  });
+
+  const checkInDepois = await validarCheckInPlanoTerapeutico({
+    pacienteId: pacId,
+    cooperadoId: coopId,
+    cooperadoNome: coopNome,
+    tipoProfissional: 'Fisioterapeuta',
+  });
+  assert.equal(checkInDepois.permitido, false, 'Deve bloquear check-in quando cota mensal (1/1) foi atingida');
+  assert.equal(checkInDepois.cotaAtingida, true);
+  assert.equal(checkInDepois.realizadas, 1);
+  assert.equal(checkInDepois.previstas, 1);
+
+  // 4. Tentativa de enviar SIGN_EVOLUCAO direto (sem CHECK_IN prévio) após cota esgotada (1/1) deve ser bloqueada com 403!
+  const reqSignSemCheckIn = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: 'ev_bypass_sign_direto',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: `${hoje}T14:00:00.000Z`,
+            checkOut: `${hoje}T15:00:00.000Z`,
+            transcricao_revisada: 'Tentativa de evolução excedente sem check-in prévio',
+          },
+        },
+      ],
+    }),
+  });
+  const resSignSemCheckIn = await cooperadoSyncPost(reqSignSemCheckIn);
+  assert.equal(resSignSemCheckIn.status, 403, 'SIGN_EVOLUCAO direto sem CHECK_IN deve respeitar bloqueio de cota mensal');
+  const jsonSignSemCheckIn = (await resSignSemCheckIn.json()) as any;
+  assert.equal(jsonSignSemCheckIn.cotaAtingida, true);
+
+  // Verifica que a rota GET /api/cooperado/agenda sinaliza bloqueio_plano: true e limite_atingido: true para o Cooperado
+  const reqAgenda = new NextRequest(`http://localhost/api/cooperado/agenda?paciente_id=${pacId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const resAgenda = await cooperadoAgendaGet(reqAgenda);
+  assert.equal(resAgenda.status, 200);
+  const jsonAgenda = (await resAgenda.json()) as any;
+  const pacNaAgenda = jsonAgenda.pacientes.find((p: any) => p.id === pacId);
+  assert.ok(pacNaAgenda, 'Paciente deve aparecer na agenda com indicador de bloqueio');
+  assert.equal(pacNaAgenda.bloqueio_plano, true, 'bloqueio_plano deve ser true quando a meta foi atingida');
+  assert.equal(pacNaAgenda.limite_atingido, true, 'limite_atingido deve ser true quando a meta foi atingida');
+  assert.equal(pacNaAgenda.visitas_realizadas_mes, 1);
+  assert.equal(pacNaAgenda.limite_visitas_mes, 1);
+  assert.equal(pacNaAgenda.visitas_restantes_mes, 0);
+});
+
+test('normalizarPacienteQuotaMensalLocal: zera contador offline e desbloqueia atendimento na virada do mês', () => {
+  const pacienteCacheMesPassado = {
+    id: 'pac_offline_rollover',
+    nome: 'Paciente Offline Virada Mês',
+    limite_visitas_mes: 5,
+    visitas_realizadas_mes: 5,
+    visitas_restantes_mes: 0,
+    especialidade_prevista: 5,
+    especialidade_realizada: 5,
+    especialidade_restante: 0,
+    limite_atingido: true,
+    bloqueio_plano: true,
+    bloqueio_plano_motivo: 'Limite atingido: 5/5 realizados.',
+    mes_cota_referencia: '2026-02',
+    plano_vigente: {
+      id: 'pln_off_1',
+      versao: 1,
+      data_inicio: '2026-02-01',
+      data_fim: '2026-02-28',
+      total_previsto: 5,
+      total_realizado: 5,
+      total_restante: 0,
+      tem_pendencias: false,
+    },
+  };
+
+  // Dentro do mesmo mês (2026-02-20): permanece bloqueado
+  const mesmoMes = normalizarPacienteQuotaMensalLocal(pacienteCacheMesPassado, '2026-02-20');
+  assert.equal(mesmoMes.limite_atingido, true);
+  assert.equal(mesmoMes.bloqueio_plano, true);
+  assert.equal(mesmoMes.visitas_realizadas_mes, 5);
+
+  // Virou para Março (2026-03-01): zera contadores, desbloqueia e atualiza plano_vigente para 01..31 de Março
+  const novoMes = normalizarPacienteQuotaMensalLocal(pacienteCacheMesPassado, '2026-03-01');
+  assert.equal(novoMes.limite_atingido, false, 'Deve desbloquear limite_atingido na virada do mês offline');
+  assert.equal(novoMes.bloqueio_plano, false, 'Deve remover bloqueio_plano por cota na virada do mês offline');
+  assert.equal(novoMes.bloqueio_plano_motivo, undefined);
+  assert.equal(novoMes.visitas_realizadas_mes, 0);
+  assert.equal(novoMes.visitas_restantes_mes, 5);
+  assert.equal(novoMes.especialidade_realizada, 0);
+  assert.equal(novoMes.especialidade_restante, 5);
+  assert.equal(novoMes.plano_vigente?.data_inicio, '2026-03-01');
+  assert.equal(novoMes.plano_vigente?.data_fim, '2026-03-31');
+  assert.equal(novoMes.plano_vigente?.total_realizado, 0);
+  assert.equal(novoMes.plano_vigente?.total_restante, 5);
+  assert.deepEqual(novoMes.evolucoes_contabilizadas_ids, []);
+});
+
+test('obterPlanoTerapeuticoVigente e validarCheckInPlanoTerapeutico: preservam dataIso no mês original do plano e em meses subsequentes rolados (sync offline retroativo)', async () => {
+  const pacId = 'pac_retroativo_dataiso_01';
+  const coopId = 'coop_retroativo_01';
+  const coopNome = 'Dr. Lucas Retroativo';
+
+  await salvarPacienteClinico({
+    id: pacId,
+    nome: 'Paciente Sync Offline Retroativo',
+    cpf: '111.222.333-44',
+  });
+
+  // Plano mensal criado em Janeiro/2026 (2026-01-01 a 2026-01-31) com meta = 2 sessões
+  inserir('planos_terapeuticos', {
+    id: 'pln_jan_2026_retro',
+    paciente_id: pacId,
+    versao: 1,
+    data_inicio: '2026-01-01',
+    data_fim: '2026-01-31',
+    status: 'Ativo',
+    observacoes: 'Plano mensal originado em Janeiro',
+    created_at: '2026-01-01T08:00:00.000Z',
+    updated_at: '2026-01-01T08:00:00.000Z',
+  });
+  inserir('plano_terapeutico_metas', {
+    id: 'meta_jan_2026_retro',
+    plano_id: 'pln_jan_2026_retro',
+    especialidade: 'Fisioterapeuta',
+    quantidade_prevista: 2,
+    profissionais_designados: JSON.stringify([{ id: coopId, nome: coopNome }]),
+    created_at: '2026-01-01T08:00:00.000Z',
+  });
+
+  // 1 evolução realizada em Janeiro/2026
+  evolucao('ev_jan_2026_1', pacId, 'Fisioterapeuta', '2026-01-10T09:00:00.000Z', {
+    profissional_id: coopId,
+    profissional_nome: coopNome,
+    status: 'Finalizado',
+  });
+
+  // A) Consulta passando dataIso do mês original do plano ('2026-01-20T14:00:00.000Z') após o fim do mês:
+  // NÃO deve rolar para `hoje`, mantendo 2026-01-01..2026-01-31 com 1/2 realizadas!
+  const planoNoMesOriginal = await obterPlanoTerapeuticoVigente(pacId, '2026-01-20T14:00:00.000Z');
+  assert.ok(planoNoMesOriginal, 'Deve encontrar o plano vigente na data do mês original');
+  assert.equal(planoNoMesOriginal.data_inicio, '2026-01-01');
+  assert.equal(planoNoMesOriginal.data_fim, '2026-01-31');
+  assert.equal(planoNoMesOriginal.total_realizado, 1);
+  assert.equal(planoNoMesOriginal.total_restante, 1);
+
+  const checkInMesOriginal = await validarCheckInPlanoTerapeutico({
+    pacienteId: pacId,
+    cooperadoId: coopId,
+    cooperadoNome: coopNome,
+    tipoProfissional: 'Fisioterapeuta',
+    checkIn: '2026-01-20T14:00:00.000Z',
+  });
+  assert.equal(checkInMesOriginal.permitido, true, 'Atendimento offline do mês original com saldo (1/2) deve ser aceito após virada do mês');
+  assert.equal(checkInMesOriginal.realizadas, 1);
+  assert.equal(checkInMesOriginal.previstas, 2);
+
+  // B) Consulta passando dataIso de um mês subsequente intermediário ('2026-02-15T10:00:00.000Z'):
+  // Deve rolar para Fevereiro/2026 (2026-02-01..2026-02-28) com 0/2 realizadas!
+  const planoMesSubsequente = await obterPlanoTerapeuticoVigente(pacId, '2026-02-15T10:00:00.000Z');
+  assert.ok(planoMesSubsequente, 'Deve rolar o plano mensal para o mês subsequente da dataIso informada');
+  assert.equal(planoMesSubsequente.data_inicio, '2026-02-01');
+  assert.equal(planoMesSubsequente.data_fim, '2026-02-28');
+  assert.equal(planoMesSubsequente.total_realizado, 0);
+  assert.equal(planoMesSubsequente.total_restante, 2);
+
+  const checkInMesSubsequente = await validarCheckInPlanoTerapeutico({
+    pacienteId: pacId,
+    cooperadoId: coopId,
+    cooperadoNome: coopNome,
+    tipoProfissional: 'Fisioterapeuta',
+    checkIn: '2026-02-15T10:00:00.000Z',
+  });
+  assert.equal(checkInMesSubsequente.permitido, true);
+  assert.equal(checkInMesSubsequente.realizadas, 0);
+  assert.equal(checkInMesSubsequente.previstas, 2);
+});
+
+test('contabilizarEvolucaoNaCotaLocal: não duplica contagem quando o CHECK_IN já foi contabilizado pelo servidor antes da assinatura', () => {
+  // Caso 1: CHECK_IN sincronizado online -> servidor devolveu visitas_realizadas_mes = 1 e evolucoes_contabilizadas_ids = ['ev_online_1']
+  const pacJaSincronizadoNoCheckIn = {
+    id: 'pac_evitar_dupla_contagem',
+    nome: 'Paciente Sem Dupla Contagem',
+    limite_visitas_mes: 2,
+    visitas_realizadas_mes: 1,
+    visitas_restantes_mes: 1,
+    especialidade_prevista: 2,
+    especialidade_realizada: 1,
+    especialidade_restante: 1,
+    limite_atingido: false,
+    bloqueio_plano: false,
+    evolucoes_contabilizadas_ids: ['ev_online_1'],
+  };
+
+  const aposAssinaturaOnline = contabilizarEvolucaoNaCotaLocal(pacJaSincronizadoNoCheckIn, 'ev_online_1');
+  assert.equal(aposAssinaturaOnline.visitas_realizadas_mes, 1, 'Não deve somar +1 novamente para evolução já contabilizada no check-in online');
+  assert.equal(aposAssinaturaOnline.visitas_restantes_mes, 1);
+  assert.equal(aposAssinaturaOnline.limite_atingido, false);
+  assert.equal(aposAssinaturaOnline.bloqueio_plano, false);
+
+  // Caso 2: Evolução realizada offline ('ev_offline_2') ainda não presente em evolucoes_contabilizadas_ids -> incrementa normalmente de 1 para 2
+  const aposAssinaturaOffline = contabilizarEvolucaoNaCotaLocal(aposAssinaturaOnline, 'ev_offline_2');
+  assert.equal(aposAssinaturaOffline.visitas_realizadas_mes, 2, 'Deve incrementar +1 quando a evolução ainda não foi contabilizada');
+  assert.equal(aposAssinaturaOffline.visitas_restantes_mes, 0);
+  assert.equal(aposAssinaturaOffline.limite_atingido, true);
+  assert.equal(aposAssinaturaOffline.bloqueio_plano, true);
+  assert.deepEqual(aposAssinaturaOffline.evolucoes_contabilizadas_ids, ['ev_online_1', 'ev_offline_2']);
+
+  // Caso 3: Idempotência se chamada novamente com o mesmo ID 'ev_offline_2'
+  const reentrante = contabilizarEvolucaoNaCotaLocal(aposAssinaturaOffline, 'ev_offline_2');
+  assert.equal(reentrante.visitas_realizadas_mes, 2);
+
+  // Caso 4: Atendimento com check_in no último dia do mês M ('2026-01-31T23:50:00.000Z') assinado após meia-noite no mês M+1 ('2026-02')
+  // não deve descontar da cota local do mês M+1 quando o paciente já virou para '2026-02'
+  const pacViradoFev = {
+    id: 'pac_evitar_dupla_contagem',
+    nome: 'Paciente Sem Dupla Contagem',
+    limite_visitas_mes: 2,
+    visitas_realizadas_mes: 0,
+    visitas_restantes_mes: 2,
+    especialidade_prevista: 2,
+    especialidade_realizada: 0,
+    especialidade_restante: 2,
+    limite_atingido: false,
+    bloqueio_plano: false,
+    mes_cota_referencia: '2026-02',
+    evolucoes_contabilizadas_ids: [],
+    plano_vigente: {
+      id: 'pln_1',
+      versao: 1,
+      data_inicio: '2026-02-01',
+      data_fim: '2026-02-28',
+      total_previsto: 2,
+      total_realizado: 0,
+      total_restante: 2,
+      tem_pendencias: true,
+    },
+  };
+  const aposAssinaturaViradaMeiaNoite = contabilizarEvolucaoNaCotaLocal(
+    pacViradoFev,
+    'ev_jan_31_2350',
+    '2026-01-31T23:50:00.000Z',
+  );
+  assert.equal(
+    aposAssinaturaViradaMeiaNoite.visitas_realizadas_mes,
+    0,
+    'Atendimento cujo check_in pertence ao mês M não deve descontar da cota local já virada para o mês M+1',
+  );
+});
+
+test('POST /api/cooperado/sync: lote offline atravessando virada de mês (31/M às 23:50 -> 01/M+1 às 00:15 + novo atendimento em M+1) separa cotas por mês de checkIn', async () => {
+  const pacId = 'pac_lote_virada_mes_01';
+  const coopId = 'coop_lote_virada_01';
+  const coopNome = 'Dra. Camila Virada';
+
+  await salvarPacienteClinico({
+    id: pacId,
+    nome: 'Paciente Lote Virada Mês',
+    cpf: '555.444.333-22',
+  });
+
+  // Plano mensal criado em Janeiro/2026 com cota estrita de 1 atendimento/mês
+  inserir('planos_terapeuticos', {
+    id: 'pln_lote_virada_jan',
+    paciente_id: pacId,
+    versao: 1,
+    data_inicio: '2026-01-01',
+    data_fim: '2026-01-31',
+    status: 'Ativo',
+    observacoes: 'Plano 1 visita/mês',
+    created_at: '2026-01-01T08:00:00.000Z',
+    updated_at: '2026-01-01T08:00:00.000Z',
+  });
+  inserir('plano_terapeutico_metas', {
+    id: 'meta_lote_virada_jan',
+    plano_id: 'pln_lote_virada_jan',
+    especialidade: 'Fisioterapeuta',
+    quantidade_prevista: 1,
+    profissionais_designados: JSON.stringify([{ id: coopId, nome: coopNome }]),
+    created_at: '2026-01-01T08:00:00.000Z',
+  });
+
+  const sessId = 'sess_coop_lote_virada_01';
+  const token = await emitirTokenSessao(
+    {
+      area: 'cooperado',
+      userId: 'usr_coop_lote_virada_01',
+      nome: coopNome,
+      cooperadoId: coopId,
+      cargo: 'Fisioterapeuta',
+    },
+    sessId,
+  );
+  inserir('auth_sessions', {
+    id: sessId,
+    user_id: 'usr_coop_lote_virada_01',
+    area: 'cooperado',
+    expires_at: Math.floor(Date.now() / 1000) + 86400,
+  });
+
+  // Lote offline contendo:
+  // 1) Atendimento iniciado em 31/01 às 23:50 e assinado em 01/02 às 00:15 (cota de Janeiro: 1/1)
+  // 2) Atendimento iniciado em 01/02 às 09:00 e assinado às 10:00 (cota de Fevereiro: 1/1)
+  const reqLoteVirada = new NextRequest('http://localhost/api/cooperado/sync', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      actions: [
+        {
+          type: 'CHECK_IN',
+          payload: {
+            evolucaoId: 'ev_virada_jan31',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: '2026-01-31T23:50:00.000Z',
+          },
+        },
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: 'ev_virada_jan31',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: '2026-01-31T23:50:00.000Z',
+            checkOut: '2026-02-01T00:15:00.000Z',
+            transcricao_revisada: 'Plantão iniciado em 31/01 e finalizado após meia-noite em 01/02',
+          },
+        },
+        {
+          type: 'CHECK_IN',
+          payload: {
+            evolucaoId: 'ev_virada_fev01',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: '2026-02-01T09:00:00.000Z',
+          },
+        },
+        {
+          type: 'SIGN_EVOLUCAO',
+          payload: {
+            evolucaoId: 'ev_virada_fev01',
+            pacienteId: pacId,
+            tipoProfissional: 'Fisioterapeuta',
+            checkIn: '2026-02-01T09:00:00.000Z',
+            checkOut: '2026-02-01T10:00:00.000Z',
+            transcricao_revisada: 'Atendimento do novo mês de Fevereiro',
+          },
+        },
+      ],
+    }),
+  });
+
+  const resLoteVirada = await cooperadoSyncPost(reqLoteVirada);
+  assert.equal(
+    resLoteVirada.status,
+    200,
+    'Atendimentos de meses distintos (Jan e Fev) no mesmo lote offline não devem colidir na cota mensal de 1 visita/mês',
+  );
+  const jsonLoteVirada = (await resLoteVirada.json()) as any;
+  assert.equal(jsonLoteVirada.success, true);
+  assert.equal(jsonLoteVirada.evolucoes.length, 2);
+
+  // Confere que ambos os meses ficaram com 1/1 e um 2º atendimento em Fevereiro é bloqueado
+  const planoJan = await obterPlanoTerapeuticoVigente(pacId, '2026-01-31T23:55:00.000Z');
+  assert.equal(planoJan?.total_realizado, 1);
+  const planoFev = await obterPlanoTerapeuticoVigente(pacId, '2026-02-10T10:00:00.000Z');
+  assert.equal(planoFev?.total_realizado, 1);
+
+  const checkInExcedenteFev = await validarCheckInPlanoTerapeutico({
+    pacienteId: pacId,
+    cooperadoId: coopId,
+    cooperadoNome: coopNome,
+    tipoProfissional: 'Fisioterapeuta',
+    checkIn: '2026-02-15T10:00:00.000Z',
+  });
+  assert.equal(checkInExcedenteFev.permitido, false);
+  assert.equal(checkInExcedenteFev.cotaAtingida, true);
+});
+
+test('normalizarPacienteQuotaMensalLocal: não renova planos legados de período fixo (não mensais) em ciclo mensal', () => {
+  const pacientePlanoLegadoFixo = {
+    id: 'pac_legado_periodo_fixo',
+    nome: 'Paciente Plano Legado Fixo',
+    limite_visitas_mes: 4,
+    visitas_realizadas_mes: 4,
+    visitas_restantes_mes: 0,
+    especialidade_prevista: 4,
+    especialidade_realizada: 4,
+    especialidade_restante: 0,
+    limite_atingido: true,
+    bloqueio_plano: true,
+    bloqueio_plano_motivo: 'Limite atingido: 4/4 realizados.',
+    mes_cota_referencia: '2026-02',
+    evolucoes_contabilizadas_ids: ['ev_fix_1', 'ev_fix_2', 'ev_fix_3', 'ev_fix_4'],
+    plano_vigente: {
+      id: 'pln_legado_fixo_1',
+      versao: 1,
+      data_inicio: '2026-02-10',
+      data_fim: '2026-02-25',
+      total_previsto: 4,
+      total_realizado: 4,
+      total_restante: 0,
+      tem_pendencias: false,
+    },
+  };
+
+  assert.equal(ehPlanoMensal(pacientePlanoLegadoFixo.plano_vigente), false, 'Plano 10..25 não é plano mensal');
+  assert.equal(ehPlanoMensal({ data_inicio: '2026-02-01', data_fim: '2026-02-28' }), true, 'Plano 01..28 Fev/2026 é plano mensal');
+
+  const aposViradaMes = normalizarPacienteQuotaMensalLocal(pacientePlanoLegadoFixo, '2026-03-01');
+  assert.equal(aposViradaMes.plano_vigente?.data_inicio, '2026-02-10', 'Não deve converter plano legado de período fixo em ciclo mensal');
+  assert.equal(aposViradaMes.plano_vigente?.data_fim, '2026-02-25');
+  assert.equal(aposViradaMes.visitas_realizadas_mes, 4);
+  assert.equal(aposViradaMes.limite_atingido, true);
+  assert.equal(aposViradaMes.bloqueio_plano, true);
+
+  // Plano fixo atravessando 2 meses (2026-10-06 a 2026-11-05): visita pendente em Outubro conta na janela completa
+  const pacMultiMes = reconciliarPacienteComCotaPendenteLocal(
+    {
+      id: 'pac_fixo_multimes',
+      nome: 'Paciente Plano Fixo Out-Nov',
+      limite_visitas_mes: 2,
+      visitas_realizadas_mes: 0,
+      visitas_restantes_mes: 2,
+      plano_vigente: {
+        id: 'pln_out_nov',
+        versao: 1,
+        data_inicio: '2026-10-06',
+        data_fim: '2026-11-05',
+        total_previsto: 2,
+        total_realizado: 0,
+        total_restante: 2,
+      },
+    },
+    null,
+    [
+      {
+        id: 'ev_out_15',
+        paciente_id: 'pac_fixo_multimes',
+        profissional_id: 'coop_1',
+        tipo_profissional: 'Fisioterapeuta',
+        check_in: '2026-10-15T10:00:00.000Z',
+        check_out: '2026-10-15T11:00:00.000Z',
+        status: 'Assinado_Pendente_Sync',
+        sync_status: 'pending',
+      },
+    ],
+    [],
+    '2026-11-02',
+  );
+  assert.equal(pacMultiMes.visitas_realizadas_mes, 1, 'Visita de Outubro deve contar no plano fixo Outubro-Novembro');
+});
+
+test('localDB.savePacientes e reconciliarPacienteComCotaPendenteLocal: preservam cota pendente offline ao atualizar dashboard com snapshot do servidor', async () => {
+  // 1. Teste direto da reconciliação quando o servidor retorna snapshot cru (evolucoes_contabilizadas_ids undefined)
+  // e há evolução pendente no store evolucoes (sync_status: 'pending' / Assinado_Pendente_Sync) ou no cache do paciente
+  const pacienteCacheComPendencia = {
+    id: 'pac_refresh_dashboard_1',
+    nome: 'Paciente Refresh Dashboard',
+    limite_visitas_mes: 2,
+    visitas_realizadas_mes: 1,
+    visitas_restantes_mes: 1,
+    especialidade_prevista: 2,
+    especialidade_realizada: 1,
+    especialidade_restante: 1,
+    limite_atingido: false,
+    bloqueio_plano: false,
+    mes_cota_referencia: '2026-10',
+    evolucoes_contabilizadas_ids: ['ev_pendente_local_1'],
+  };
+
+  const snapshotCruServidor = {
+    id: 'pac_refresh_dashboard_1',
+    nome: 'Paciente Refresh Dashboard',
+    limite_visitas_mes: 2,
+    visitas_realizadas_mes: 0,
+    visitas_restantes_mes: 2,
+    especialidade_prevista: 2,
+    especialidade_realizada: 0,
+    especialidade_restante: 2,
+    limite_atingido: false,
+    bloqueio_plano: false,
+    mes_cota_referencia: '2026-10',
+    // evolucoes_contabilizadas_ids omitido (undefined)
+  };
+
+  const reconciliadoPorCache = reconciliarPacienteComCotaPendenteLocal(
+    snapshotCruServidor,
+    pacienteCacheComPendencia,
+    [],
+    [],
+    '2026-10-19',
+  );
+  assert.equal(reconciliadoPorCache.visitas_realizadas_mes, 1, 'Deve preservar +1 visita local pendente do paciente em cache');
+  assert.equal(reconciliadoPorCache.visitas_restantes_mes, 1);
+  assert.deepEqual(reconciliadoPorCache.evolucoes_contabilizadas_ids, ['ev_pendente_local_1']);
+
+  // 2. Evolução com sync_status === 'pending' no store evolucoes que esgota a cota (2/2)
+  const reconciliadoComStoreEvolucoes = reconciliarPacienteComCotaPendenteLocal(
+    snapshotCruServidor,
+    pacienteCacheComPendencia,
+    [
+      {
+        id: 'ev_pendente_local_2',
+        paciente_id: 'pac_refresh_dashboard_1',
+        profissional_id: 'coop_1',
+        tipo_profissional: 'Fisioterapeuta',
+        check_in: '2026-10-19T14:00:00.000Z',
+        check_out: '2026-10-19T15:00:00.000Z',
+        status: 'Assinado_Pendente_Sync',
+        sync_status: 'pending',
+      },
+    ],
+    [],
+    '2026-10-19',
+  );
+  assert.equal(reconciliadoComStoreEvolucoes.visitas_realizadas_mes, 2, 'Deve somar as duas evoluções pendentes (cache + store evolucoes)');
+  assert.equal(reconciliadoComStoreEvolucoes.visitas_restantes_mes, 0);
+  assert.equal(reconciliadoComStoreEvolucoes.limite_atingido, true);
+  assert.equal(reconciliadoComStoreEvolucoes.bloqueio_plano, true);
+  assert.deepEqual(reconciliadoComStoreEvolucoes.evolucoes_contabilizadas_ids, [
+    'ev_pendente_local_1',
+    'ev_pendente_local_2',
+  ]);
+
+  // 3. Teste integrado de localDB.savePacientes com fake window.indexedDB
+  const stores = new Map<string, Map<any, any>>([
+    ['pacientes', new Map()],
+    ['evolucoes', new Map()],
+    ['fila_sync', new Map()],
+  ]);
+  stores.get('pacientes')!.set('pac_idb_1', {
+    id: 'pac_idb_1',
+    nome: 'Paciente IDB',
+    limite_visitas_mes: 1,
+    visitas_realizadas_mes: 1,
+    visitas_restantes_mes: 0,
+    especialidade_prevista: 1,
+    especialidade_realizada: 1,
+    especialidade_restante: 0,
+    limite_atingido: true,
+    bloqueio_plano: true,
+    mes_cota_referencia: new Date().toISOString().slice(0, 7),
+    evolucoes_contabilizadas_ids: ['ev_idb_pending_1'],
+  });
+  stores.get('evolucoes')!.set('ev_idb_pending_1', {
+    id: 'ev_idb_pending_1',
+    paciente_id: 'pac_idb_1',
+    profissional_id: 'coop_1',
+    tipo_profissional: 'Fisioterapeuta',
+    check_in: new Date().toISOString(),
+    check_out: new Date().toISOString(),
+    status: 'Assinado_Pendente_Sync',
+    sync_status: 'pending',
+  });
+
+  const windowOriginal = (globalThis as any).window;
+  (globalThis as any).window = {
+    indexedDB: {
+      open: () => {
+        const req: any = {};
+        queueMicrotask(() => {
+          req.result = {
+            objectStoreNames: { contains: (name: string) => stores.has(name) },
+            transaction: (storeName: string) => {
+              const map = stores.get(storeName) || new Map();
+              const tx: any = {
+                objectStore: () => storeObj,
+              };
+              const storeObj = {
+                getAll: () => {
+                  const getReq: any = {};
+                  setImmediate(() => {
+                    getReq.result = Array.from(map.values());
+                    if (getReq.onsuccess) getReq.onsuccess();
+                    setImmediate(() => {
+                      if (tx.oncomplete) tx.oncomplete();
+                    });
+                  });
+                  return getReq;
+                },
+                get: (id: any) => {
+                  const getReq: any = {};
+                  setImmediate(() => {
+                    getReq.result = map.get(id);
+                    if (getReq.onsuccess) getReq.onsuccess();
+                    setImmediate(() => {
+                      if (tx.oncomplete) tx.oncomplete();
+                    });
+                  });
+                  return getReq;
+                },
+                put: (val: any) => {
+                  map.set(val.id, val);
+                  const putReq: any = {};
+                  setImmediate(() => {
+                    if (putReq.onsuccess) putReq.onsuccess();
+                  });
+                  return putReq;
+                },
+              };
+              return tx;
+            },
+          };
+          if (req.onsuccess) req.onsuccess();
+        });
+        return req;
+      },
+    },
+  };
+
+  try {
+    // Simula CooperadoDashboard.handlePrefetch chamando savePacientes com snapshot do servidor ainda em 0/1
+    await localDB.savePacientes([
+      {
+        id: 'pac_idb_1',
+        nome: 'Paciente IDB',
+        limite_visitas_mes: 1,
+        visitas_realizadas_mes: 0,
+        visitas_restantes_mes: 1,
+        especialidade_prevista: 1,
+        especialidade_realizada: 0,
+        especialidade_restante: 1,
+        limite_atingido: false,
+        bloqueio_plano: false,
+      },
+    ]);
+
+    const salvo = stores.get('pacientes')!.get('pac_idb_1');
+    assert.ok(salvo);
+    assert.equal(salvo.visitas_realizadas_mes, 1, 'savePacientes deve preservar a visita pendente de sincronização');
+    assert.equal(salvo.visitas_restantes_mes, 0);
+    assert.equal(salvo.limite_atingido, true);
+    assert.equal(salvo.bloqueio_plano, true);
+    assert.deepEqual(salvo.evolucoes_contabilizadas_ids, ['ev_idb_pending_1']);
+
+    // Quando o servidor confirma a evolução como Finalizado em saveEvolucoes, sync_status passa para 'synced'
+    // e o próximo savePacientes com snapshot atualizado (1/1) não duplica a contagem
+    await localDB.saveEvolucoes([
+      {
+        id: 'ev_idb_pending_1',
+        paciente_id: 'pac_idb_1',
+        profissional_id: 'coop_1',
+        tipo_profissional: 'Fisioterapeuta',
+        check_in: new Date().toISOString(),
+        check_out: new Date().toISOString(),
+        status: 'Finalizado',
+      },
+    ]);
+    assert.equal(stores.get('evolucoes')!.get('ev_idb_pending_1').sync_status, 'synced');
+
+    await localDB.savePacientes([
+      {
+        id: 'pac_idb_1',
+        nome: 'Paciente IDB',
+        limite_visitas_mes: 2,
+        visitas_realizadas_mes: 1,
+        visitas_restantes_mes: 1,
+        especialidade_prevista: 2,
+        especialidade_realizada: 1,
+        especialidade_restante: 1,
+        limite_atingido: false,
+        bloqueio_plano: false,
+      },
+    ]);
+    const salvoPosSync = stores.get('pacientes')!.get('pac_idb_1');
+    assert.equal(
+      salvoPosSync.visitas_realizadas_mes,
+      1,
+      'Após saveEvolucoes confirmar Finalizado no servidor, savePacientes não deve contar a evolução novamente',
+    );
+  } finally {
+    if (windowOriginal === undefined) {
+      delete (globalThis as any).window;
+    } else {
+      (globalThis as any).window = windowOriginal;
+    }
+  }
+
+  // 4. Evolução Em_Andamento já sincronizada no servidor não deve ser somada novamente em snapshot cru
+  const reconciliadoEmAndamentoSincronizado = reconciliarPacienteComCotaPendenteLocal(
+    {
+      id: 'pac_em_andamento_srv',
+      nome: 'Paciente Em Andamento Srv',
+      limite_visitas_mes: 2,
+      visitas_realizadas_mes: 1,
+      visitas_restantes_mes: 1,
+      mes_cota_referencia: '2026-10',
+    },
+    {
+      id: 'pac_em_andamento_srv',
+      nome: 'Paciente Em Andamento Srv',
+      limite_visitas_mes: 2,
+      visitas_realizadas_mes: 1,
+      visitas_restantes_mes: 1,
+      mes_cota_referencia: '2026-10',
+      evolucoes_contabilizadas_ids: ['ev_srv_andamento_1'],
+    },
+    [
+      {
+        id: 'ev_srv_andamento_1',
+        paciente_id: 'pac_em_andamento_srv',
+        profissional_id: 'coop_1',
+        tipo_profissional: 'Fisioterapeuta',
+        check_in: '2026-10-19T10:00:00.000Z',
+        check_out: '',
+        status: 'Em_Andamento',
+        sync_status: 'synced',
+      },
+    ],
+    [],
+    '2026-10-19',
+  );
+  assert.equal(
+    reconciliadoEmAndamentoSincronizado.visitas_realizadas_mes,
+    1,
+    'Evolução Em_Andamento já sincronizada no servidor não deve ser somada em duplicidade',
+  );
+
+  // 5. Reconciliação na virada de mês normaliza plano mensal de p antes de contabilizar evolução pendente do novo mês
+  const reconciliadoViradaMes = reconciliarPacienteComCotaPendenteLocal(
+    {
+      id: 'pac_virada_reconcile',
+      nome: 'Paciente Virada Reconcile',
+      limite_visitas_mes: 2,
+      visitas_realizadas_mes: 2,
+      visitas_restantes_mes: 0,
+      limite_atingido: true,
+      bloqueio_plano: true,
+      mes_cota_referencia: '2026-02',
+      plano_vigente: {
+        id: 'pln_fev_mensal',
+        versao: 1,
+        data_inicio: '2026-02-01',
+        data_fim: '2026-02-28',
+        total_previsto: 2,
+        total_realizado: 2,
+        total_restante: 0,
+      },
+    },
+    null,
+    [
+      {
+        id: 'ev_mar_novo_mes',
+        paciente_id: 'pac_virada_reconcile',
+        profissional_id: 'coop_1',
+        tipo_profissional: 'Fisioterapeuta',
+        check_in: '2026-03-01T09:00:00.000Z',
+        check_out: '2026-03-01T10:00:00.000Z',
+        status: 'Assinado_Pendente_Sync',
+        sync_status: 'pending',
+      },
+    ],
+    [],
+    '2026-03-01',
+  );
+  assert.equal(reconciliadoViradaMes.mes_cota_referencia, '2026-03');
+  assert.equal(reconciliadoViradaMes.plano_vigente?.data_inicio, '2026-03-01');
+  assert.equal(reconciliadoViradaMes.plano_vigente?.data_fim, '2026-03-31');
+  assert.equal(reconciliadoViradaMes.visitas_realizadas_mes, 1, 'Deve zerar Fev e contabilizar +1 de Março');
+  assert.equal(reconciliadoViradaMes.limite_atingido, false);
+});
+
+test('empresas contratantes: resolve corretamente as 3 logos oficiais e seus aliases', () => {
+  assert.equal(EMPRESAS_CONTRATANTES.length, 3);
+
+  const vm = obterEmpresaContratante('verdes-mares');
+  assert.equal(vm?.logoUrl, '/logos/verdes-mares.png');
+  assert.equal(obterEmpresaContratante('Serramaris')?.logoUrl, '/logos/verdes-mares.png');
+
+  const isa = obterEmpresaContratante('isacare');
+  assert.equal(isa?.logoUrl, '/logos/isacare.jpeg');
+  assert.equal(obterEmpresaContratante('ISACARE Saúde')?.logoUrl, '/logos/isacare.jpeg');
+
+  const mult = obterEmpresaContratante('multcare');
+  assert.equal(mult?.logoUrl, '/logos/multcare.jpeg');
+  assert.equal(obterEmpresaContratante('Unicare')?.logoUrl, '/logos/multcare.jpeg');
+});
+
+
+
+
+

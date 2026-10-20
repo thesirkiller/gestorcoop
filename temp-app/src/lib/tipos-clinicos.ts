@@ -129,6 +129,26 @@ export function obterPeriodoMesVigencia(dataRef?: string | Date | null): Periodo
   };
 }
 
+export function ehPlanoMensal(
+  planoOuDataInicio?: string | { data_inicio?: string | null; data_fim?: string | null } | null,
+  dataFim?: string | null,
+): boolean {
+  const rawInicio =
+    typeof planoOuDataInicio === 'object' && planoOuDataInicio !== null
+      ? planoOuDataInicio.data_inicio
+      : planoOuDataInicio;
+  const rawFim =
+    typeof planoOuDataInicio === 'object' && planoOuDataInicio !== null
+      ? planoOuDataInicio.data_fim
+      : dataFim;
+  if (!rawInicio || !rawFim) return false;
+  const ini = rawInicio.trim().split('T')[0];
+  const fim = rawFim.trim().split('T')[0];
+  if (!/^\d{4}-\d{2}-01$/.test(ini)) return false;
+  const periodo = obterPeriodoMesVigencia(ini);
+  return ini === periodo.data_inicio && fim === periodo.data_fim;
+}
+
 export function formatarDataIsoParaBr(dataIso?: string | null): string {
   if (!dataIso) return '--/--/----';
   const match = String(dataIso).trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
