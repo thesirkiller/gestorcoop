@@ -7,6 +7,7 @@ import {
   parseProfissionaisDesignados,
   normalizarEspecialidade as normalizarEspecialidadeTipos,
   obterPeriodoMesVigencia,
+  ehPlanoMensal,
   formatarDataIsoParaBr,
   type StatusPlanoTerapeutico,
   type PeriodoMesVigencia,
@@ -17,6 +18,7 @@ export {
   cooperadoCorresponde,
   parseProfissionaisDesignados,
   obterPeriodoMesVigencia,
+  ehPlanoMensal,
   formatarDataIsoParaBr,
   type StatusPlanoTerapeutico,
   type PeriodoMesVigencia,
@@ -1731,10 +1733,10 @@ export async function criarPrescricaoClinica(dados: Omit<PrescricaoClinica, 'id'
           prescricao.paciente_id,
           prescricao.medicamento,
           prescricao.dosagem,
-          prescricao.via_administracao,
-          prescricao.frequencia_horas,
-          prescricao.data_inicio,
-          prescricao.data_fim,
+          prescricao.via_administracao || 'Oral',
+          prescricao.frequencia_horas ?? 8,
+          prescricao.data_inicio || '',
+          prescricao.data_fim || '',
           prescricao.medico_nome || '',
           prescricao.medico_crm || '',
           JSON.stringify(prescricao.horarios_padrao || []),
@@ -1976,7 +1978,7 @@ export function formatarNomeEspecialidade(esp: string): string {
     Psicologo: 'Psicólogo',
     Terapeuta_Ocupacional: 'Terapeuta Ocupacional',
   };
-  return map[esp] || esp.replace(/_/g, ' ');
+  return map[esp] || String(esp || '').replace(/_/g, ' ');
 }
 
 /**
@@ -2052,15 +2054,6 @@ export function calcularProgressoPlano(
     tem_pendencias: pendenciasAlertas.length > 0,
     pendencias_alertas: pendenciasAlertas,
   };
-}
-
-export function ehPlanoMensal(dataInicio?: string | null, dataFim?: string | null): boolean {
-  if (!dataInicio || !dataFim) return false;
-  const ini = dataInicio.trim().split('T')[0];
-  const fim = dataFim.trim().split('T')[0];
-  if (!/^\d{4}-\d{2}-01$/.test(ini)) return false;
-  const periodo = obterPeriodoMesVigencia(ini);
-  return ini === periodo.data_inicio && fim === periodo.data_fim;
 }
 
 export async function salvarPlanoTerapeutico(dados: {
@@ -2224,7 +2217,10 @@ export async function salvarPlanoTerapeutico(dados: {
   return enriquecerPlanoComCalculos(novoPlano, evolucoes);
 }
 
-async function carregarPlanosEEvolucoesPorPaciente(pacienteId: string): Promise<{
+async function carregarPlanosEEvolucoesPorPaciente(
+  pacienteId: string,
+  dataIso?: string,
+): Promise<{
   planos: PlanoTerapeutico[];
   evolucoes: EvolucaoClinica[];
 }> {
@@ -2244,7 +2240,7 @@ async function carregarPlanosEEvolucoesPorPaciente(pacienteId: string): Promise<
     const planos = montarPlanos(rPlanos.results || [], rMetas.results || []);
     const evolucoes = (rEvolucoes.results || []).map(mapearEvolucaoRow);
     return {
-      planos: planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes)),
+      planos: enriquecerPlanosComRolloverMensal(planos, evolucoes, dataIso),
       evolucoes,
     };
   }
@@ -2259,13 +2255,47 @@ async function carregarPlanosEEvolucoesPorPaciente(pacienteId: string): Promise<
   // Buscar evoluções para cálculo de progresso
   const evolucoes = await listarEvolucoesClinicas({ paciente_id: pacienteId });
   return {
-    planos: planos.map((plano) => enriquecerPlanoComCalculos(plano, evolucoes)),
+    planos: enriquecerPlanosComRolloverMensal(planos, evolucoes, dataIso),
     evolucoes,
   };
 }
 
-export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string): Promise<PlanoTerapeutico[]> {
-  const { planos } = await carregarPlanosEEvolucoesPorPaciente(pacienteId);
+function enriquecerPlanosComRolloverMensal(
+  planos: PlanoTerapeutico[],
+  evolucoes: EvolucaoClinica[],
+  dataIso?: string,
+): PlanoTerapeutico[] {
+  const dataRef = (dataIso || new Date().toISOString()).split('T')[0];
+  const possuiAtivoDiretoNoPeriodo = planos.some(
+    (p) => p.status === 'Ativo' && dataRef >= p.data_inicio && dataRef <= p.data_fim
+  );
+  let rolloverAplicado = false;
+  const periodoNovoMes = obterPeriodoMesVigencia(dataRef);
+
+  return planos.map((plano) => {
+    if (
+      !possuiAtivoDiretoNoPeriodo &&
+      !rolloverAplicado &&
+      plano.status === 'Ativo' &&
+      ehPlanoMensal(plano.data_inicio, plano.data_fim) &&
+      dataRef > plano.data_fim
+    ) {
+      rolloverAplicado = true;
+      return enriquecerPlanoComCalculos(
+        {
+          ...plano,
+          data_inicio: periodoNovoMes.data_inicio,
+          data_fim: periodoNovoMes.data_fim,
+        },
+        evolucoes,
+      );
+    }
+    return enriquecerPlanoComCalculos(plano, evolucoes);
+  });
+}
+
+export async function listarPlanosTerapeuticosPorPaciente(pacienteId: string, dataIso?: string): Promise<PlanoTerapeutico[]> {
+  const { planos } = await carregarPlanosEEvolucoesPorPaciente(pacienteId, dataIso);
   return planos;
 }
 
@@ -2282,7 +2312,7 @@ function montarPlanos(planoRows: any[], metaRows: any[]): PlanoTerapeutico[] {
 }
 
 export async function obterPlanoTerapeuticoVigente(pacienteId: string, dataIso?: string): Promise<PlanoTerapeutico | null> {
-  const { planos, evolucoes } = await carregarPlanosEEvolucoesPorPaciente(pacienteId);
+  const { planos, evolucoes } = await carregarPlanosEEvolucoesPorPaciente(pacienteId, dataIso);
   return selecionarPlanoVigente(planos, dataIso, evolucoes);
 }
 
@@ -2426,10 +2456,11 @@ export async function validarCheckInPlanoTerapeutico(params: {
 
   // Se o paciente não tiver plano terapêutico cadastrado, verifica cota mensal legada
   if (!plano || !plano.metas || plano.metas.length === 0) {
-    if (!plano && (await listarPlanosTerapeuticosPorPaciente(pacienteId)).length > 0) {
+    if (!plano && (await listarPlanosTerapeuticosPorPaciente(pacienteId, checkIn)).length > 0) {
       return { permitido: false, motivo: 'Não existe plano terapêutico ativo para a data deste atendimento.' };
     }
-    const cotaLegada = await obterCotaVisitasPaciente(pacienteId);
+    const mesRefLegado = checkIn ? checkIn.split('T')[0].slice(0, 7) : undefined;
+    const cotaLegada = await obterCotaVisitasPaciente(pacienteId, mesRefLegado);
     if (cotaLegada.limite_visitas_mes > 0 && cotaLegada.visitas_realizadas_mes >= cotaLegada.limite_visitas_mes) {
       return {
         permitido: false,
@@ -2439,7 +2470,11 @@ export async function validarCheckInPlanoTerapeutico(params: {
         previstas: cotaLegada.limite_visitas_mes,
       };
     }
-    return { permitido: true };
+    return {
+      permitido: true,
+      realizadas: cotaLegada.visitas_realizadas_mes,
+      previstas: cotaLegada.limite_visitas_mes > 0 ? cotaLegada.limite_visitas_mes : undefined,
+    };
   }
 
   const espNormalizada = normalizarEspecialidade(tipoProfissional);
@@ -2911,8 +2946,9 @@ export async function carregarProntuario360(
   const mesAtualIso = new Date().toISOString().slice(0, 7);
   aplicarCotaMensal(paciente, evolucoes.filter((ev) => ev.check_in && ev.check_in.startsWith(mesAtualIso)).length);
 
-  const planos = montarPlanos(rPlanos.results || [], rMetas.results || []).map((plano) =>
-    enriquecerPlanoComCalculos(plano, evolucoes)
+  const planos = enriquecerPlanosComRolloverMensal(
+    montarPlanos(rPlanos.results || [], rMetas.results || []),
+    evolucoes,
   );
 
   return {

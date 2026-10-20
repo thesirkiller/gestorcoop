@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { localDB, PacienteLocal, PrescricaoLocal, AprazamentoLocal, EvolucaoLocal, SinalVitalLocal, ResponsavelPacienteLocal, gerarSlotsAprazamentoLocal } from '@/lib/indexeddb';
+import { localDB, PacienteLocal, PrescricaoLocal, AprazamentoLocal, EvolucaoLocal, SinalVitalLocal, ResponsavelPacienteLocal, gerarSlotsAprazamentoLocal, contabilizarEvolucaoNaCotaLocal } from '@/lib/indexeddb';
 import { AudioRecorder } from '@/lib/audio-recorder';
 import { subscribeToSync, synchronizeQueue } from '@/lib/sync-service';
 import {
@@ -516,10 +516,32 @@ export default function ProntuarioAtendimento() {
           evolucoes: serverEvols,
         } = res.data;
 
+        const evolsPaciente = Array.isArray(serverEvols)
+          ? serverEvols.filter((e: any) => String(e.paciente_id).trim() === cleanId)
+          : [];
+
+        // Sincroniza evoluções já realizadas vindas do servidor antes de reconciliar a cota do paciente
+        if (evolsPaciente.length > 0) {
+          await localDB.saveEvolucoes(evolsPaciente);
+        }
+
         const serverPac = (pacientes || []).find((p: any) => String(p.id).trim() === cleanId);
         if (serverPac) {
-          setPaciente(serverPac);
-          await localDB.savePacientes([serverPac]);
+          const idsServidor = Array.from(
+            new Set([
+              ...(Array.isArray(serverPac.evolucoes_contabilizadas_ids)
+                ? serverPac.evolucoes_contabilizadas_ids
+                : []),
+              ...evolsPaciente.map((e: any) => String(e.id)).filter(Boolean),
+            ])
+          );
+          const pacServidor: PacienteLocal = {
+            ...serverPac,
+            evolucoes_contabilizadas_ids: idsServidor,
+          };
+          await localDB.savePacientes([pacServidor]);
+          const pacReconciliado = (await localDB.getPaciente(cleanId)) || pacServidor;
+          setPaciente(pacReconciliado);
         }
 
         const patientPrescs = (serverPrescs || []).filter(
@@ -557,15 +579,6 @@ export default function ProntuarioAtendimento() {
         );
         setAprazamentos(finalApraz);
 
-        // Sincroniza evoluções já realizadas vindas do servidor
-        if (Array.isArray(serverEvols) && serverEvols.length > 0) {
-          const evolsPaciente = serverEvols.filter(
-            (e: any) => String(e.paciente_id).trim() === cleanId
-          );
-          if (evolsPaciente.length > 0) {
-            await localDB.saveEvolucoes(evolsPaciente);
-          }
-        }
         await atualizarHistoricoLocal();
       }
     } catch (err) {
@@ -656,9 +669,10 @@ export default function ProntuarioAtendimento() {
 
   // Iniciar novo atendimento quando já existe evolução anterior finalizada
   const handleIniciarNovoAtendimento = () => {
-    if (paciente?.limite_atingido) {
+    if (paciente?.limite_atingido || paciente?.bloqueio_plano) {
       setErrorText(
-        `Limite mensal de ${paciente.limite_visitas_mes || 13} visitas atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}).`
+        paciente.bloqueio_plano_motivo ||
+          `Limite mensal de ${paciente.limite_visitas_mes || 1} visita(s) atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}).`
       );
       return;
     }
@@ -682,9 +696,10 @@ export default function ProntuarioAtendimento() {
       return;
     }
 
-    if (paciente?.limite_atingido) {
+    if (paciente?.limite_atingido || paciente?.bloqueio_plano) {
       setErrorText(
-        `Limite mensal de ${paciente.limite_visitas_mes || 13} visitas atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Não é permitido realizar novas visitas este mês.`
+        paciente.bloqueio_plano_motivo ||
+          `Limite mensal de ${paciente.limite_visitas_mes || 1} visita(s) atingido para este paciente (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Não é permitido realizar novas visitas este mês.`
       );
       return;
     }
@@ -1064,10 +1079,6 @@ export default function ProntuarioAtendimento() {
         setGlicemia('');
       }
 
-      if (paciente) {
-        await localDB.savePacientes([paciente]);
-      }
-
       const seloLocal = `v2:bio:${dadosBio.metodo.toLowerCase()}:sha256=${dadosBio.biometriaHash}:coop=${dadosBio.cooperadoIdentificador}:ts=${checkOutTime}`;
       const finalEv: EvolucaoLocal & { assinatura_biometrica?: DadosAssinaturaBiometrica } = {
         ...evolucao,
@@ -1077,6 +1088,7 @@ export default function ProntuarioAtendimento() {
         check_out: checkOutTime,
         transcricao_revisada: transcriptionText,
         status: 'Assinado_Pendente_Sync',
+        sync_status: 'pending',
         data_assinatura: checkOutTime,
         assinatura_digital: evolucao.assinatura_digital || seloLocal,
         assinatura_biometrica: resumoBiometrico,
@@ -1129,8 +1141,33 @@ export default function ProntuarioAtendimento() {
         },
       });
 
+      const pacRecente = (await localDB.getPaciente(String(pacienteId).trim())) || paciente;
+      const limiteCotaLocal = pacRecente?.limite_visitas_mes ?? pacRecente?.especialidade_prevista ?? 0;
+      if (pacRecente && limiteCotaLocal > 0) {
+        const idsUnificados = Array.from(
+          new Set([
+            ...(Array.isArray(pacRecente.evolucoes_contabilizadas_ids)
+              ? pacRecente.evolucoes_contabilizadas_ids
+              : []),
+            ...(Array.isArray(paciente?.evolucoes_contabilizadas_ids)
+              ? paciente.evolucoes_contabilizadas_ids
+              : []),
+          ])
+        );
+        const pacAtualizado = contabilizarEvolucaoNaCotaLocal(
+          { ...pacRecente, evolucoes_contabilizadas_ids: idsUnificados },
+          evolucao.id,
+          evolucao.check_in,
+        );
+        setPaciente(pacAtualizado);
+        await localDB.savePacientes([pacAtualizado]);
+      } else if (pacRecente) {
+        await localDB.savePacientes([pacRecente]);
+      }
+
       if (typeof navigator !== 'undefined' && navigator.onLine) {
         await synchronizeQueue().catch(() => false);
+        await syncOnlinePaciente().catch(() => {});
       }
       await atualizarHistoricoLocal();
 
@@ -1266,26 +1303,32 @@ export default function ProntuarioAtendimento() {
         </div>
 
         {/* Cota Mensal de Visitas do Paciente */}
-        {paciente.limite_visitas_mes !== undefined && paciente.limite_visitas_mes > 0 && (
-          <div className={`rounded-xl p-3 text-xs flex items-start gap-2.5 border ${
-            paciente.limite_atingido
-              ? 'bg-crit-soft border-crit-line text-crit-ink'
-              : (paciente.visitas_restantes_mes || 0) <= 2
-              ? 'bg-warn-soft border-warn-line text-warn-ink'
-              : 'bg-accent-soft border-accent-line text-accent-soft-ink'
-          }`}>
-            {paciente.limite_atingido ? (
+        {((paciente.limite_visitas_mes !== undefined && paciente.limite_visitas_mes > 0) || paciente.bloqueio_plano) && (
+          <div
+            data-testid="banner-cota-plano-cooperado"
+            className={`rounded-xl p-3 text-xs flex items-start gap-2.5 border ${
+              paciente.limite_atingido || paciente.bloqueio_plano
+                ? 'bg-crit-soft border-crit-line text-crit-ink'
+                : (paciente.visitas_restantes_mes || 0) <= 2
+                ? 'bg-warn-soft border-warn-line text-warn-ink'
+                : 'bg-accent-soft border-accent-line text-accent-soft-ink'
+            }`}
+          >
+            {paciente.limite_atingido || paciente.bloqueio_plano ? (
               <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-crit-ink" aria-hidden="true" />
             ) : (
               <Clock className="w-4 h-4 shrink-0 mt-0.5 text-accent-ink" aria-hidden="true" />
             )}
             <div className="flex flex-col gap-0.5">
               <span className="font-heavy uppercase tracking-wider text-[10px]">
-                {paciente.limite_atingido ? '🚫 Cota Mensal Esgotada - Visitas Bloqueadas' : '📋 Cota Mensal Contratada'}
+                {paciente.limite_atingido || paciente.bloqueio_plano
+                  ? '🚫 Cota Mensal Esgotada - Visitas Bloqueadas'
+                  : '📋 Cota Mensal Contratada'}
               </span>
               <span className="font-medium">
-                {paciente.limite_atingido
-                  ? `Este paciente atingiu o teto de ${paciente.limite_visitas_mes} visitas neste mês (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Novos atendimentos foram bloqueados pela gestão.`
+                {paciente.limite_atingido || paciente.bloqueio_plano
+                  ? paciente.bloqueio_plano_motivo ||
+                    `Este paciente atingiu o teto de ${paciente.limite_visitas_mes} visitas neste mês (${paciente.visitas_realizadas_mes}/${paciente.limite_visitas_mes}). Novos atendimentos foram bloqueados pela gestão.`
                   : `Cota contratada: ${paciente.visitas_realizadas_mes || 0} de ${paciente.limite_visitas_mes} visitas realizadas. Restam ${paciente.visitas_restantes_mes} visitas este mês.`}
               </span>
             </div>
@@ -1317,8 +1360,11 @@ export default function ProntuarioAtendimento() {
         </div>
 
         {!checkedIn && (
-          paciente.limite_atingido ? (
-            <div className="bg-crit-soft border border-crit-line text-crit-ink text-xs font-heavy px-3 py-2 rounded-xl text-center">
+          paciente.limite_atingido || paciente.bloqueio_plano ? (
+            <div
+              data-testid="badge-visitas-bloqueadas"
+              className="bg-crit-soft border border-crit-line text-crit-ink text-xs font-heavy px-3 py-2 rounded-xl text-center"
+            >
               Visitas Bloqueadas
             </div>
           ) : (
@@ -1343,7 +1389,7 @@ export default function ProntuarioAtendimento() {
               <CheckCircle2 className="w-3.5 h-3.5" aria-hidden="true" />
               Finalizada
             </span>
-            {!paciente.limite_atingido && (
+            {!paciente.limite_atingido && !paciente.bloqueio_plano && (
               <button
                 type="button"
                 data-testid="btn-novo-atendimento"

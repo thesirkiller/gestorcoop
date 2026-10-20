@@ -33,7 +33,13 @@ import {
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { fetchFullDataset } from '@/lib/client-fetch';
-import { formatarNomeEspecialidade, EspecialidadeProfissional, ResponsavelPaciente } from '@/lib/tipos-clinicos';
+import {
+  formatarNomeEspecialidade,
+  obterPeriodoMesVigencia,
+  formatarDataIsoParaBr,
+  EspecialidadeProfissional,
+  ResponsavelPaciente,
+} from '@/lib/tipos-clinicos';
 import SeletorCooperadosMeta, { CooperadoItem } from './_components/SeletorCooperadosMeta';
 import { obterUrlCooperado } from '@/lib/subdominios';
 import {
@@ -80,6 +86,7 @@ interface PacienteSummary {
   tem_plano_terapeutico?: boolean;
   plano_vigente?: {
     id: string;
+    versao?: number;
     data_inicio: string;
     data_fim: string;
     total_previsto?: number;
@@ -165,8 +172,9 @@ export default function ProntuariosAuditDashboard() {
   const [buscaBubbleModal, setBuscaBubbleModal] = useState('');
   const [pacienteBubbleSelecionado, setPacienteBubbleSelecionado] = useState<any | null>(null);
 
-  const hojeIso = new Date().toISOString().split('T')[0];
-  const proximoMesIso = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
+  const periodoMesPadrao = obterPeriodoMesVigencia();
+  const hojeIso = periodoMesPadrao.data_inicio;
+  const proximoMesIso = periodoMesPadrao.data_fim;
 
   const [novoPacienteForm, setNovoPacienteForm] = useState({
     id: '',
@@ -1092,14 +1100,14 @@ export default function ProntuariosAuditDashboard() {
                         <div className="flex items-center justify-between text-xs font-bold text-indigo-950 mb-1">
                           <span className="flex items-center gap-1.5">
                             <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                            Plano Terapêutico Vigente
+                            Plano Terapêutico (v{p.plano_vigente.versao || 1})
                           </span>
                           <span className="text-[11px] font-mono bg-indigo-200/60 px-1.5 py-0.5 rounded text-indigo-900">
                             {p.plano_vigente.total_realizado || 0} / {p.plano_vigente.total_previsto || 0} visitas
                           </span>
                         </div>
                         <p className="text-[11px] text-indigo-700">
-                          Vigência: {p.plano_vigente.data_inicio} até {p.plano_vigente.data_fim}
+                          Vigência Mensal: {formatarDataIsoParaBr(p.plano_vigente.data_inicio)} até {formatarDataIsoParaBr(p.plano_vigente.data_fim)}
                         </p>
                       </div>
                     ) : (p.limite_visitas_mes || 0) > 0 ? (
@@ -1689,26 +1697,19 @@ export default function ProntuariosAuditDashboard() {
                   </button>
                 </div>
 
-                {/* Vigência */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-white p-3.5 rounded-xl border border-indigo-100">
+                {/* Vigência Mensal Automática */}
+                <div className="bg-white p-3.5 rounded-xl border border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Data Início da Vigência</label>
-                    <input
-                      type="date"
-                      value={planoDinamico.data_inicio}
-                      onChange={(e) => setPlanoDinamico({ ...planoDinamico, data_inicio: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
-                    />
+                    <span className="block text-[10px] font-bold text-indigo-700 uppercase">
+                      Vigência Mensal Automática (Sempre do dia 01 ao último dia do mês)
+                    </span>
+                    <p className="text-xs font-extrabold text-slate-900 mt-0.5">
+                      {formatarDataIsoParaBr(planoDinamico.data_inicio)} até {formatarDataIsoParaBr(planoDinamico.data_fim)}
+                    </p>
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Data Fim da Vigência</label>
-                    <input
-                      type="date"
-                      value={planoDinamico.data_fim}
-                      onChange={(e) => setPlanoDinamico({ ...planoDinamico, data_fim: e.target.value })}
-                      className="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800"
-                    />
-                  </div>
+                  <span className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+                    Versão 1 • Status: Ativo
+                  </span>
                 </div>
 
                 {/* Metas Dinâmicas */}

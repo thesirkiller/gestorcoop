@@ -515,7 +515,13 @@ export async function GET(request: NextRequest) {
             cooperadoCpf,
             userId: sessao.userId,
           });
-          const enriquecido: any = { ...p };
+          const idsEvolucoesServidor = dbEvolucoes
+            .filter((ev: any) => String(ev.paciente_id).trim() === String(p.id).trim() && ev.id)
+            .map((ev: any) => String(ev.id));
+          const enriquecido: any = {
+            ...p,
+            evolucoes_contabilizadas_ids: idsEvolucoesServidor,
+          };
           if (validacao.plano) {
             enriquecido.tem_plano_terapeutico = true;
             enriquecido.plano_vigente = {
@@ -536,11 +542,10 @@ export async function GET(request: NextRequest) {
             enriquecido.especialidade_prevista = previstas;
             enriquecido.especialidade_realizada = realizadas;
             enriquecido.especialidade_restante = restantes;
-            if (!enriquecido.limite_visitas_mes || enriquecido.limite_visitas_mes === 0) {
-              enriquecido.limite_visitas_mes = previstas;
-              enriquecido.visitas_realizadas_mes = realizadas;
-              enriquecido.visitas_restantes_mes = restantes;
-            }
+            enriquecido.limite_visitas_mes = previstas;
+            enriquecido.visitas_realizadas_mes = realizadas;
+            enriquecido.visitas_restantes_mes = restantes;
+            enriquecido.limite_atingido = previstas > 0 ? realizadas >= previstas : false;
           }
           if (!validacao.permitido) {
             enriquecido.bloqueio_plano = true;
