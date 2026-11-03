@@ -36,7 +36,9 @@ import {
   TIPOS_DOCUMENTO_OBRIGATORIOS,
   TIPOS_DOCUMENTO_OPCIONAIS,
   MAX_DOCUMENTO_BYTES,
-  documentosObrigatoriosPendentes,
+  isComprovanteUploadFormatoAtivo,
+  sugerirTipoDocumento,
+  diagnosticarDocumentosAdesao,
   normalizarUrlDocumento,
 } from '@/lib/documentos';
 import {
@@ -192,7 +194,8 @@ export default function AdesaoPage() {
   // Step 5: Document Uploads
   const [uploadedFiles, setUploadedFiles] = useState<DocumentoAdesao[]>([]);
   const [uploading, setUploading] = useState(false);
-  const pendingDocuments = documentosObrigatoriosPendentes(uploadedFiles);
+  const diagnosticoDocumentos = diagnosticarDocumentosAdesao(uploadedFiles);
+  const pendingDocuments = diagnosticoDocumentos.pendentes;
 
   // ── Retomada de progresso ────────────────────────────────────────────────
   // O rascunho completo fica no localStorage (cookies têm limite de ~4KB e
@@ -208,7 +211,7 @@ export default function AdesaoPage() {
           if (saved.addressData) setAddressData((prev) => ({ ...prev, ...saved.addressData }));
           if (Array.isArray(saved.professions)) setProfessions(saved.professions);
           if (Array.isArray(saved.bankAccounts)) setBankAccounts(saved.bankAccounts);
-          if (Array.isArray(saved.uploadedFiles)) setUploadedFiles(saved.uploadedFiles.filter((file: DocumentoAdesao) => file && normalizarUrlDocumento(file.url) && file.comprovante));
+          if (Array.isArray(saved.uploadedFiles)) setUploadedFiles(saved.uploadedFiles.filter((file: DocumentoAdesao) => file && typeof file === 'object'));
           setCurrentStep(saved.currentStep);
           setResumed(true);
         }
@@ -433,7 +436,7 @@ export default function AdesaoPage() {
 
         const url = normalizarUrlDocumento(res.data.url);
         if (!res.data.success || !url || !res.data.comprovante) throw new Error('O envio não foi confirmado.');
-        setUploadedFiles(prev => [...prev, { url, name: res.data.name, tipo: 'outro', comprovante: res.data.comprovante }]);
+        setUploadedFiles(listaAcumulada => [...listaAcumulada, { url, name: res.data.name, tipo: sugerirTipoDocumento(res.data.name, listaAcumulada), comprovante: res.data.comprovante }]);
       }
     } catch (err) {
       const error = err as { response?: { data?: { error?: string } } };
@@ -517,8 +520,8 @@ export default function AdesaoPage() {
       alert('Adicione pelo menos uma conta bancária antes de avançar.');
       return;
     }
-    if (currentStep === 5 && pendingDocuments.length) {
-      setErrorMsg(`Documentos obrigatórios pendentes: ${pendingDocuments.join(', ')}.`);
+    if (currentStep === 5 && diagnosticoDocumentos.temErroBloqueante) {
+      setErrorMsg('Revise os anexos e os documentos pendentes indicados abaixo antes de finalizar.');
       return;
     }
 
@@ -536,7 +539,7 @@ export default function AdesaoPage() {
 
   // Submit all data to BFF and get ZapSign URL
   const submitAllData = async () => {
-    if (uploading || submitting || pendingDocuments.length) return;
+    if (uploading || submitting || diagnosticarDocumentosAdesao(uploadedFiles).temErroBloqueante) return;
     setSubmitting(true);
     setErrorMsg('');
     try {
@@ -1403,7 +1406,7 @@ export default function AdesaoPage() {
                       Para garantir sua regularidade profissional na cooperativa, envie os documentos obrigatórios abaixo em arquivos separados e selecione o tipo correspondente de cada arquivo anexado.
                     </p>
                     <p className="text-sm font-semibold text-slate-700 mb-4" role="status">
-                      {pendingDocuments.length ? `Obrigatórios pendentes: ${pendingDocuments.join(', ')}.` : 'Documentos obrigatórios enviados. Você pode finalizar e assinar.'}
+                      {pendingDocuments.length ? `Obrigatórios pendentes: ${pendingDocuments.join(', ')}.` : diagnosticoDocumentos.temErroBloqueante ? 'Revise os anexos indicados abaixo antes de finalizar.' : 'Documentos obrigatórios enviados. Você pode finalizar e assinar.'}
                     </p>
 
                     {/* Checklist de Documentos Obrigatórios e Opcionais */}
@@ -1431,7 +1434,7 @@ export default function AdesaoPage() {
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                         {TIPOS_DOCUMENTO_OBRIGATORIOS.map((tipo) => {
                           const enviado = uploadedFiles.some(
-                            (f) => f.tipo === tipo && normalizarUrlDocumento(f.url) && f.comprovante
+                            (f) => f.tipo === tipo && normalizarUrlDocumento(f.url) && isComprovanteUploadFormatoAtivo(f.comprovante)
                           );
                           return (
                             <div
@@ -1453,7 +1456,7 @@ export default function AdesaoPage() {
                         })}
                         {TIPOS_DOCUMENTO_OPCIONAIS.map((tipo) => {
                           const enviado = uploadedFiles.some(
-                            (f) => f.tipo === tipo && normalizarUrlDocumento(f.url) && f.comprovante
+                            (f) => f.tipo === tipo && normalizarUrlDocumento(f.url) && isComprovanteUploadFormatoAtivo(f.comprovante)
                           );
                           return (
                             <div
@@ -1514,7 +1517,7 @@ export default function AdesaoPage() {
                         ) : (
                           <div className="flex flex-col gap-3">
                             {uploadedFiles.map((file, idx) => (
-                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3">
+                              <div key={idx} className={`border rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3 ${diagnosticoDocumentos.porIndice[idx].nivel === 'erro' ? 'border-red-300 bg-red-50/70' : diagnosticoDocumentos.porIndice[idx].nivel === 'aviso' ? 'border-amber-300 bg-amber-50/70' : 'bg-slate-50 border-slate-200'}`}>
                                 <div className="flex items-center gap-3 overflow-hidden flex-1">
                                   <div className="bg-white border border-slate-200 p-2 rounded-lg shrink-0">
                                     <FileText className="w-5 h-5 text-indigo-600" />
@@ -1530,6 +1533,11 @@ export default function AdesaoPage() {
                                     >
                                       {Object.entries(TIPOS_DOCUMENTO).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                                     </select>
+                                    {diagnosticoDocumentos.porIndice[idx].mensagem && (
+                                      <p className={`mt-2 text-xs ${diagnosticoDocumentos.porIndice[idx].nivel === 'erro' ? 'text-red-700' : 'text-amber-800'}`}>
+                                        {diagnosticoDocumentos.porIndice[idx].mensagem}
+                                      </p>
+                                    )}
                                   </div>
                                 </div>
                                 <button
@@ -1599,6 +1607,25 @@ export default function AdesaoPage() {
             </AnimatePresence>
           </div>
 
+          {currentStep === 5 && (diagnosticoDocumentos.temErroBloqueante || diagnosticoDocumentos.tiposDuplicados.length > 0 || diagnosticoDocumentos.opcionaisComPendencia.length > 0) && (
+            <div role="status" className="mx-6 mb-5 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 space-y-3">
+              <p className="font-bold">{diagnosticoDocumentos.temErroBloqueante ? 'Para liberar Finalizar & Assinar, revise os documentos:' : 'Confira os tipos dos documentos antes de assinar:'}</p>
+              {diagnosticoDocumentos.expirados.length > 0 && (
+                <div>
+                  <p>Anexos expirados, sem confirmação ou com link inválido: {diagnosticoDocumentos.expirados.join(', ')}. Remova e anexe novamente.</p>
+                  <button type="button" disabled={uploading || submitting} className="mt-2 rounded-lg border border-red-300 px-3 py-2 font-semibold text-red-700 disabled:opacity-50" onClick={() => setUploadedFiles(prev => {
+                    const diagnostico = diagnosticarDocumentosAdesao(prev);
+                    return prev.filter((_, index) => !diagnostico.porIndice[index].expirado && !diagnostico.porIndice[index].urlInvalida);
+                  })}>Remover anexos expirados</button>
+                </div>
+              )}
+              {diagnosticoDocumentos.urlsDuplicadas.length > 0 && <p>Arquivos enviados duplicados: {diagnosticoDocumentos.urlsDuplicadas.join(', ')}. Remova as cópias na lixeira.</p>}
+              {diagnosticoDocumentos.opcionaisComPendencia.length > 0 && <p>Arquivos marcados como “Outro documento (opcional)” ou “Cartão do SUS / PIS (opcional)”: {diagnosticoDocumentos.opcionaisComPendencia.join(', ')}. Se corresponderem a documentos obrigatórios, selecione o tipo correto na caixinha de cada arquivo.</p>}
+              {diagnosticoDocumentos.tiposDuplicados.length > 0 && <p>Tipos repetidos: {diagnosticoDocumentos.tiposDuplicados.join(', ')}. Confira e selecione o tipo correto na caixinha de cada arquivo.</p>}
+              {pendingDocuments.length > 0 && <div><p className="font-semibold">Documentos obrigatórios que ainda faltam:</p><ul className="list-disc pl-5">{pendingDocuments.map(label => <li key={label}>{label}</li>)}</ul></div>}
+            </div>
+          )}
+
           {/* Footer controls */}
           {currentStep < 6 && (
             <div className="bg-slate-50 px-6 sm:px-8 py-5 border-t border-slate-200 flex justify-between items-center gap-4">
@@ -1615,7 +1642,7 @@ export default function AdesaoPage() {
 
               <button
                 onClick={nextStep}
-                disabled={submitting || checkingCpf || uploading || (currentStep === 5 && pendingDocuments.length > 0)}
+                disabled={submitting || checkingCpf || uploading || (currentStep === 5 && diagnosticoDocumentos.temErroBloqueante)}
                 className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg text-sm font-bold min-h-[44px] shadow-lg shadow-indigo-600/20 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {submitting ? (

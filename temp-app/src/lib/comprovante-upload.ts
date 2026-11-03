@@ -1,6 +1,7 @@
 // Comprova que a URL foi retornada por um upload concluído neste servidor.
 // O navegador não pode transformar um link arbitrário em documento enviado.
 const encoder = new TextEncoder();
+export const VALIDADE_COMPROVANTE_UPLOAD_MS = 30 * 24 * 60 * 60 * 1000;
 async function key() {
   const secret = process.env.BUBBLE_API_TOKEN;
   if (!secret) throw new Error('Armazenamento de documentos não configurado.');
@@ -8,7 +9,7 @@ async function key() {
 }
 
 export async function criarComprovanteUpload(url: string): Promise<string> {
-  const expires = Date.now() + 7 * 24 * 60 * 60 * 1000;
+  const expires = Date.now() + VALIDADE_COMPROVANTE_UPLOAD_MS;
   const signature = await crypto.subtle.sign('HMAC', await key(), encoder.encode(`${expires}:${url}`));
   return `${expires}.${Array.from(new Uint8Array(signature), byte => byte.toString(16).padStart(2, '0')).join('')}`;
 }
