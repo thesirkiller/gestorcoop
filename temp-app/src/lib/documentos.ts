@@ -48,13 +48,19 @@ export function normalizarUrlDocumento(value: unknown): string | null {
   }
 }
 
-export function documentosObrigatoriosPendentes(files: DocumentoAdesao[]): string[] {
+export function isComprovanteUploadFormatoAtivo(comprovante: unknown, now = Date.now()): boolean {
+  if (typeof comprovante !== 'string') return false;
+  const match = /^(\d+)\.[a-f0-9]{64}$/.exec(comprovante);
+  return !!match && Number(match[1]) > now;
+}
+
+export function documentosObrigatoriosPendentes(files: DocumentoAdesao[], now = Date.now()): string[] {
   const lista = Array.isArray(files) ? files : [];
   const urlsUsadas = new Set<string>();
   const tiposValidos = new Set<TipoDocumentoAdesao>();
 
   for (const file of lista) {
-    if (!file || typeof file !== 'object' || !isTipoDocumentoValido(file.tipo) || !file.comprovante) continue;
+    if (!file || typeof file !== 'object' || !isTipoDocumentoValido(file.tipo) || !isComprovanteUploadFormatoAtivo(file.comprovante, now)) continue;
     const urlNorm = normalizarUrlDocumento(file.url);
     if (!urlNorm || urlsUsadas.has(urlNorm)) continue;
     urlsUsadas.add(urlNorm);
@@ -64,6 +70,52 @@ export function documentosObrigatoriosPendentes(files: DocumentoAdesao[]): strin
   return TIPOS_DOCUMENTO_OBRIGATORIOS
     .filter(tipo => !tiposValidos.has(tipo))
     .map(tipo => TIPOS_DOCUMENTO[tipo]);
+}
+
+export function sugerirTipoDocumento(filename: string, filesAtuais: DocumentoAdesao[], now = Date.now()): TipoDocumentoAdesao {
+  const nome = String(filename || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zA-Z0-9]+/g, ' ').toLowerCase();
+  const preenchidos = new Set(filesAtuais.filter(file => normalizarUrlDocumento(file.url) && isComprovanteUploadFormatoAtivo(file.comprovante, now)).map(file => file.tipo));
+  // Certidões específicas precedem o nome do conselho (ex.: regularidade COREN).
+  const regras: [TipoDocumentoAdesao, RegExp][] = [
+    ['certidao_regularidade', /\b(regularidade|nada[_\s-]?consta)\b/i],
+    ['certidao_negativa_criminal', /\b(criminal|antecedente|negativa)\b/i],
+    ['identificacao', /\b(rg|cnh|identidade|identificacao|cin)\b/i],
+    ['conselho', /\b(coren|crm|crefito|crp|crn|crf|cro|crfa|cress|conselho|carteirinha|carteira)\b/i],
+    ['residencia', /\b(endereco|residencia|energia|agua|luz)\b/i],
+    ['cartao_vacinacao', /\b(vacina|vacinacao|imunizacao)\b/i],
+    ['cartao_sus_pis', /\b(sus|pis|pasep|nis)\b/i],
+  ];
+  const inferido = regras.find(([, regra]) => regra.test(nome))?.[0];
+  if (inferido && !preenchidos.has(inferido)) return inferido;
+  return TIPOS_DOCUMENTO_OBRIGATORIOS.find(tipo => !preenchidos.has(tipo)) || 'outro';
+}
+
+export function diagnosticarDocumentosAdesao(files: DocumentoAdesao[], now = Date.now()) {
+  const pendentes = documentosObrigatoriosPendentes(files, now);
+  const urls = files.map(file => normalizarUrlDocumento(file?.url));
+  const ativos = files.map(file => isComprovanteUploadFormatoAtivo(file?.comprovante, now));
+  const tiposDuplicados = TIPOS_DOCUMENTO_OBRIGATORIOS.filter(tipo => files.filter((file, i) => file?.tipo === tipo && urls[i] && ativos[i]).length > 1).map(tipo => TIPOS_DOCUMENTO[tipo]);
+  const porIndice = files.map((file, i) => {
+    const expirado = !ativos[i];
+    const urlInvalida = !urls[i];
+    const urlDuplicada = !!urls[i] && urls.filter(url => url === urls[i]).length > 1;
+    const tipoValido = isTipoDocumentoValido(file?.tipo);
+    const tipoDuplicado = tipoValido && !!urls[i] && ativos[i] && tiposDuplicados.includes(TIPOS_DOCUMENTO[file.tipo]);
+    const opcionalComObrigatoriosPendentes = tipoValido && pendentes.length > 0 && TIPOS_DOCUMENTO_OPCIONAIS.includes(file.tipo);
+    const mensagens: string[] = [];
+    if (expirado) mensagens.push('Envio expirado ou sem confirmação. Remova na lixeira e anexe novamente.');
+    if (urlInvalida) mensagens.push('Link do arquivo inválido. Remova na lixeira e anexe novamente.');
+    if (urlDuplicada) mensagens.push('Arquivo enviado mais de uma vez. Remova a cópia na lixeira.');
+    if (tipoDuplicado) mensagens.push('Tipo obrigatório repetido. Confira o tipo selecionado em cada arquivo.');
+    if (opcionalComObrigatoriosPendentes) mensagens.push('Marcado como opcional enquanto faltam obrigatórios. Confira se deve selecionar outro tipo.');
+    const nivel: 'erro' | 'aviso' | 'ok' = expirado || urlInvalida || urlDuplicada ? 'erro' : tipoDuplicado || opcionalComObrigatoriosPendentes ? 'aviso' : 'ok';
+    return { expirado, urlInvalida, urlDuplicada, tipoDuplicado, opcionalComObrigatoriosPendentes, nivel, mensagem: mensagens.join(' ') || null };
+  });
+  const nomes = (predicado: (item: typeof porIndice[number]) => boolean) => files.flatMap((file, i) => predicado(porIndice[i]) ? [file?.name || `Documento #${i + 1}`] : []);
+  const expirados = nomes(item => item.expirado || item.urlInvalida);
+  const urlsDuplicadas = nomes(item => item.urlDuplicada);
+  const opcionaisComPendencia = nomes(item => item.opcionalComObrigatoriosPendentes);
+  return { porIndice, expirados, urlsDuplicadas, tiposDuplicados, opcionaisComPendencia, pendentes, temErroBloqueante: pendentes.length > 0 || expirados.length > 0 || urlsDuplicadas.length > 0 };
 }
 
 export function validarArquivoDocumento(file: File): string | null {
