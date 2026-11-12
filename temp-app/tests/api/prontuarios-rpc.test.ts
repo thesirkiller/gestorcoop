@@ -1289,7 +1289,7 @@ test('listarIdsPacientesVinculadosAoCooperado: encontra paciente com plano ativo
     id: planoId,
     paciente_id: '1657134607817x110649329563205630',
     data_inicio: '2026-10-06',
-    data_fim: '2026-11-05',
+    data_fim: '2099-12-31',
     status: 'Ativo',
     observacoes: 'Acompanhamento domiciliar',
     created_at: '2026-10-06 10:00:00',
@@ -1370,7 +1370,7 @@ test('rota /api/cooperado/agenda: paciente atribuído no Plano Terapêutico apar
     via_administracao: 'Oral',
     frequencia_horas: 8,
     data_inicio: '2026-10-06',
-    data_fim: '2026-11-05',
+    data_fim: '2099-12-31',
     status: 'Ativa',
   });
 
