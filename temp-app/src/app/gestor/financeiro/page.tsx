@@ -123,6 +123,7 @@ export default function FinanceiroPage() {
   const [servicesError, setServicesError] = useState<string | null>(null);
   const [syncTrigger, setSyncTrigger] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [relatoriosSyncMsg, setRelatoriosSyncMsg] = useState<string | null>(null);
   const [cooperadoSearch, setCooperadoSearch] = useState('');
   const autoPeriodKeyRef = useRef<string | null>(null);
 
@@ -130,9 +131,12 @@ export default function FinanceiroPage() {
     setIsSyncingBase(true);
     setBaseSyncError(null);
     try {
+      const escalasUrl = forceRefresh
+        ? '/api/gestor/financeiro/escalas?sync=0'
+        : '/api/gestor/financeiro/escalas';
       const results = await Promise.allSettled([
         fetchFullDataset<Cooperado>('/api/gestor/cooperados', setCooperados, { forceRefresh }),
-        fetchFullDataset<Escala>('/api/gestor/financeiro/escalas', setEscalas, { forceRefresh }),
+        fetchFullDataset<Escala>(escalasUrl, setEscalas, { forceRefresh }),
       ]);
       const hadError = results.some((r) => r.status === 'rejected');
       if (hadError) {
@@ -152,7 +156,24 @@ export default function FinanceiroPage() {
   }, [loadBaseDatasets]);
 
   const handleSyncAll = async () => {
-    await loadBaseDatasets(true);
+    setRelatoriosSyncMsg(null);
+    const [, syncRelRes] = await Promise.allSettled([
+      loadBaseDatasets(true),
+      axios.post('/api/gestor/financeiro/sincronizar-relatorios', { limiteRelatorios: 50 }),
+    ]);
+
+    if (syncRelRes.status === 'fulfilled' && syncRelRes.value.data?.data) {
+      const resumo = syncRelRes.value.data.data as {
+        sincronizados?: number;
+        subRelatoriosCriados?: number;
+      };
+      if ((resumo.sincronizados || 0) > 0) {
+        setRelatoriosSyncMsg(
+          `${resumo.sincronizados} relatório(s) mensal(is) sincronizado(s) com ${resumo.subRelatoriosCriados || 0} sub-relatório(s) no GestorCoop.`
+        );
+      }
+    }
+
     if (selectedCooperadoId) {
       setSyncTrigger((prev) => prev + 1);
     }
@@ -837,6 +858,22 @@ export default function FinanceiroPage() {
               className="px-3 py-1 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold shrink-0 cursor-pointer"
             >
               Tentar novamente
+            </button>
+          </div>
+        )}
+
+        {relatoriosSyncMsg && (
+          <div className="mb-6 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle className="w-4 h-4 shrink-0 text-emerald-600" />
+              <span>{relatoriosSyncMsg}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRelatoriosSyncMsg(null)}
+              className="text-emerald-700 hover:text-emerald-900 font-bold shrink-0 cursor-pointer"
+            >
+              Fechar
             </button>
           </div>
         )}
