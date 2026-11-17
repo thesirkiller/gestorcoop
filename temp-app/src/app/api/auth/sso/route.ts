@@ -26,7 +26,7 @@ async function processarSSO(ssoToken: string, targetArea?: string, redirectPath?
   } else if (targetArea === 'cooperado') {
     area = 'cooperado';
   } else {
-    area = ehGestor && !user.fk_cooperado ? 'gestor' : 'cooperado';
+    area = ehGestor ? 'gestor' : 'cooperado';
   }
 
   if (area === 'cooperado' && !user.fk_cooperado) throw new Error('Usuário sem vínculo de cooperado.');
@@ -58,7 +58,11 @@ async function processarSSO(ssoToken: string, targetArea?: string, redirectPath?
     .prepare('INSERT INTO auth_sessions (id, user_id, area, expires_at) VALUES (?, ?, ?, ?)')
     .bind(sessionId, user._id, area, now + VALIDADE_PADRAO_SEGUNDOS)
     .run();
-  await bubbleApi.clearSSOToken(userId);
+  try {
+    await bubbleApi.clearSSOToken(userId, ssoToken);
+  } catch (e) {
+    console.warn('Aviso ao limpar token SSO no Bubble:', e);
+  }
 
   let destino = redirectPath;
   if (!destino || !destino.startsWith('/') || destino.startsWith('//') || destino.includes('\\') ||
