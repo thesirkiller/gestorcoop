@@ -1,8 +1,8 @@
 import { test, before, beforeEach, afterEach } from 'node:test';
 import { expect } from '@playwright/test';
 import axios from 'axios';
-import { criarComprovanteUpload, verificarComprovanteUpload } from '../../src/lib/comprovante-upload';
-import { normalizarUrlDocumento, nomeDocumento } from '../../src/lib/documentos';
+import { criarComprovanteUpload, verificarComprovanteUpload, VALIDADE_COMPROVANTE_UPLOAD_MS } from '../../src/lib/comprovante-upload';
+import { normalizarUrlDocumento, nomeDocumento, sugerirTipoDocumento, diagnosticarDocumentosAdesao, documentosObrigatoriosPendentes, isComprovanteUploadFormatoAtivo, TIPOS_DOCUMENTO_OBRIGATORIOS, TIPOS_DOCUMENTO, DocumentoAdesao } from '../../src/lib/documentos';
 
 process.env.BUBBLE_API_URL = 'https://bubble.invalid/version-test/api/1.1';
 process.env.BUBBLE_API_TOKEN = 'segredo-exclusivo-dos-testes';
@@ -188,4 +188,79 @@ test('listagem vazia ou indisponível não inventa cooperados e documentos', asy
     expect(failure.status).toBe(502);
     expect((await failure.json()).success).toBe(false);
   } finally { bubble.getCooperados = original; }
+});
+
+const agora = 1700000000000;
+const documento = (tipo: DocumentoAdesao['tipo'], name = `${tipo}.pdf`): DocumentoAdesao => ({ tipo, name, url: `https://cdn.example.com/${encodeURIComponent(name)}`, comprovante: `${agora + 1000}.${'a'.repeat(64)}` });
+
+test('sugestão infere nomes e completa os seis obrigatórios em sequência', () => {
+  const exemplos = [ ['RG.pdf', 'identificacao'], ['carteirinha.pdf', 'conselho'], ['regularidade COREN.pdf', 'certidao_regularidade'], ['certidao_regularidade_COREN.pdf', 'certidao_regularidade'], ['nada_consta.pdf', 'certidao_regularidade'], ['antecedente.pdf', 'certidao_negativa_criminal'], ['Água.pdf', 'residencia'], ['comprovante_residencia.pdf', 'residencia'], ['vacinação.pdf', 'cartao_vacinacao'], ['cartao_vacinacao.pdf', 'cartao_vacinacao'], ['PIS.pdf', 'cartao_sus_pis'] ] as const;
+  for (const [nome, tipo] of exemplos) expect(sugerirTipoDocumento(nome, [], agora)).toBe(tipo);
+  const files: DocumentoAdesao[] = [];
+  for (const tipo of TIPOS_DOCUMENTO_OBRIGATORIOS) {
+    expect(sugerirTipoDocumento('scan.pdf', files, agora)).toBe(tipo);
+    files.push(documento(tipo));
+  }
+  expect(sugerirTipoDocumento('scan.pdf', files, agora)).toBe('outro');
+  expect(sugerirTipoDocumento('RG.pdf', [documento('identificacao')], agora)).toBe('conselho');
+  expect(sugerirTipoDocumento('scan.pdf', [{ ...documento('identificacao'), comprovante: `1.${'a'.repeat(64)}` }], agora)).toBe('identificacao');
+  expect(sugerirTipoDocumento('scan.pdf', [{ ...documento('identificacao'), url: 'invalida' }], agora)).toBe('identificacao');
+});
+
+test('diagnóstico identifica expiração, URL inválida, duplicatas e opcionais pendentes', () => {
+  const files = [documento('identificacao'), documento('identificacao', 'rg-frente.pdf'), documento('outro'), { ...documento('conselho'), comprovante: `${agora}.${'a'.repeat(64)}` }, { ...documento('residencia'), url: 'invalida' }, { ...documento('cartao_vacinacao'), url: documento('identificacao').url }];
+  const d = diagnosticarDocumentosAdesao(files, agora);
+  expect(d.porIndice).toHaveLength(files.length);
+  expect(d.expirados).toEqual(['conselho.pdf', 'residencia.pdf']);
+  expect(d.urlsDuplicadas).toEqual(['identificacao.pdf', 'cartao_vacinacao.pdf']);
+  expect(d.tiposDuplicados).toEqual([TIPOS_DOCUMENTO.identificacao]);
+  expect(d.opcionaisComPendencia).toEqual(['outro.pdf']);
+  expect(d.pendentes).toEqual(documentosObrigatoriosPendentes(files, agora));
+  expect(d.pendentes).toContain(TIPOS_DOCUMENTO.conselho);
+  expect(d.temErroBloqueante).toBe(true);
+  expect(d.porIndice.map(item => item.nivel)).toEqual(['erro', 'aviso', 'aviso', 'erro', 'erro', 'erro']);
+  for (const comprovante of [undefined, '', 'falso', `${agora}.${'a'.repeat(64)}`, `${agora + 1000}.${'A'.repeat(64)}`]) expect(isComprovanteUploadFormatoAtivo(comprovante, agora)).toBe(false);
+  const completos = TIPOS_DOCUMENTO_OBRIGATORIOS.map(tipo => documento(tipo));
+  expect(diagnosticarDocumentosAdesao(completos, agora).temErroBloqueante).toBe(false);
+  completos.push({ ...documento('outro'), comprovante: '' });
+  expect(diagnosticarDocumentosAdesao(completos, agora).temErroBloqueante).toBe(true);
+});
+
+test('diagnóstico tolera itens legados sem nome ou com tipo inválido', () => {
+  const files = [
+    documento('identificacao'),
+    { ...documento('conselho'), name: undefined, comprovante: '' },
+    null,
+    { ...documento('outro'), name: '', tipo: 'toString' },
+  ] as unknown as DocumentoAdesao[];
+  const d = diagnosticarDocumentosAdesao(files, agora);
+  expect(d.expirados).toEqual(['Documento #2', 'Documento #3']);
+  expect(d.porIndice[3].tipoDuplicado).toBe(false);
+  expect(d.porIndice[3].opcionalComObrigatoriosPendentes).toBe(false);
+  expect(d.pendentes).toContain(TIPOS_DOCUMENTO.conselho);
+  expect(d.temErroBloqueante).toBe(true);
+});
+
+test('comprovante de upload vale trinta dias', async () => {
+  const inicio = Date.now();
+  const receipt = await criarComprovanteUpload('https://cdn.example.com/rg.pdf');
+  const fim = Date.now();
+  const expires = Number(receipt.split('.')[0]);
+  expect(VALIDADE_COMPROVANTE_UPLOAD_MS).toBe(30 * 24 * 60 * 60 * 1000);
+  expect(expires).toBeGreaterThanOrEqual(inicio + VALIDADE_COMPROVANTE_UPLOAD_MS);
+  expect(expires).toBeLessThanOrEqual(fim + VALIDADE_COMPROVANTE_UPLOAD_MS);
+});
+
+test('API identifica arquivos inválidos, duplicados e sem confirmação', async () => {
+  const data = await payload();
+  data.uploadedFiles[0].url = 'invalida';
+  expect((await (await adesao(request(data))).json()).error).toContain('identificacao.pdf');
+  data.uploadedFiles[0].url = data.uploadedFiles[1].url;
+  const repetido = (await (await adesao(request(data))).json()).error;
+  expect(repetido).toContain('identificacao.pdf');
+  expect(repetido).toContain('conselho.pdf');
+  const expirado = await payload();
+  expirado.uploadedFiles[0].comprovante = '1.' + 'a'.repeat(64);
+  expect((await (await adesao(request(expirado))).json()).error).toBe('Há documentos sem confirmação de envio ou com envio expirado (identificacao.pdf). Remova-os na lixeira e anexe novamente.');
+  expect(writes).toHaveLength(0);
 });

@@ -74,17 +74,20 @@ export async function POST(request: Request) {
     if (documents.some(file => !isTipoDocumentoValido(file.tipo))) {
       return NextResponse.json({ error: 'Há documento com tipo inválido. Selecione o tipo correto de cada anexo.' }, { status: 400 });
     }
-    const missing = documentosObrigatoriosPendentes(documents);
-    if (missing.length) {
-      return NextResponse.json({ error: `Documentos obrigatórios pendentes: ${missing.join(', ')}.`, pendentes: missing }, { status: 400 });
-    }
     const documentUrls = documents.map(file => normalizarUrlDocumento(file.url));
     if (documentUrls.some(url => !url) || new Set(documentUrls).size !== documents.length) {
-      return NextResponse.json({ error: 'Envie arquivos válidos e diferentes para cada documento obrigatório.' }, { status: 400 });
+      const arquivosInvalidos = documents.filter((_, index) => !documentUrls[index] || documentUrls.filter(url => url === documentUrls[index]).length > 1).map(file => file.name || 'Documento sem nome');
+      return NextResponse.json({ error: `Há arquivos com URL inválida ou repetida (${arquivosInvalidos.join(', ')}). Remova os anexos inválidos ou as cópias na lixeira e anexe arquivos válidos e diferentes.` }, { status: 400 });
     }
     const confirmed = await Promise.all(documents.map((file, index) => verificarComprovanteUpload(documentUrls[index]!, file.comprovante)));
     if (confirmed.some(valid => !valid)) {
-      return NextResponse.json({ error: 'Há documentos sem confirmação de envio ou com envio expirado. Remova-os e anexe novamente.' }, { status: 400 });
+      const arquivosComFalha = documents.flatMap((file, index) => confirmed[index] ? [] : [file.name || `Documento #${index + 1}`]);
+      return NextResponse.json({ error: `Há documentos sem confirmação de envio ou com envio expirado (${arquivosComFalha.join(', ')}). Remova-os na lixeira e anexe novamente.` }, { status: 400 });
+    }
+
+    const missing = documentosObrigatoriosPendentes(documents);
+    if (missing.length) {
+      return NextResponse.json({ error: `Documentos obrigatórios pendentes: ${missing.join(', ')}.`, pendentes: missing }, { status: 400 });
     }
 
     // 1. Format Address text
