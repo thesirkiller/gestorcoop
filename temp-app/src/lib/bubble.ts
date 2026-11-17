@@ -760,21 +760,67 @@ export const bubbleApi = {
         value: cooperadoId,
       },
     ];
+
+    const parseDataLimite = (d: string, fimDoDia: boolean): Date | null => {
+      const iso = d.includes('T') ? d : `${d}${fimDoDia ? 'T23:59:59.999Z' : 'T00:00:00.000Z'}`;
+      const dt = new Date(iso);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    };
+
     if (startDate) {
-      constraints.push({
-        key: 'date_fixa_entrada',
-        constraint_type: 'greater than',
-        value: `${startDate}T00:00:00.000Z`,
-      });
+      const startDt = parseDataLimite(startDate, false);
+      if (startDt) {
+        constraints.push({
+          key: 'date_fixa_entrada',
+          constraint_type: 'greater than',
+          value: new Date(startDt.getTime() - 86_400_000).toISOString(),
+        });
+      }
     }
     if (endDate) {
-      constraints.push({
-        key: 'date_fixa_entrada',
-        constraint_type: 'less than',
-        value: `${endDate}T23:59:59.999Z`,
-      });
+      const endDt = parseDataLimite(endDate, true);
+      if (endDt) {
+        constraints.push({
+          key: 'date_fixa_entrada',
+          constraint_type: 'less than',
+          value: new Date(endDt.getTime() + 86_400_000).toISOString(),
+        });
+      }
     }
-    return getAllResults('/obj/servicos', constraints);
+
+    const rawList = await getAllResults<any>('/obj/servicos', constraints);
+    const normalizados = (rawList || []).map((raw: any) => ({
+      ...raw,
+      date_fixa_entrada: raw.date_fixa_entrada || raw.date_entrada || raw['Created Date'],
+      date_fixa_saida: raw.date_fixa_saida || raw.date_saida || raw.date_fixa_entrada || raw.date_entrada,
+      bool_confirmacao_finalizado: Boolean(
+        raw.bool_confirmacao_finalizado || raw.opt_status === 'Serviço finalizado'
+      ),
+      bool_pago: Boolean(raw.bool_pago),
+      num_valor_cooperado:
+        typeof raw.num_valor_cooperado === 'number'
+          ? raw.num_valor_cooperado
+          : Number(raw.num_valor_cooperado || 0),
+    }));
+
+    if (!startDate && !endDate) {
+      return normalizados;
+    }
+
+    const startDay = startDate ? startDate.slice(0, 10) : undefined;
+    const endDay = endDate ? endDate.slice(0, 10) : undefined;
+
+    return normalizados.filter((serv: any) => {
+      const refStr = serv.date_fixa_entrada;
+      if (!refStr) return true;
+      const ms = new Date(refStr).getTime();
+      if (Number.isNaN(ms)) return true;
+      const utcDay = new Date(ms).toISOString().slice(0, 10);
+      const brtDay = new Date(ms - 3 * 3_600_000).toISOString().slice(0, 10);
+      const utcOk = (!startDay || utcDay >= startDay) && (!endDay || utcDay <= endDay);
+      const brtOk = (!startDay || brtDay >= startDay) && (!endDay || brtDay <= endDay);
+      return utcOk || brtOk;
+    });
   },
 
   async getEscalas(cursor?: number, limit?: number): Promise<unknown[] | BubblePageResponse> {
@@ -791,14 +837,49 @@ export const bubbleApi = {
   },
 
   async getContasBancariasByCooperado(cooperadoId: string) {
-    const constraints = [
-      {
-        key: 'fk_cooperado',
-        constraint_type: 'equals',
-        value: cooperadoId,
-      },
-    ];
-    return getAllResults('/obj/conta_cooperado', constraints);
+    const [porFk, cooperado] = await Promise.all([
+      getAllResults<any>('/obj/conta_cooperado', [
+        {
+          key: 'fk_cooperado',
+          constraint_type: 'equals',
+          value: cooperadoId,
+        },
+      ]).catch(() => []),
+      this.getCooperado(cooperadoId).catch(() => null),
+    ]);
+
+    const mapa = new Map<string, any>();
+    for (const conta of porFk || []) {
+      if (conta?._id) mapa.set(conta._id, conta);
+    }
+
+    const idsLista: unknown =
+      cooperado?.fks_ContasBancarias ||
+      cooperado?.['fks_ContasBancarias '] ||
+      cooperado?.fks_contas_bancarias ||
+      [];
+
+    const idsFaltantes = Array.isArray(idsLista)
+      ? idsLista.filter((id): id is string => typeof id === 'string' && id.trim() !== '' && !mapa.has(id))
+      : [];
+
+    if (idsFaltantes.length > 0) {
+      const contasExtras = await Promise.all(
+        idsFaltantes.map((contaId) =>
+          bubbleClient
+            .get(`/obj/conta_cooperado/${contaId}`)
+            .then((r) => r.data?.response || null)
+            .catch(() => null)
+        )
+      );
+      for (const conta of contasExtras) {
+        if (conta?._id && !mapa.has(conta._id)) {
+          mapa.set(conta._id, conta);
+        }
+      }
+    }
+
+    return Array.from(mapa.values());
   },
 
   async updateServico(servicoId: string, data: Record<string, unknown>) {
@@ -1640,40 +1721,44 @@ export const bubbleApi = {
 
   // Autenticação SSO
   async findUserBySSOToken(token: string): Promise<any> {
-    let constraints = [
-      {
-        key: 'txt_sso_token_text',
-        constraint_type: 'equals',
-        value: token,
-      },
-    ];
-    let response = await bubbleClient.get(`/obj/user?constraints=${JSON.stringify(constraints)}`);
-    let user = response.data.response.results?.[0];
-    
-    if (!user) {
-      constraints = [
-        {
-          key: 'sso_token_text',
-          constraint_type: 'equals',
-          value: token,
-        },
-      ];
-      response = await bubbleClient.get(`/obj/user?constraints=${JSON.stringify(constraints)}`);
-      user = response.data.response.results?.[0];
+    const keys = ['txt_sso_token', 'txt_sso_token_text', 'sso_token_text'];
+    for (const key of keys) {
+      try {
+        const constraints = [
+          {
+            key,
+            constraint_type: 'equals',
+            value: token,
+          },
+        ];
+        const response = await bubbleClient.get(
+          `/obj/user?constraints=${encodeURIComponent(JSON.stringify(constraints))}`
+        );
+        const user = response.data?.response?.results?.[0];
+        if (user) return user;
+      } catch {
+        // segue para a próxima chave possível no schema do Bubble
+      }
     }
-    return user || null;
+
+    if (/^\d{13}x\d{15,25}$/.test(token)) {
+      const user = await this.getUser(token).catch(() => null);
+      if (user && (user.txt_sso_token === token || user.txt_sso_token_text === token)) {
+        return user;
+      }
+    }
+
+    return null;
   },
 
-  async clearSSOToken(userId: string): Promise<void> {
+  async clearSSOToken(userId: string, usedToken?: string): Promise<void> {
+    if (usedToken && usedToken === userId) {
+      return;
+    }
     try {
-      const payload: any = {
-        txt_sso_token_text: null,
-        sso_token_text: null
-      };
-      await bubbleClient.patch(`/obj/user/${userId}`, payload);
+      await bubbleClient.patch(`/obj/user/${userId}`, { txt_sso_token: null });
     } catch (e) {
       console.warn("Failed to clear SSO token fields:", e);
-      throw e;
     }
   },
 
